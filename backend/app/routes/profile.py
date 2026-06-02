@@ -28,8 +28,33 @@ def update_profile():
             user.avatar_url = data['avatar_url']
         
         if 'email' in data:
-            user.email = data['email'].strip()
-        
+            email = data['email'].strip() if data['email'] else None
+            if email:
+                import re
+                if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+                    return jsonify({'error': 'Invalid email address'}), 400
+                existing = User.query.filter(User.email == email, User.id != user_id).first()
+                if existing:
+                    return jsonify({'error': 'Email already in use'}), 409
+            user.email = email
+
+        if 'age' in data:
+            age = data['age']
+            if age is not None:
+                try:
+                    age = int(age)
+                    if age < 13 or age > 120:
+                        return jsonify({'error': 'Age must be between 13 and 120'}), 400
+                except (TypeError, ValueError):
+                    return jsonify({'error': 'Invalid age'}), 400
+            user.age = age
+
+        if 'country' in data:
+            user.country = data['country'].strip() if data['country'] else None
+
+        if 'city' in data:
+            user.city = data['city'].strip() if data['city'] else None
+
         user.updated_at = datetime.utcnow()
         
         db.session.commit()

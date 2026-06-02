@@ -10,57 +10,61 @@ The backend uses PostgreSQL via psycopg2. Do NOT assume SQLite. `ALTER TABLE` mi
 
 **How to apply:** Any new model column must use `db.Text` for long strings (hashes, base64 blobs, URLs). Add a matching `ALTER TABLE` migration for existing tables.
 
+## Phone input component
+`frontend/src/components/PhoneInput.js` — fully custom, no external library needed.
+- Reads country data from `frontend/src/data/phoneCountries.js` (240+ countries with ISO2, dialCode)
+- Flag emoji generated via `getFlag(iso2)` using Unicode regional indicator characters
+- Dropdown is searchable by name, code, or ISO2
+- Default country: Uganda (UG / +256)
+- `onChange` always returns full international number: `+dialCode + localDigits`
+- Used in both LoginPage and SignupPage for the phone field
+
+## Country data
+`frontend/src/data/phoneCountries.js` — 240+ countries, each `{ name, iso2, dialCode }`.
+`getFlag(iso2)` converts ISO2 to flag emoji.
+`detectCountryFromNumber(number)` finds the country from a full international number.
+
+## Profile Panel
+`frontend/src/components/ProfilePanel.js` — slide-in drawer (left side).
+- View mode: shows all 7 profile fields (name, bio, phone, email, age, country, city) in info cards + profile completeness bar
+- Edit mode: full form with inline validation, country searchable dropdown with flag emojis, avatar upload
+- Saves via `PUT /api/auth/profile`, updates Zustand store with `setUser(data.user)` — NO page reload
+- Backend `profile.py` now accepts age, country, city, email with full validation
+
+## QR Code Scanner
+`frontend/src/components/QRScannerModal.js` — modern modal.
+- "My Code" tab: shows generated QR with branded frame + center logo, scan count, download + share buttons
+- "Scan" tab: live camera with animated laser line + corner brackets overlay, auto-detects Bitese QR codes via jsQR
+- `stopScanning()` properly tears down MediaStream via `streamRef`
+- QR generate returns: `{ qr_code: { qr_image_url, scan_count } }` — access as `myQRCode.qr_code.qr_image_url`
+
+## Settings page
+`frontend/src/pages/SettingsPage.js` — fully redesigned.
+- Card-based sections: Privacy, Notifications, Storage & Data, Backup, Help & About
+- All toggles use animated `Toggle` component (spring motion)
+- All selects use custom inline dropdowns (no native `<select>`)
+- Optimistically updates state then rolls back on API error
+
 ## Status image/video upload
-- StatusTab has three compose modes: Text (colour bg + text), Photo (gallery/camera), Video (file picker)
-- StatusComposer uses hidden `<input type="file">` refs: one for gallery, one with `capture="environment"` for camera
-- Upload flow: POST to `/upload/image` or `/upload/video` first → get `url` back → POST to `/status` with `media_url`, `media_type`, `background_color`, `content` (caption for media)
-- StatusViewer detects image/video from `media_type` field OR by matching URL extensions
+- StatusTab has three compose modes: Text, Photo (gallery/camera), Video
+- Upload flow: POST to `/upload/image` or `/upload/video` → get `url` back → POST to `/status`
 - StatusViewer: tap left half = go back, tap right half = advance; hold = pause timer
-- Own statuses show delete button + viewers count row at bottom
-- Backend status model got two new columns (`media_type`, `background_color`) added via runtime ALTER TABLE migration (June 2026)
-- Legacy `__bg:#XXXXXX__text` prefix still parsed for backwards compat in both create and get_all_statuses routes
-- Added `/api/status/create` alias route for forwards compat (frontend now uses `/api/status`)
-
-## Login page
-- Left panel is an animated Bitese app mockup: contacts list + 8 animated chat bubbles (text, voice, image, link, location types), cycling active contact every 3.5s
-- Right panel: clean login form with inline field-level validation errors, show/hide password, push registration after success
-- Use `h-screen overflow-hidden` on outer container
-
-## Signup page
-- 3-step wizard with AnimatePresence transitions: Step 1 (phone, name, email), Step 2 (age, country dropdown with search, city — all optional), Step 3 (password with 5-level strength meter + account summary)
-- Country dropdown: searchable from COUNTRIES array, click-to-select, clear button
-- Account summary box on Step 3 shows all collected data before commit
 
 ## Push notifications
-Fully wired: `backend/app/routes/push.py` exposes `/api/push/subscribe`, `/api/push/unsubscribe`, `/api/push/vapid-public-key`. Push fires on every message send in `messages.py`. Frontend service at `frontend/src/services/pushNotifications.js` registers SW, requests permission, and subscribes after login.
+`frontend/src/services/pushNotifications.js` — registers SW, requests permission, subscribes after login.
+Backend fires push on every message send. VAPID keys auto-generated on startup.
 
 ## EmojiPicker
-The custom `EmojiPicker.js` has 10 categories × ~60 emojis each, with search, recent history (localStorage `bitese_recent_emojis`), and per-category icon tabs. ChatWindow wraps it in an `absolute` positioned motion.div — EmojiPicker provides inner content only (no positioning).
+`frontend/src/components/EmojiPicker.js` — 10 categories × ~60 emojis, search, recent history (localStorage `bitese_recent_emojis`), category icon tabs. ChatWindow wraps it in absolute-positioned motion.div.
 
 ## Backend upload serving
-- Uploaded files are served via `@app.route('/uploads/<path:filename>')` → `send_from_directory` from `backend/uploads/`
-- Upload folder structure: `backend/uploads/images/`, `videos/`, `audio/`, `documents/`
-- Upload URLs returned as `/uploads/{type}/{filename}` — these now resolve correctly
+Uploaded files at `backend/uploads/{images,videos,audio,documents}/`. Served via Flask route `/uploads/<path:filename>`.
 
-## Flask-Limiter setup
-- `limiter = Limiter(key_func=get_remote_address)` initialized in `backend/app/__init__.py`
-- Auth routes import `from app import limiter` and use `@limiter.limit("10 per minute")` on login, `@limiter.limit("5 per minute")` on signup
-- Uses in-memory storage (fine for dev; add Redis for prod)
+## Flask-Limiter
+`limiter = Limiter(key_func=get_remote_address)` in `__init__.py`. Login: 10/min, Signup: 5/min. In-memory storage.
 
 ## Group WebRTC calling
-- Mesh topology: every participant creates a peer connection to every other participant
-- Socket relay: all signaling goes through backend via `user_{user_id}` rooms
-- Hook `useGroupWebRTC` manages Map of peer connections and remote streams
-- `GroupCallScreen` shows grid of VideoTiles (1 col for 1 user, 2 cols for 2-4, 3 cols for 5+)
-- `IncomingGroupCall` toast-style notification at top of screen
-- `useGroupCallStore` in store.js holds group call state separately from 1-to-1 call store
+Mesh topology via `useGroupWebRTC` hook. All signaling through backend Socket.IO rooms. `GroupCallScreen` with adaptive grid layout.
 
 ## Attachment preview
-- `AttachmentPreviewModal` shows file preview before sending (image, video, audio, document)
-- `handleAttach` in ChatWindow now sets `pendingAttachment` state instead of uploading immediately
-- `handleSendAttachment(caption)` does the actual upload + message send
-- Upload endpoint map: image→`/upload/image`, video→`/upload/video`, audio→`/upload/audio`, doc→`/upload/document`
-
-## Document display
-- Filename extracted from `media_url.split('/').pop().split('?')[0]` for display in chat bubble
-- Audio messages (`media_type === 'audio'`) render with an `<audio controls>` element
+`AttachmentPreviewModal` → `pendingAttachment` state → `handleSendAttachment(caption)` uploads then sends.
