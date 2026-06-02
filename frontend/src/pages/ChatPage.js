@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuthStore, useChatStore, useCallStore } from '../services/store';
+import { useAuthStore, useChatStore, useCallStore, useGroupCallStore } from '../services/store';
 import { initializeSocket, disconnectSocket } from '../services/socket';
 import { useWebRTC } from '../hooks/useWebRTC';
+import { useGroupWebRTC } from '../hooks/useGroupWebRTC';
 import api from '../services/api';
 import MainNavigation from '../components/MainNavigation';
 import ChatWindow from '../components/ChatWindow';
@@ -11,8 +12,9 @@ import ProfilePanel from '../components/ProfilePanel';
 import NewChatModal from '../components/NewChatModal';
 import IncomingCall from '../components/IncomingCall';
 import CallScreen from '../components/CallScreen';
-import { AnimatePresence } from 'framer-motion';
-import { FiMenu, FiX } from 'react-icons/fi';
+import GroupCallScreen from '../components/GroupCallScreen';
+import { AnimatePresence, motion } from 'framer-motion';
+import { FiMenu, FiX, FiPhone, FiVideo, FiPhoneOff } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 
 function ChatPage() {
@@ -22,6 +24,13 @@ function ChatPage() {
     callState, callType, caller,
     setCallState, setCallType, setCaller, resetCall,
   } = useCallStore();
+  const {
+    groupCallState, groupCallId, groupCallType, groupName,
+    setGroupCallState, setGroupCallId, setGroupCallType,
+    setGroupInfo, setInitiator, setCallDuration: setGroupCallDuration,
+    setIncomingGroupCallData, incomingGroupCallData,
+    resetGroupCall,
+  } = useGroupCallStore();
 
   const [socket, setSocket] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
@@ -30,12 +39,33 @@ function ChatPage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeChatData, setActiveChatData] = useState(null);
   const [incomingCallData, setIncomingCallData] = useState(null);
+  const groupCallDurationRef = useRef(null);
   const navigate = useNavigate();
 
   const {
     initiateCall, answerCall, handleCallAnswered, handleIceCandidate,
     endCall, rejectCall, toggleMute, toggleCamera, flipCamera,
   } = useWebRTC(user);
+
+  const {
+    localStream: groupLocalStream,
+    remoteStreams,
+    participants: groupParticipants,
+    isMuted: groupIsMuted,
+    isCameraOff: groupIsCameraOff,
+    callActive: groupCallActive,
+    initiateGroupCall,
+    joinGroupCall,
+    handleGroupOffer,
+    handleGroupAnswer,
+    handleGroupIce,
+    handleUserJoined,
+    handleUserLeft,
+    toggleMute: groupToggleMute,
+    toggleCamera: groupToggleCamera,
+    leaveGroupCall,
+    cleanupGroupCall,
+  } = useGroupWebRTC(user);
 
   // ── Socket setup & call event handlers ──────────────────────────────────
   useEffect(() => {
@@ -45,51 +75,67 @@ function ChatPage() {
     setSocket(sock);
     loadContacts();
 
-    // ── Incoming call ────────────────────────────────────────────────────
+    // ── 1-to-1: Incoming call ────────────────────────────────────────────
     sock.on('incoming_call', (data) => {
       const { caller_id, caller_name, caller_avatar, call_type, call_id, offer } = data;
-      // If already in a call, send busy signal
       if (useCallStore.getState().callState !== 'idle') {
         sock.emit('call_reject', { caller_id, call_id, reason: 'busy' });
         return;
       }
       setCallType(call_type || 'video');
-      setCaller({
-        id: caller_id,
-        full_name: caller_name || 'Unknown',
-        avatar_url: caller_avatar || null,
-      });
+      setCaller({ id: caller_id, full_name: caller_name || 'Unknown', avatar_url: caller_avatar || null });
       setCallState('ringing');
       setIncomingCallData({ caller_id, call_type, call_id, offer });
     });
 
-    // ── Call answered ────────────────────────────────────────────────────
     sock.on('call_answered', (data) => {
       handleCallAnswered(data);
       setCallState('active');
     });
 
-    // ── ICE candidate ────────────────────────────────────────────────────
-    sock.on('ice_candidate', (data) => {
-      handleIceCandidate(data);
-    });
+    sock.on('ice_candidate', (data) => { handleIceCandidate(data); });
 
-    // ── Call rejected ────────────────────────────────────────────────────
     sock.on('call_rejected', (data) => {
-      const reason = data.reason || 'declined';
-      const msg = reason === 'busy' ? 'User is busy' : 'Call declined';
-      toast(msg, { icon: '📵' });
+      toast(data.reason === 'busy' ? 'User is busy' : 'Call declined', { icon: '📵' });
       resetCall();
     });
 
-    // ── Call ended ───────────────────────────────────────────────────────
     sock.on('call_ended', () => {
       toast('Call ended', { icon: '📞' });
       resetCall();
       setIncomingCallData(null);
     });
 
-    // ── Message events ───────────────────────────────────────────────────
+    // ── Group call events ─────────────────────────────────────────────────
+    sock.on('group_incoming_call', (data) => {
+      const { group_id: gId, group_name: gName, initiator_id, initiator_name, initiator_avatar, call_type, call_id } = data;
+      if (useGroupCallStore.getState().groupCallState !== 'idle') return;
+      setGroupCallState('incoming');
+      setGroupCallId(call_id);
+      setGroupCallType(call_type || 'video');
+      setGroupInfo({ groupId: gId, groupName: gName });
+      setInitiator({ initiatorId: initiator_id, initiatorName: initiator_name, initiatorAvatar: initiator_avatar });
+      setIncomingGroupCallData(data);
+    });
+
+    sock.on('group_call_user_joined', (data) => { handleUserJoined(data); });
+    sock.on('group_call_user_left', (data) => { handleUserLeft(data); });
+
+    sock.on('group_call_offer', async (data) => {
+      await handleGroupOffer(data);
+    });
+
+    sock.on('group_call_answer', async (data) => {
+      await handleGroupAnswer(data);
+    });
+
+    sock.on('group_ice_candidate', async (data) => {
+      await handleGroupIce(data);
+    });
+
+    sock.on('group_call_rejected', () => {});
+
+    // ── Message events ────────────────────────────────────────────────────
     sock.on('new_message', (msg) => {
       if (msg.sender_id === useChatStore.getState().activeChat) {
         useChatStore.getState().addMessage(msg);
@@ -111,12 +157,30 @@ function ChatPage() {
       sock.off('ice_candidate');
       sock.off('call_rejected');
       sock.off('call_ended');
+      sock.off('group_incoming_call');
+      sock.off('group_call_user_joined');
+      sock.off('group_call_user_left');
+      sock.off('group_call_offer');
+      sock.off('group_call_answer');
+      sock.off('group_ice_candidate');
       sock.off('new_message');
       sock.off('typing_indicator');
       sock.off('stop_typing_indicator');
       disconnectSocket();
     };
   }, [user, navigate]);
+
+  // ── Group call duration timer ─────────────────────────────────────────
+  useEffect(() => {
+    if (groupCallActive) {
+      let secs = 0;
+      groupCallDurationRef.current = setInterval(() => {
+        secs++;
+        setGroupCallDuration(secs);
+      }, 1000);
+    }
+    return () => { clearInterval(groupCallDurationRef.current); };
+  }, [groupCallActive, setGroupCallDuration]);
 
   useEffect(() => {
     if (activeChat) loadActiveChatData();
@@ -144,7 +208,7 @@ function ChatPage() {
     toast.success('Logged out successfully');
   };
 
-  // ── Call actions ─────────────────────────────────────────────────────────
+  // ── 1-to-1 call actions ──────────────────────────────────────────────────
   const handleStartCall = useCallback(async (targetUser, type) => {
     await initiateCall(targetUser, type);
   }, [initiateCall]);
@@ -170,6 +234,54 @@ function ChatPage() {
     endCall(targetId, store.callId);
     setIncomingCallData(null);
   }, [endCall]);
+
+  // ── Group call actions ────────────────────────────────────────────────────
+  const handleStartGroupCall = useCallback(async (groupId, gName, callType = 'video') => {
+    try {
+      setGroupInfo({ groupId, groupName: gName });
+      setGroupCallType(callType);
+      const callId = await initiateGroupCall(groupId, gName, callType);
+      setGroupCallState('active');
+      setGroupCallId(callId);
+    } catch (err) {
+      toast.error('Could not start group call');
+    }
+  }, [initiateGroupCall, setGroupInfo, setGroupCallType, setGroupCallState, setGroupCallId]);
+
+  const handleAcceptGroupCall = useCallback(async () => {
+    if (!incomingGroupCallData) return;
+    const { call_id, call_type, group_id, group_name } = incomingGroupCallData;
+    setGroupCallState('active');
+    setIncomingGroupCallData(null);
+    try {
+      await joinGroupCall(call_id, call_type, []);
+    } catch {
+      toast.error('Could not join group call');
+      resetGroupCall();
+      cleanupGroupCall();
+    }
+  }, [incomingGroupCallData, joinGroupCall, setGroupCallState, setIncomingGroupCallData, resetGroupCall, cleanupGroupCall]);
+
+  const handleDeclineGroupCall = useCallback(() => {
+    const data = incomingGroupCallData;
+    if (!data) return;
+    if (socket) {
+      socket.emit('group_call_reject', {
+        initiator_id: data.initiator_id,
+        user_id: user.id,
+        user_name: user.full_name,
+        call_id: data.call_id,
+      });
+    }
+    setIncomingGroupCallData(null);
+    resetGroupCall();
+  }, [incomingGroupCallData, socket, user, setIncomingGroupCallData, resetGroupCall]);
+
+  const handleLeaveGroupCall = useCallback(() => {
+    leaveGroupCall(groupCallId);
+    resetGroupCall();
+    clearInterval(groupCallDurationRef.current);
+  }, [leaveGroupCall, groupCallId, resetGroupCall]);
 
   if (!user) return null;
 
@@ -197,6 +309,7 @@ function ChatPage() {
           onNewChat={() => setShowNewChat(true)}
           onProfileClick={() => setShowProfile(true)}
           onLogout={handleLogout}
+          onStartGroupCall={handleStartGroupCall}
         />
       </div>
 
@@ -215,6 +328,7 @@ function ChatPage() {
               onContactInfoClick={() => setShowContactInfo(true)}
               onBack={() => { setActiveChat(null); setActiveChatData(null); }}
               onStartCall={handleStartCall}
+              onStartGroupCall={handleStartGroupCall}
             />
           </>
         ) : (
@@ -253,7 +367,7 @@ function ChatPage() {
         />
       )}
 
-      {/* ── INCOMING CALL OVERLAY ── */}
+      {/* ── INCOMING 1-to-1 CALL ── */}
       <AnimatePresence>
         {incomingCallData && callState === 'ringing' && (
           <IncomingCall
@@ -265,7 +379,7 @@ function ChatPage() {
         )}
       </AnimatePresence>
 
-      {/* ── ACTIVE / OUTGOING CALL SCREEN ── */}
+      {/* ── ACTIVE 1-to-1 CALL SCREEN ── */}
       <AnimatePresence>
         {showCallScreen && (
           <CallScreen
@@ -276,7 +390,67 @@ function ChatPage() {
           />
         )}
       </AnimatePresence>
+
+      {/* ── INCOMING GROUP CALL ── */}
+      <AnimatePresence>
+        {groupCallState === 'incoming' && incomingGroupCallData && (
+          <IncomingGroupCall
+            data={incomingGroupCallData}
+            onAccept={handleAcceptGroupCall}
+            onDecline={handleDeclineGroupCall}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── ACTIVE GROUP CALL SCREEN ── */}
+      <AnimatePresence>
+        {(groupCallState === 'active' || groupCallActive) && (
+          <GroupCallScreen
+            localStream={groupLocalStream}
+            remoteStreams={remoteStreams}
+            participants={groupParticipants}
+            groupName={groupName}
+            callType={groupCallType}
+            isMuted={groupIsMuted}
+            isCameraOff={groupIsCameraOff}
+            callDuration={useGroupCallStore.getState().callDuration}
+            onToggleMute={groupToggleMute}
+            onToggleCamera={groupToggleCamera}
+            onLeave={handleLeaveGroupCall}
+          />
+        )}
+      </AnimatePresence>
     </div>
+  );
+}
+
+// ── Incoming Group Call Notification ─────────────────────────────────────────
+function IncomingGroupCall({ data, onAccept, onDecline }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -60 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -60 }}
+      className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 rounded-3xl shadow-2xl px-5 py-4 flex items-center gap-4 min-w-[320px] border border-white/10"
+    >
+      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-400 to-teal-500 flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+        {data.initiator_name?.[0]?.toUpperCase() || '?'}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-white font-semibold truncate">{data.group_name || 'Group Call'}</p>
+        <p className="text-white/50 text-sm">{data.initiator_name} · {data.call_type === 'video' ? 'Video' : 'Voice'} call</p>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={onDecline}
+          className="w-10 h-10 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center transition">
+          <FiPhoneOff size={18} className="text-white" />
+        </button>
+        <button onClick={onAccept}
+          className="w-10 h-10 bg-[#25D366] hover:bg-[#1fbd5a] rounded-full flex items-center justify-center transition">
+          {data.call_type === 'video' ? <FiVideo size={18} className="text-white" /> : <FiPhone size={18} className="text-white" />}
+        </button>
+      </div>
+    </motion.div>
   );
 }
 

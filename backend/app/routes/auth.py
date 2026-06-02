@@ -10,6 +10,8 @@ import os
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
+from app import limiter
+
 
 def _validate_phone(phone_number):
     import phonenumbers
@@ -78,6 +80,7 @@ def verify_code():
         return jsonify({'error': str(e)}), 500
 
 @auth_bp.route('/signup', methods=['POST'])
+@limiter.limit("5 per minute")
 def signup():
     """Create a new user account — no OTP required at signup.
     Accounts are confirmed automatically after 2 days or by admin."""
@@ -132,6 +135,7 @@ def signup():
         return jsonify({'error': str(e)}), 500
 
 @auth_bp.route('/login', methods=['POST'])
+@limiter.limit("10 per minute")
 def login():
     """Login user"""
     try:

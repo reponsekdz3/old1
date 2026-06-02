@@ -6,7 +6,7 @@ import {
   FiArrowLeft, FiSearch, FiX, FiMic, FiImage, FiFile, FiMapPin,
   FiUser, FiStar, FiShare2, FiEdit2, FiTrash2, FiCopy,
   FiCornerUpLeft, FiCheck, FiChevronDown, FiInfo,
-  FiCamera, FiDownload, FiRefreshCw, FiMessageSquare, FiLock, FiLink,
+  FiCamera, FiDownload, FiRefreshCw, FiMessageSquare, FiLock, FiLink, FiMusic,
 } from 'react-icons/fi';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, isToday, isYesterday, isSameDay } from 'date-fns';
@@ -15,6 +15,7 @@ import EmojiPicker from './EmojiPicker';
 import VoiceRecorder from './VoiceRecorder';
 import LocationShare from './LocationShare';
 import ForwardModal from './ForwardModal';
+import AttachmentPreviewModal from './AttachmentPreviewModal';
 
 const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^[\]`]+)/gi;
 const LINK_PREVIEW_CACHE = new Map();
@@ -325,10 +326,29 @@ const MessageBubble = memo(function MessageBubble({
           {message.media_type === 'document' && message.media_url && !isDeleted && (
             <a href={message.media_url} target="_blank" rel="noopener noreferrer"
               className={`flex items-center gap-2 rounded-lg px-3 py-2 mb-1 ${isOwn ? 'bg-[#b7e8a0]' : 'bg-gray-100'}`}>
-              <FiFile size={20} className="text-gray-600 flex-shrink-0" />
-              <span className="text-sm truncate flex-1 text-gray-700">Document</span>
-              <FiDownload size={14} className="text-gray-500" />
+              <div className="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
+                <FiFile size={18} className="text-orange-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="text-sm font-medium text-gray-800 block truncate">
+                  {message.media_url.split('/').pop().split('?')[0] || 'Document'}
+                </span>
+                <span className="text-[10px] text-gray-500">Tap to open</span>
+              </div>
+              <FiDownload size={14} className="text-gray-500 flex-shrink-0" />
             </a>
+          )}
+
+          {/* Media: audio */}
+          {message.media_type === 'audio' && message.media_url && !isDeleted && (
+            <div className={`flex items-center gap-2 rounded-lg px-3 py-2 mb-1 min-w-[200px] ${isOwn ? 'bg-[#b7e8a0]' : 'bg-gray-100'}`}>
+              <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                <FiMusic size={16} className="text-[#25D366]" />
+              </div>
+              <audio controls className="flex-1 h-8 min-w-0" style={{ maxWidth: '180px' }}>
+                <source src={message.media_url} />
+              </audio>
+            </div>
           )}
 
           {/* Media: voice */}
@@ -412,13 +432,16 @@ const MessageBubble = memo(function MessageBubble({
 function AttachMenu({ onAttach, onLocation, onContactSend, onClose }) {
   const fileRef = useRef(null);
   const imgRef = useRef(null);
+  const audioRef = useRef(null);
+  const camRef = useRef(null);
 
   const items = [
-    { icon: FiImage, label: 'Photo/Video', color: 'bg-purple-500', action: () => imgRef.current?.click() },
+    { icon: FiImage, label: 'Photo / Video', color: 'bg-purple-500', action: () => imgRef.current?.click() },
     { icon: FiFile, label: 'Document', color: 'bg-blue-500', action: () => fileRef.current?.click() },
+    { icon: FiMusic, label: 'Audio', color: 'bg-yellow-500', action: () => audioRef.current?.click() },
+    { icon: FiCamera, label: 'Camera', color: 'bg-orange-500', action: () => camRef.current?.click() },
     { icon: FiMapPin, label: 'Location', color: 'bg-red-500', action: () => { onLocation(); onClose(); } },
     { icon: FiUser, label: 'Contact', color: 'bg-green-600', action: () => { onContactSend(); onClose(); } },
-    { icon: FiCamera, label: 'Camera', color: 'bg-orange-500', action: () => { toast('Camera coming soon'); onClose(); } },
   ];
 
   return (
@@ -426,12 +449,16 @@ function AttachMenu({ onAttach, onLocation, onContactSend, onClose }) {
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 16 }}
-      className="absolute bottom-full left-0 mb-2 bg-white rounded-2xl shadow-2xl p-3 border border-gray-100 z-20 min-w-[200px]"
+      className="absolute bottom-full left-0 mb-2 bg-white rounded-2xl shadow-2xl p-3 border border-gray-100 z-20 min-w-[210px]"
     >
       <input ref={imgRef} type="file" accept="image/*,video/*" className="hidden"
-        onChange={e => { if (e.target.files?.[0]) onAttach(e.target.files[0], 'image'); onClose(); }} />
-      <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.zip,.txt" className="hidden"
-        onChange={e => { if (e.target.files?.[0]) onAttach(e.target.files[0], 'document'); onClose(); }} />
+        onChange={e => { const f = e.target.files?.[0]; if (f) { onAttach(f, f.type.startsWith('video/') ? 'video' : 'image'); onClose(); } }} />
+      <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.zip,.txt,.ppt,.pptx,.csv" className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) { onAttach(f, 'document'); onClose(); } }} />
+      <input ref={audioRef} type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac" className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) { onAttach(f, 'audio'); onClose(); } }} />
+      <input ref={camRef} type="file" accept="image/*" capture="environment" className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) { onAttach(f, 'image'); onClose(); } }} />
       {items.map(item => (
         <button key={item.label} onClick={item.action}
           className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 rounded-xl text-sm text-gray-700 font-medium">
@@ -481,6 +508,7 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [pendingAttachment, setPendingAttachment] = useState(null);
 
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
@@ -674,27 +702,36 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
   };
 
   // ── File upload ──────────────────────────────────────────────────────────
-  const handleAttach = async (file, type) => {
+  const handleAttach = (file, type) => {
     if (!file) return;
+    setPendingAttachment({ file, type });
+  };
+
+  const handleSendAttachment = async (caption) => {
+    if (!pendingAttachment) return;
+    const { file, type } = pendingAttachment;
     setUploadingFile(true);
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const endpoint = type === 'image' ? '/upload/image' : '/upload/document';
+      const endpointMap = { image: '/upload/image', video: '/upload/video', audio: '/upload/audio', document: '/upload/document' };
+      const endpoint = endpointMap[type] || '/upload/document';
       const { data: uploadData } = await api.post(endpoint, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
+      const mediaType = file.type.startsWith('video/') ? 'video' : type;
       const { data: msgData } = await api.post(`/messages/${activeChat}`, {
         media_url: uploadData.url,
-        media_type: file.type.startsWith('video') ? 'video' : type,
-        content: null,
+        media_type: mediaType,
+        content: caption || null,
         replied_to_id: replyTo?.id || null,
       });
       addMessage(msgData);
+      setPendingAttachment(null);
       if (socket) {
         socket.emit('message', {
           sender_id: user.id, receiver_id: activeChat,
-          content: `[${type}]`, message_id: msgData.id,
+          content: caption || `[${mediaType}]`, message_id: msgData.id,
           timestamp: msgData.created_at,
         });
       }
@@ -1110,6 +1147,16 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
           message={forwardMessage}
           onClose={() => setForwardMessage(null)}
           socket={socket}
+        />
+      )}
+
+      {/* ── Attachment preview before send ──────────────────────────────── */}
+      {pendingAttachment && (
+        <AttachmentPreviewModal
+          file={pendingAttachment.file}
+          uploading={uploadingFile}
+          onSend={handleSendAttachment}
+          onCancel={() => setPendingAttachment(null)}
         />
       )}
 

@@ -22,3 +22,4 @@ python-multipart>=0.0.18
 starlette>=0.40.0,<1.0
 phonenumbers
 pywebpush
+flask-limiter

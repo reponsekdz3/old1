@@ -1,0 +1,1 @@
+- [Bitese overhaul decisions](bitese-overhaul.md) — comprehensive overhaul: login fixed no-scroll, group WebRTC, attachment preview, security hardening done

@@ -48,14 +48,13 @@ export const useStatusStore = create((set) => ({
     set((state) => ({ statuses: [...state.statuses, status] })),
 }));
 
-// ── Call State ────────────────────────────────────────────────────────────────
+// ── 1-to-1 Call State ─────────────────────────────────────────────────────────
 export const useCallStore = create((set) => ({
-  // 'idle' | 'ringing' | 'outgoing' | 'active' | 'ended'
   callState: 'idle',
-  callType: null,        // 'audio' | 'video'
+  callType: null,
   callId: null,
-  caller: null,          // { id, name, avatar }
-  callee: null,          // { id, name, avatar }
+  caller: null,
+  callee: null,
   localStream: null,
   remoteStream: null,
   isMuted: false,
@@ -90,5 +89,42 @@ export const useCallStore = create((set) => ({
     isSpeakerOn: true,
     callDuration: 0,
     callError: null,
+  }),
+}));
+
+// ── Group Call State ──────────────────────────────────────────────────────────
+export const useGroupCallStore = create((set) => ({
+  // 'idle' | 'incoming' | 'active'
+  groupCallState: 'idle',
+  groupCallId: null,
+  groupCallType: null,
+  groupId: null,
+  groupName: null,
+  initiatorId: null,
+  initiatorName: null,
+  initiatorAvatar: null,
+  callDuration: 0,
+  incomingGroupCallData: null,
+
+  setGroupCallState: (groupCallState) => set({ groupCallState }),
+  setGroupCallId: (groupCallId) => set({ groupCallId }),
+  setGroupCallType: (groupCallType) => set({ groupCallType }),
+  setGroupInfo: ({ groupId, groupName }) => set({ groupId, groupName }),
+  setInitiator: ({ initiatorId, initiatorName, initiatorAvatar }) =>
+    set({ initiatorId, initiatorName, initiatorAvatar }),
+  setCallDuration: (callDuration) => set({ callDuration }),
+  setIncomingGroupCallData: (data) => set({ incomingGroupCallData: data }),
+
+  resetGroupCall: () => set({
+    groupCallState: 'idle',
+    groupCallId: null,
+    groupCallType: null,
+    groupId: null,
+    groupName: null,
+    initiatorId: null,
+    initiatorName: null,
+    initiatorAvatar: null,
+    callDuration: 0,
+    incomingGroupCallData: null,
   }),
 }));

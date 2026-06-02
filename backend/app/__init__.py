@@ -1,38 +1,41 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_socketio import SocketIO, emit, join_room, leave_room
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from config import config
 from app.models.models import db
 import os
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
+
+limiter = Limiter(key_func=get_remote_address, default_limits=["200 per minute"])
+
 
 def create_app(config_name='development'):
     """Application factory"""
     app = Flask(__name__)
-    
-    # Load configuration
     app.config.from_object(config[config_name])
-    
-    # Initialize extensions
+
     db.init_app(app)
-    CORS(app, origins=app.config['SOCKETIO_CORS_ALLOWED_ORIGINS'])
+    CORS(app, origins=app.config['SOCKETIO_CORS_ALLOWED_ORIGINS'], supports_credentials=True)
     JWTManager(app)
-    
-    # Initialize SocketIO
+    limiter.init_app(app)
+
     socketio = SocketIO(
         app,
         cors_allowed_origins=app.config['SOCKETIO_CORS_ALLOWED_ORIGINS'],
-        async_mode='threading'
+        async_mode='threading',
+        ping_timeout=60,
+        ping_interval=25,
+        max_http_buffer_size=50 * 1024 * 1024,
     )
-    
-    # Store active connections
+
     app.active_connections = {}
-    
-    # Register blueprints
+
+    # ── Blueprints ─────────────────────────────────────────────────────────
     from app.routes.auth import auth_bp
     from app.routes.messages import messages_bp
     from app.routes.contacts import contacts_bp, status_bp
@@ -68,326 +71,322 @@ def create_app(config_name='development'):
     app.register_blueprint(admin_bp)
     app.register_blueprint(push_bp)
 
-    # Security headers on every response
+    # ── Security headers ──────────────────────────────────────────────────
     from app.middleware.security import add_security_headers
     app.after_request(add_security_headers)
 
-    # Health check endpoint
+    # ── Serve uploaded files ──────────────────────────────────────────────
+    UPLOAD_BASE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads')
+
+    @app.route('/uploads/<path:filename>')
+    def serve_upload(filename):
+        return send_from_directory(UPLOAD_BASE, filename)
+
+    # ── Health check ──────────────────────────────────────────────────────
     @app.route('/api/health', methods=['GET'])
     def health():
         return jsonify({'status': 'healthy', 'app': 'Bitese'}), 200
-    
-    # Error handlers
+
     @app.errorhandler(404)
     def not_found(error):
         return jsonify({'error': 'Not found'}), 404
-    
+
+    @app.errorhandler(429)
+    def rate_limit_exceeded(error):
+        return jsonify({'error': 'Too many requests. Please slow down.'}), 429
+
     @app.errorhandler(500)
     def server_error(error):
         return jsonify({'error': 'Internal server error'}), 500
-    
-    # WebSocket events
+
+    # ── WebSocket events ──────────────────────────────────────────────────
     @socketio.on('connect')
     def handle_connect():
-        """Handle user connection"""
-        print(f'Client connected: {id}')
         emit('connection_response', {'message': 'Connected to server'})
-    
+
     @socketio.on('disconnect')
     def handle_disconnect():
-        """Handle user disconnection"""
-        print(f'Client disconnected')
-        # Remove from active connections
         for user_id, connections in app.active_connections.copy().items():
             if id in connections:
                 connections.remove(id)
                 if not connections:
                     del app.active_connections[user_id]
-    
+
     @socketio.on('user_connect')
     def handle_user_connect(data):
-        """Handle user authentication and connect to their room"""
         user_id = data.get('user_id')
         if not user_id:
             emit('error', {'message': 'User ID is required'})
             return
-        
-        # Add to active connections
         if user_id not in app.active_connections:
             app.active_connections[user_id] = []
         app.active_connections[user_id].append(id)
-        
-        # Join user's room
         join_room(f"user_{user_id}")
         emit('user_connected', {'user_id': user_id, 'message': 'User connected'})
-        print(f'User {user_id} connected')
-    
+
     @socketio.on('typing')
     def handle_typing(data):
-        """Broadcast typing indicator"""
         user_id = data.get('user_id')
         receiver_id = data.get('receiver_id')
-        
         if receiver_id:
-            emit('typing_indicator', {
-                'user_id': user_id
-            }, room=f"user_{receiver_id}")
-    
+            emit('typing_indicator', {'user_id': user_id}, room=f"user_{receiver_id}")
+
     @socketio.on('stop_typing')
     def handle_stop_typing(data):
-        """Broadcast stop typing"""
         user_id = data.get('user_id')
         receiver_id = data.get('receiver_id')
-        
         if receiver_id:
-            emit('stop_typing_indicator', {
-                'user_id': user_id
-            }, room=f"user_{receiver_id}")
-    
+            emit('stop_typing_indicator', {'user_id': user_id}, room=f"user_{receiver_id}")
+
     @socketio.on('message')
     def handle_message(data):
-        """Handle incoming message"""
         sender_id = data.get('sender_id')
         receiver_id = data.get('receiver_id')
         content = data.get('content')
         message_id = data.get('message_id')
-        
-        if not all([sender_id, receiver_id, content, message_id]):
+        if not all([sender_id, receiver_id, message_id]):
             emit('error', {'message': 'Invalid message data'})
             return
-        
-        # Broadcast message to receiver
         emit('new_message', {
             'message_id': message_id,
             'sender_id': sender_id,
             'receiver_id': receiver_id,
             'content': content,
-            'timestamp': data.get('timestamp')
+            'timestamp': data.get('timestamp'),
         }, room=f"user_{receiver_id}")
-        
-        # Acknowledge to sender
         emit('message_sent', {'message_id': message_id})
-    
+
     @socketio.on('message_delivered')
     def handle_message_delivered(data):
-        """Handle message delivered confirmation"""
         message_id = data.get('message_id')
         sender_id = data.get('sender_id')
-        
-        emit('delivery_confirmation', {
-            'message_id': message_id
-        }, room=f"user_{sender_id}")
-    
+        emit('delivery_confirmation', {'message_id': message_id}, room=f"user_{sender_id}")
+
     @socketio.on('message_read')
     def handle_message_read(data):
-        """Handle message read confirmation"""
         message_id = data.get('message_id')
         sender_id = data.get('sender_id')
-        
-        emit('read_confirmation', {
-            'message_id': message_id
-        }, room=f"user_{sender_id}")
-    
+        emit('read_confirmation', {'message_id': message_id}, room=f"user_{sender_id}")
+
     @socketio.on('reaction')
     def handle_reaction(data):
-        """Handle message reaction"""
         message_id = data.get('message_id')
         user_id = data.get('user_id')
         emoji = data.get('emoji')
         receiver_id = data.get('receiver_id')
-        
         emit('reaction_added', {
             'message_id': message_id,
             'user_id': user_id,
-            'emoji': emoji
+            'emoji': emoji,
         }, room=f"user_{receiver_id}")
-    
+
     @socketio.on('status_update')
     def handle_status_update(data):
-        """Handle user status update"""
         user_id = data.get('user_id')
         status = data.get('status')
-        
-        # Broadcast to all connected users
-        emit('user_status_changed', {
-            'user_id': user_id,
-            'status': status
-        }, broadcast=True)
-    
+        emit('user_status_changed', {'user_id': user_id, 'status': status}, broadcast=True)
+
+    # ── 1-to-1 WebRTC Call events ─────────────────────────────────────────
     @socketio.on('call_offer')
     def handle_call_offer(data):
-        """Handle voice/video call offer — relay full caller metadata"""
         receiver_id = data.get('receiver_id')
-        caller_id = data.get('caller_id')
-        offer = data.get('offer')
         emit('incoming_call', {
-            'caller_id': caller_id,
+            'caller_id': data.get('caller_id'),
             'caller_name': data.get('caller_name', 'Unknown'),
             'caller_avatar': data.get('caller_avatar'),
             'call_type': data.get('call_type', 'video'),
             'call_id': data.get('call_id'),
-            'offer': offer,
+            'offer': data.get('offer'),
         }, room=f"user_{receiver_id}")
-    
+
     @socketio.on('call_answer')
     def handle_call_answer(data):
-        """Handle call answer — relay SDP answer back to caller"""
         caller_id = data.get('caller_id')
-        answer = data.get('answer')
         emit('call_answered', {
-            'answer': answer,
+            'answer': data.get('answer'),
             'callee_id': data.get('callee_id'),
             'call_id': data.get('call_id'),
         }, room=f"user_{caller_id}")
-    
+
     @socketio.on('ice_candidate')
     def handle_ice_candidate(data):
-        """Handle ICE candidate for WebRTC"""
         receiver_id = data.get('receiver_id')
-        candidate = data.get('candidate')
-        sender_id = data.get('sender_id')
-        
         emit('ice_candidate', {
-            'candidate': candidate,
-            'sender_id': sender_id
+            'candidate': data.get('candidate'),
+            'sender_id': data.get('sender_id'),
         }, room=f"user_{receiver_id}")
-    
-    @socketio.on('join_group')
-    def handle_join_group(data):
-        """Join a group room"""
-        group_id = data.get('group_id')
-        user_id = data.get('user_id')
-        
-        if group_id:
-            join_room(f"group_{group_id}")
-            emit('user_joined_group', {
-                'user_id': user_id,
-                'group_id': group_id
-            }, room=f"group_{group_id}")
-    
-    @socketio.on('leave_group')
-    def handle_leave_group(data):
-        """Leave a group room"""
-        group_id = data.get('group_id')
-        user_id = data.get('user_id')
-        
-        if group_id:
-            leave_room(f"group_{group_id}")
-            emit('user_left_group', {
-                'user_id': user_id,
-                'group_id': group_id
-            }, room=f"group_{group_id}")
-    
-    @socketio.on('group_message')
-    def handle_group_message(data):
-        """Handle group message"""
-        group_id = data.get('group_id')
-        sender_id = data.get('sender_id')
-        content = data.get('content')
-        message_id = data.get('message_id')
-        
-        emit('new_group_message', {
-            'message_id': message_id,
-            'group_id': group_id,
-            'sender_id': sender_id,
-            'content': content,
-            'timestamp': data.get('timestamp')
-        }, room=f"group_{group_id}")
-    
-    @socketio.on('group_typing')
-    def handle_group_typing(data):
-        """Handle typing in group"""
-        group_id = data.get('group_id')
-        user_id = data.get('user_id')
-        
-        emit('group_typing_indicator', {
-            'user_id': user_id
-        }, room=f"group_{group_id}")
-    
+
     @socketio.on('call_reject')
     def handle_call_reject(data):
-        """Handle call rejection"""
         caller_id = data.get('caller_id')
-        call_id = data.get('call_id')
         emit('call_rejected', {
-            'call_id': call_id,
+            'call_id': data.get('call_id'),
             'reason': data.get('reason', 'declined'),
         }, room=f"user_{caller_id}")
-    
+
     @socketio.on('call_end')
     def handle_call_end(data):
-        """Handle call end"""
         receiver_id = data.get('receiver_id')
+        emit('call_ended', {'call_id': data.get('call_id')}, room=f"user_{receiver_id}")
+
+    # ── Group WebRTC Call events ──────────────────────────────────────────
+    @socketio.on('group_call_start')
+    def handle_group_call_start(data):
+        """Initiator starts a group call — notify all members in the room"""
+        group_id = data.get('group_id')
+        initiator_id = data.get('initiator_id')
+        call_type = data.get('call_type', 'video')
         call_id = data.get('call_id')
-        
-        emit('call_ended', {
-            'call_id': call_id
-        }, room=f"user_{receiver_id}")
-    
+        initiator_name = data.get('initiator_name', 'Unknown')
+        initiator_avatar = data.get('initiator_avatar')
+        join_room(f"group_call_{call_id}")
+        emit('group_incoming_call', {
+            'group_id': group_id,
+            'initiator_id': initiator_id,
+            'initiator_name': initiator_name,
+            'initiator_avatar': initiator_avatar,
+            'call_type': call_type,
+            'call_id': call_id,
+        }, room=f"group_{group_id}", include_self=False)
+
+    @socketio.on('group_call_join')
+    def handle_group_call_join(data):
+        """A user joins the group call room"""
+        call_id = data.get('call_id')
+        user_id = data.get('user_id')
+        user_name = data.get('user_name', 'Unknown')
+        join_room(f"group_call_{call_id}")
+        emit('group_call_user_joined', {
+            'user_id': user_id,
+            'user_name': user_name,
+            'call_id': call_id,
+        }, room=f"group_call_{call_id}", include_self=False)
+
+    @socketio.on('group_call_offer')
+    def handle_group_call_offer(data):
+        """Relay WebRTC offer to a specific user in a group call"""
+        target_user_id = data.get('target_user_id')
+        emit('group_call_offer', {
+            'from_user_id': data.get('from_user_id'),
+            'from_user_name': data.get('from_user_name'),
+            'call_id': data.get('call_id'),
+            'call_type': data.get('call_type', 'video'),
+            'offer': data.get('offer'),
+        }, room=f"user_{target_user_id}")
+
+    @socketio.on('group_call_answer')
+    def handle_group_call_answer(data):
+        """Relay WebRTC answer to a specific user in a group call"""
+        target_user_id = data.get('target_user_id')
+        emit('group_call_answer', {
+            'from_user_id': data.get('from_user_id'),
+            'call_id': data.get('call_id'),
+            'answer': data.get('answer'),
+        }, room=f"user_{target_user_id}")
+
+    @socketio.on('group_ice_candidate')
+    def handle_group_ice_candidate(data):
+        """Relay ICE candidate to a specific user in a group call"""
+        target_user_id = data.get('target_user_id')
+        emit('group_ice_candidate', {
+            'from_user_id': data.get('from_user_id'),
+            'call_id': data.get('call_id'),
+            'candidate': data.get('candidate'),
+        }, room=f"user_{target_user_id}")
+
+    @socketio.on('group_call_leave')
+    def handle_group_call_leave(data):
+        """A user leaves the group call"""
+        call_id = data.get('call_id')
+        user_id = data.get('user_id')
+        leave_room(f"group_call_{call_id}")
+        emit('group_call_user_left', {
+            'user_id': user_id,
+            'call_id': call_id,
+        }, room=f"group_call_{call_id}")
+
+    @socketio.on('group_call_reject')
+    def handle_group_call_reject(data):
+        """User rejects a group call — notify initiator"""
+        initiator_id = data.get('initiator_id')
+        emit('group_call_rejected', {
+            'user_id': data.get('user_id'),
+            'user_name': data.get('user_name'),
+            'call_id': data.get('call_id'),
+        }, room=f"user_{initiator_id}")
+
+    # ── Group / Room messaging events ─────────────────────────────────────
+    @socketio.on('join_group')
+    def handle_join_group(data):
+        group_id = data.get('group_id')
+        user_id = data.get('user_id')
+        if group_id:
+            join_room(f"group_{group_id}")
+            emit('user_joined_group', {'user_id': user_id, 'group_id': group_id}, room=f"group_{group_id}")
+
+    @socketio.on('leave_group')
+    def handle_leave_group(data):
+        group_id = data.get('group_id')
+        user_id = data.get('user_id')
+        if group_id:
+            leave_room(f"group_{group_id}")
+            emit('user_left_group', {'user_id': user_id, 'group_id': group_id}, room=f"group_{group_id}")
+
+    @socketio.on('group_message')
+    def handle_group_message(data):
+        group_id = data.get('group_id')
+        emit('new_group_message', {
+            'message_id': data.get('message_id'),
+            'group_id': group_id,
+            'sender_id': data.get('sender_id'),
+            'content': data.get('content'),
+            'timestamp': data.get('timestamp'),
+        }, room=f"group_{group_id}")
+
+    @socketio.on('group_typing')
+    def handle_group_typing(data):
+        group_id = data.get('group_id')
+        emit('group_typing_indicator', {'user_id': data.get('user_id')}, room=f"group_{group_id}")
+
     @socketio.on('location_share')
     def handle_location_share(data):
-        """Handle live location sharing"""
         receiver_id = data.get('receiver_id')
-        sender_id = data.get('sender_id')
-        latitude = data.get('latitude')
-        longitude = data.get('longitude')
-        
         emit('location_update', {
-            'sender_id': sender_id,
-            'latitude': latitude,
-            'longitude': longitude,
-            'timestamp': data.get('timestamp')
+            'sender_id': data.get('sender_id'),
+            'latitude': data.get('latitude'),
+            'longitude': data.get('longitude'),
+            'timestamp': data.get('timestamp'),
         }, room=f"user_{receiver_id}")
-    
+
     @socketio.on('message_deleted')
     def handle_message_deleted(data):
-        """Handle message deletion notification"""
-        message_id = data.get('message_id')
         receiver_id = data.get('receiver_id')
-        
-        emit('message_deleted_notification', {
-            'message_id': message_id
-        }, room=f"user_{receiver_id}")
-    
+        emit('message_deleted_notification', {'message_id': data.get('message_id')}, room=f"user_{receiver_id}")
+
     @socketio.on('message_edited')
     def handle_message_edited(data):
-        """Handle message edit notification"""
-        message_id = data.get('message_id')
         receiver_id = data.get('receiver_id')
-        new_content = data.get('new_content')
-        
         emit('message_edited_notification', {
-            'message_id': message_id,
-            'new_content': new_content
+            'message_id': data.get('message_id'),
+            'new_content': data.get('new_content'),
         }, room=f"user_{receiver_id}")
-    
+
     @socketio.on('poll_created')
     def handle_poll_created(data):
-        """Handle poll creation in group"""
         group_id = data.get('group_id')
-        poll_id = data.get('poll_id')
-        
-        emit('new_poll', {
-            'poll_id': poll_id,
-            'group_id': group_id
-        }, room=f"group_{group_id}")
-    
+        emit('new_poll', {'poll_id': data.get('poll_id'), 'group_id': group_id}, room=f"group_{group_id}")
+
     @socketio.on('poll_voted')
     def handle_poll_voted(data):
-        """Handle poll vote"""
         group_id = data.get('group_id')
-        poll_id = data.get('poll_id')
-        user_id = data.get('user_id')
-        
         emit('poll_vote_update', {
-            'poll_id': poll_id,
-            'user_id': user_id
+            'poll_id': data.get('poll_id'),
+            'user_id': data.get('user_id'),
         }, room=f"group_{group_id}")
-    
-    # Create database tables + safe migrations
+
+    # ── Database setup ────────────────────────────────────────────────────
     with app.app_context():
         db.create_all()
-        # Safe column additions for SQLite (ignore if column already exists)
         from sqlalchemy import text
         migrations = [
             'ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0',
@@ -403,9 +402,5 @@ def create_app(config_name='development'):
                 db.session.commit()
             except Exception:
                 db.session.rollback()
-    
-    return app, socketio
 
-if __name__ == '__main__':
-    app, socketio = create_app()
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    return app, socketio
