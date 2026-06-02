@@ -89,12 +89,31 @@ def signup():
         phone_number = data.get('phone_number', '').strip()
         full_name = data.get('full_name', '').strip()
         password = data.get('password', '')
+        email = data.get('email', '').strip() or None
+        age = data.get('age')
+        country = data.get('country', '').strip() or None
+        city = data.get('city', '').strip() or None
 
         if not all([phone_number, full_name, password]):
             return jsonify({'error': 'Phone number, name and password are required'}), 400
 
         if len(password) < 8:
             return jsonify({'error': 'Password must be at least 8 characters'}), 400
+
+        if age is not None:
+            try:
+                age = int(age)
+                if age < 13 or age > 120:
+                    return jsonify({'error': 'Age must be between 13 and 120'}), 400
+            except (TypeError, ValueError):
+                return jsonify({'error': 'Age must be a valid number'}), 400
+
+        if email:
+            import re
+            if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+                return jsonify({'error': 'Please enter a valid email address'}), 400
+            if User.query.filter_by(email=email).first():
+                return jsonify({'error': 'An account with this email already exists'}), 409
 
         # Check if user already exists
         if User.query.filter_by(phone_number=phone_number).first():
@@ -104,6 +123,10 @@ def signup():
         user = User(
             phone_number=phone_number,
             full_name=full_name,
+            email=email,
+            age=age,
+            country=country,
+            city=city,
             is_verified=True,
             status='available',
         )

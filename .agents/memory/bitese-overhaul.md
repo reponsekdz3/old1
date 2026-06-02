@@ -3,6 +3,13 @@ name: Bitese overhaul decisions
 description: Key architecture and design decisions from the Bitese comprehensive overhaul
 ---
 
+## DB: PostgreSQL, not SQLite
+The backend uses PostgreSQL via psycopg2. Do NOT assume SQLite. `ALTER TABLE` migrations use PostgreSQL syntax (e.g. `ALTER COLUMN ... TYPE TEXT`). The migrations list in `backend/app/__init__.py` runs on every startup and silently swallows duplicate-column errors.
+
+**Why:** Early assumption of SQLite caused missed column-type bugs. `password_hash` and `qr_code_url` overflow varchar(255) — both must be `db.Text`.
+
+**How to apply:** Any new model column must use `db.Text` for long strings (hashes, base64 blobs, URLs). Add a matching `ALTER TABLE` migration for existing tables.
+
 ## Status image/video upload
 - StatusTab has three compose modes: Text (colour bg + text), Photo (gallery/camera), Video (file picker)
 - StatusComposer uses hidden `<input type="file">` refs: one for gallery, one with `capture="environment"` for camera
@@ -15,9 +22,20 @@ description: Key architecture and design decisions from the Bitese comprehensive
 - Added `/api/status/create` alias route for forwards compat (frontend now uses `/api/status`)
 
 ## Login page
-- Use `h-screen overflow-hidden` on outer container; right panel uses `overflow-hidden`
-- Reduced padding (`py-6`, `px-10`) ensures form fits without scrolling at any viewport
-- Left panel is the animated WhatsApp-like preview (pure decorative, no real data needed)
+- Left panel is an animated Bitese app mockup: contacts list + 8 animated chat bubbles (text, voice, image, link, location types), cycling active contact every 3.5s
+- Right panel: clean login form with inline field-level validation errors, show/hide password, push registration after success
+- Use `h-screen overflow-hidden` on outer container
+
+## Signup page
+- 3-step wizard with AnimatePresence transitions: Step 1 (phone, name, email), Step 2 (age, country dropdown with search, city — all optional), Step 3 (password with 5-level strength meter + account summary)
+- Country dropdown: searchable from COUNTRIES array, click-to-select, clear button
+- Account summary box on Step 3 shows all collected data before commit
+
+## Push notifications
+Fully wired: `backend/app/routes/push.py` exposes `/api/push/subscribe`, `/api/push/unsubscribe`, `/api/push/vapid-public-key`. Push fires on every message send in `messages.py`. Frontend service at `frontend/src/services/pushNotifications.js` registers SW, requests permission, and subscribes after login.
+
+## EmojiPicker
+The custom `EmojiPicker.js` has 10 categories × ~60 emojis each, with search, recent history (localStorage `bitese_recent_emojis`), and per-category icon tabs. ChatWindow wraps it in an `absolute` positioned motion.div — EmojiPicker provides inner content only (no positioning).
 
 ## Backend upload serving
 - Uploaded files are served via `@app.route('/uploads/<path:filename>')` → `send_from_directory` from `backend/uploads/`

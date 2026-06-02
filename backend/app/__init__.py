@@ -395,6 +395,12 @@ def create_app(config_name='development'):
             'ALTER TABLE messages ADD COLUMN is_deleted_receiver BOOLEAN DEFAULT 0',
             'ALTER TABLE users ADD COLUMN account_confirmed_at TIMESTAMP NULL',
             "CREATE TABLE IF NOT EXISTS push_subscriptions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, endpoint TEXT NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL, active INTEGER DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+            'ALTER TABLE users ADD COLUMN age INTEGER NULL',
+            'ALTER TABLE users ADD COLUMN country VARCHAR(100) NULL',
+            'ALTER TABLE users ADD COLUMN city VARCHAR(100) NULL',
+            'ALTER TABLE users ALTER COLUMN password_hash TYPE TEXT',
+            'ALTER TABLE users ALTER COLUMN avatar_url TYPE TEXT',
+            'ALTER TABLE users ALTER COLUMN qr_code_url TYPE TEXT',
         ]
         for sql in migrations:
             try:

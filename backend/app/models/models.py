@@ -180,14 +180,17 @@ class User(db.Model):
     phone_number = db.Column(db.String(20), unique=True, nullable=False)
     full_name = db.Column(db.String(255), nullable=False)
     email = db.Column(db.String(255), unique=True, nullable=True)
-    password_hash = db.Column(db.String(255), nullable=False)
-    avatar_url = db.Column(db.String(255), nullable=True)
+    age = db.Column(db.Integer, nullable=True)
+    country = db.Column(db.String(100), nullable=True)
+    city = db.Column(db.String(100), nullable=True)
+    password_hash = db.Column(db.Text, nullable=False)
+    avatar_url = db.Column(db.Text, nullable=True)
     bio = db.Column(db.String(500), nullable=True)
     status = db.Column(db.String(50), default='available')  # available, away, offline
     is_verified = db.Column(db.Boolean, default=False)
     verification_code = db.Column(db.String(6), nullable=True)
     verification_attempts = db.Column(db.Integer, default=0)
-    qr_code_url = db.Column(db.String(255), nullable=True)
+    qr_code_url = db.Column(db.Text, nullable=True)
     last_seen = db.Column(db.DateTime, default=datetime.utcnow)
     is_admin = db.Column(db.Boolean, default=False)
     is_banned = db.Column(db.Boolean, default=False)
@@ -207,6 +210,9 @@ class User(db.Model):
             'phone_number': self.phone_number,
             'full_name': self.full_name,
             'email': self.email,
+            'age': self.age,
+            'country': self.country,
+            'city': self.city,
             'avatar_url': self.avatar_url,
             'bio': self.bio,
             'status': self.status,
