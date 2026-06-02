@@ -3,6 +3,17 @@ name: Bitese overhaul decisions
 description: Key architecture and design decisions from the Bitese comprehensive overhaul
 ---
 
+## Status image/video upload
+- StatusTab has three compose modes: Text (colour bg + text), Photo (gallery/camera), Video (file picker)
+- StatusComposer uses hidden `<input type="file">` refs: one for gallery, one with `capture="environment"` for camera
+- Upload flow: POST to `/upload/image` or `/upload/video` first → get `url` back → POST to `/status` with `media_url`, `media_type`, `background_color`, `content` (caption for media)
+- StatusViewer detects image/video from `media_type` field OR by matching URL extensions
+- StatusViewer: tap left half = go back, tap right half = advance; hold = pause timer
+- Own statuses show delete button + viewers count row at bottom
+- Backend status model got two new columns (`media_type`, `background_color`) added via runtime ALTER TABLE migration (June 2026)
+- Legacy `__bg:#XXXXXX__text` prefix still parsed for backwards compat in both create and get_all_statuses routes
+- Added `/api/status/create` alias route for forwards compat (frontend now uses `/api/status`)
+
 ## Login page
 - Use `h-screen overflow-hidden` on outer container; right panel uses `overflow-hidden`
 - Reduced padding (`py-6`, `px-10`) ensures form fits without scrolling at any viewport

@@ -117,8 +117,10 @@ class Status(db.Model):
     
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
-    content = db.Column(db.Text, nullable=False)
-    media_url = db.Column(db.String(255), nullable=True)
+    content = db.Column(db.Text, nullable=True)
+    media_url = db.Column(db.String(512), nullable=True)
+    media_type = db.Column(db.String(20), nullable=True, default='text')  # text | image | video
+    background_color = db.Column(db.String(20), nullable=True, default='#008069')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     expires_at = db.Column(db.DateTime, nullable=False)
     
@@ -131,8 +133,10 @@ class Status(db.Model):
             'user_id': self.user_id,
             'user_name': self.user.full_name,
             'user_avatar': self.user.avatar_url,
-            'content': self.content,
+            'content': self.content or '',
             'media_url': self.media_url,
+            'media_type': self.media_type or 'text',
+            'background_color': self.background_color or '#008069',
             'created_at': self.created_at.isoformat(),
             'expires_at': self.expires_at.isoformat(),
             'viewers_count': len(self.viewers)

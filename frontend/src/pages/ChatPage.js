@@ -250,7 +250,7 @@ function ChatPage() {
 
   const handleAcceptGroupCall = useCallback(async () => {
     if (!incomingGroupCallData) return;
-    const { call_id, call_type, group_id, group_name } = incomingGroupCallData;
+    const { call_id, call_type } = incomingGroupCallData;
     setGroupCallState('active');
     setIncomingGroupCallData(null);
     try {
