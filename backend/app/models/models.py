@@ -230,7 +230,6 @@ class User(db.Model):
             'badge_verified': self.badge_verified,
             'verification_tier': self.verification_tier,
             'verified_at': self.verified_at.isoformat() if self.verified_at else None,
-            'verification_payment_id': self.verification_payment_id,
             'created_at': self.created_at.isoformat()
         }
 
