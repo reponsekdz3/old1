@@ -127,8 +127,10 @@ def create_app(config_name='development'):
 
     from app.routes.e2ee import e2ee_bp
     from app.routes.security_audit import security_audit_bp
+    from app.routes.contacts_sync import contacts_sync_bp
     app.register_blueprint(e2ee_bp)
     app.register_blueprint(security_audit_bp)
+    app.register_blueprint(contacts_sync_bp)
     
     # ── Enterprise Blueprints ──────────────────────────────────────────────
     try:

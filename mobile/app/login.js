@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
@@ -12,6 +12,8 @@ import PhoneInput from '../components/PhoneInput';
 import { useAuthStore } from '../services/store';
 import { TokenStorage } from '../services/storage';
 import api from '../services/api';
+import e2eeManager from '../services/e2ee';
+import { syncPhoneContacts } from '../services/phoneContacts';
 import { COLORS } from '../config';
 
 export default function LoginPage() {
@@ -46,6 +48,17 @@ export default function LoginPage() {
       });
       await TokenStorage.setTokens(data.access_token, data.refresh_token);
       setUser(data.user);
+      
+      // Initialize E2EE in background
+      e2eeManager.initialize(data.user.id).catch(err => 
+        console.warn('[Login] E2EE init failed:', err)
+      );
+      
+      // Sync contacts in background
+      syncPhoneContacts({ force: true }).catch(err => 
+        console.warn('[Login] Contact sync failed:', err)
+      );
+      
       router.replace('/(tabs)');
     } catch (err) {
       const msg = err.response?.data?.error || 'Login failed. Please try again.';
