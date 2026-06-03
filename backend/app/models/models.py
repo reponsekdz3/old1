@@ -541,6 +541,7 @@ class Payment(db.Model):
     status = db.Column(db.String(20), default='pending')
     provider_payment_id = db.Column(db.String(255), nullable=True)
     tier = db.Column(db.String(20), nullable=False)
+    metadata_json = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship('User', backref='payments')

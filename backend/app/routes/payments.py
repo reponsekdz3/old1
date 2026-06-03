@@ -31,7 +31,7 @@ def create_stripe_session():
         stripe_lib.api_key = current_app.config.get('STRIPE_SECRET_KEY', '')
 
         if not stripe_lib.api_key:
-            return jsonify({'error': 'Stripe is not configured on this server'}), 503
+            return jsonify({'error': 'Stripe is not configured on this server. Please contact support.'}), 503
 
         user_id = get_jwt_identity()
         data = request.json or {}
@@ -67,7 +67,7 @@ def create_stripe_session():
                     'currency': 'usd',
                     'product_data': {
                         'name': f'VipChat {t["label"]} Badge',
-                        'description': f'One-time fee to receive a verified ✅ badge on your VipChat profile',
+                        'description': 'One-time fee to receive a verified ✅ badge on your VipChat profile',
                     },
                     'unit_amount': t['amount_cents'],
                 },
@@ -85,6 +85,7 @@ def create_stripe_session():
         )
 
         payment.provider_payment_id = session.id
+        payment.metadata_json = json.dumps({'session_id': session.id})
         db.session.commit()
 
         return jsonify({
@@ -100,21 +101,27 @@ def create_stripe_session():
 
 @payments_bp.route('/stripe/webhook', methods=['POST'])
 def stripe_webhook():
+    """
+    Stripe sends a Stripe-Signature header with every webhook.
+    We ALWAYS verify it — no unsigned fallback. Fail closed.
+    """
     try:
         import stripe as stripe_lib
         stripe_lib.api_key = current_app.config.get('STRIPE_SECRET_KEY', '')
         webhook_secret = current_app.config.get('STRIPE_WEBHOOK_SECRET', '')
 
+        if not webhook_secret:
+            return jsonify({'error': 'Webhook secret not configured'}), 503
+
         payload = request.get_data()
         sig_header = request.headers.get('Stripe-Signature', '')
 
-        if webhook_secret:
-            try:
-                event = stripe_lib.Webhook.construct_event(payload, sig_header, webhook_secret)
-            except stripe_lib.error.SignatureVerificationError:
-                return jsonify({'error': 'Invalid signature'}), 400
-        else:
-            event = json.loads(payload)
+        try:
+            event = stripe_lib.Webhook.construct_event(payload, sig_header, webhook_secret)
+        except stripe_lib.error.SignatureVerificationError:
+            return jsonify({'error': 'Invalid webhook signature'}), 400
+        except Exception as parse_err:
+            return jsonify({'error': f'Webhook parse error: {parse_err}'}), 400
 
         if event.get('type') == 'checkout.session.completed':
             session_obj = event['data']['object']
@@ -125,10 +132,19 @@ def stripe_webhook():
 
             if user_id and session_obj.get('payment_status') == 'paid':
                 payment = Payment.query.get(payment_id) if payment_id else None
-                if payment:
+                if payment and payment.status == 'pending':
                     payment.status = 'completed'
+                    payment.provider_payment_id = session_obj.get(
+                        'payment_intent', payment.provider_payment_id
+                    )
+                    payment.metadata_json = json.dumps({
+                        'stripe_session_id': session_obj.get('id'),
+                        'payment_intent': session_obj.get('payment_intent'),
+                        'payment_status': session_obj.get('payment_status'),
+                    })
                     db.session.commit()
-                _mark_user_verified(user_id, tier, session_obj.get('payment_intent', payment_id or ''))
+                _mark_user_verified(user_id, tier,
+                                    session_obj.get('payment_intent', payment_id or ''))
 
         return jsonify({'received': True}), 200
 
@@ -143,8 +159,8 @@ def flutterwave_initialize():
         fw_public = current_app.config.get('FLUTTERWAVE_PUBLIC_KEY', '')
         fw_secret = current_app.config.get('FLUTTERWAVE_SECRET_KEY', '')
 
-        if not fw_public:
-            return jsonify({'error': 'Flutterwave is not configured on this server'}), 503
+        if not fw_public or not fw_secret:
+            return jsonify({'error': 'Flutterwave is not configured on this server. Please contact support.'}), 503
 
         user_id = get_jwt_identity()
         data = request.json or {}
@@ -168,6 +184,7 @@ def flutterwave_initialize():
             status='pending',
             tier=tier,
             provider_payment_id=tx_ref,
+            metadata_json=json.dumps({'tx_ref': tx_ref}),
         )
         db.session.add(payment)
         db.session.commit()
@@ -193,11 +210,19 @@ def flutterwave_initialize():
 @payments_bp.route('/flutterwave/verify/<tx_ref>', methods=['POST'])
 @jwt_required()
 def flutterwave_verify(tx_ref):
+    """
+    Called from frontend after Flutterwave inline checkout success callback.
+    Always contacts Flutterwave's API to confirm the transaction — no dev shortcut.
+    Requires FLUTTERWAVE_SECRET_KEY to be set; fails closed if missing.
+    """
     try:
         import requests as http_req
 
         user_id = get_jwt_identity()
         fw_secret = current_app.config.get('FLUTTERWAVE_SECRET_KEY', '')
+
+        if not fw_secret:
+            return jsonify({'error': 'Payment provider not configured. Contact support.'}), 503
 
         payment = Payment.query.filter(
             Payment.provider_payment_id == tx_ref,
@@ -207,32 +232,52 @@ def flutterwave_verify(tx_ref):
         if not payment:
             return jsonify({'error': 'Payment record not found'}), 404
 
-        verified = False
-        if fw_secret:
-            headers = {'Authorization': f'Bearer {fw_secret}'}
-            resp = http_req.get(
-                f'https://api.flutterwave.com/v3/transactions?tx_ref={tx_ref}',
-                headers=headers,
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                fw_data = resp.json()
-                transactions = fw_data.get('data', [])
-                if transactions and transactions[0].get('status') == 'successful':
-                    verified = True
-        else:
-            verified = True
+        if payment.status == 'completed':
+            user = User.query.get(user_id)
+            return jsonify({
+                'verified': True,
+                'badge_verified': bool(user.badge_verified) if user else True,
+                'verification_tier': user.verification_tier if user else payment.tier,
+            }), 200
 
-        if verified:
-            payment.status = 'completed'
-            db.session.commit()
-            _mark_user_verified(user_id, payment.tier, tx_ref)
+        headers = {'Authorization': f'Bearer {fw_secret}'}
+        resp = http_req.get(
+            f'https://api.flutterwave.com/v3/transactions?tx_ref={tx_ref}',
+            headers=headers,
+            timeout=15,
+        )
+
+        if resp.status_code != 200:
+            return jsonify({'error': 'Could not reach Flutterwave to verify payment'}), 502
+
+        fw_data = resp.json()
+        transactions = fw_data.get('data', [])
+
+        if not transactions:
+            return jsonify({'verified': False, 'error': 'No matching transaction found'}), 200
+
+        tx = transactions[0]
+        if tx.get('status') != 'successful':
+            return jsonify({'verified': False, 'error': f'Transaction status: {tx.get("status")}'}), 200
+
+        flw_ref = tx.get('flw_ref', tx_ref)
+        payment.status = 'completed'
+        payment.provider_payment_id = flw_ref
+        payment.metadata_json = json.dumps({
+            'flw_ref': flw_ref,
+            'tx_ref': tx_ref,
+            'amount': tx.get('amount'),
+            'currency': tx.get('currency'),
+            'status': tx.get('status'),
+        })
+        db.session.commit()
+        _mark_user_verified(user_id, payment.tier, flw_ref)
 
         user = User.query.get(user_id)
         return jsonify({
-            'verified': verified,
-            'badge_verified': user.badge_verified if user else False,
-            'verification_tier': user.verification_tier if user else None,
+            'verified': True,
+            'badge_verified': bool(user.badge_verified) if user else True,
+            'verification_tier': user.verification_tier if user else payment.tier,
         }), 200
 
     except Exception as e:
@@ -242,12 +287,21 @@ def flutterwave_verify(tx_ref):
 
 @payments_bp.route('/flutterwave/webhook', methods=['POST'])
 def flutterwave_webhook():
+    """
+    Flutterwave sends a verif-hash header set to the FLUTTERWAVE_WEBHOOK_HASH secret
+    (configured separately in the Flutterwave dashboard — distinct from the API secret).
+    Always verify; fail closed if hash is not configured.
+    """
     try:
+        webhook_hash = current_app.config.get('FLUTTERWAVE_WEBHOOK_HASH', '')
         fw_secret = current_app.config.get('FLUTTERWAVE_SECRET_KEY', '')
-        verif_hash = request.headers.get('verif-hash', '')
 
-        if fw_secret and verif_hash != fw_secret:
-            return jsonify({'error': 'Invalid signature'}), 400
+        if not webhook_hash:
+            return jsonify({'error': 'Webhook hash not configured'}), 503
+
+        verif_hash = request.headers.get('verif-hash', '')
+        if verif_hash != webhook_hash:
+            return jsonify({'error': 'Invalid webhook signature'}), 400
 
         data = request.json or {}
         event = data.get('event', '')
@@ -260,8 +314,18 @@ def flutterwave_webhook():
 
             if status == 'successful' and tx_ref:
                 payment = Payment.query.filter_by(provider_payment_id=tx_ref).first()
+                if payment is None:
+                    payment = Payment.query.filter_by(provider_payment_id=flw_ref).first()
+
                 if payment and payment.status == 'pending':
                     payment.status = 'completed'
+                    payment.provider_payment_id = flw_ref
+                    payment.metadata_json = json.dumps({
+                        'flw_ref': flw_ref,
+                        'tx_ref': tx_ref,
+                        'amount': tx_data.get('amount'),
+                        'currency': tx_data.get('currency'),
+                    })
                     db.session.commit()
                     _mark_user_verified(payment.user_id, payment.tier, flw_ref)
 

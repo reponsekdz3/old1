@@ -425,8 +425,10 @@ def create_app(config_name='development'):
                 status VARCHAR(20) DEFAULT 'pending',
                 provider_payment_id VARCHAR(255),
                 tier VARCHAR(20) NOT NULL,
+                metadata_json TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''',
+            'ALTER TABLE payments ADD COLUMN metadata_json TEXT',
         ]
         for sql in migrations:
             try:
