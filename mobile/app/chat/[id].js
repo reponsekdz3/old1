@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
-  Image, Modal, ActionSheetIOS,
+  Image, Modal, ActionSheetIOS, Dimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -446,44 +446,47 @@ export default function ChatScreen() {
   );
 }
 
+const { width: _SW } = Dimensions.get('window');
+const _rf = (n) => n * (_SW / 390);
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   offlineBanner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, backgroundColor: '#FF9500', paddingVertical: 6, paddingHorizontal: 12,
+    gap: 6, backgroundColor: '#FF9500', paddingVertical: _rf(8), paddingHorizontal: 12,
   },
-  offlineBannerText: { color: '#fff', fontSize: 12, fontWeight: '500', flex: 1, textAlign: 'center' },
+  offlineBannerText: { color: '#fff', fontSize: _rf(12.5), fontWeight: '600', flex: 1, textAlign: 'center' },
   header: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 8, paddingVertical: 10, backgroundColor: COLORS.primary,
+    flexDirection: 'row', alignItems: 'center', gap: _rf(10),
+    paddingHorizontal: _rf(10), paddingVertical: _rf(11), backgroundColor: COLORS.primary,
   },
-  backBtn: { padding: 4 },
-  headerName: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  headerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 1 },
-  headerActions: { flexDirection: 'row', gap: 4 },
-  iconBtn: { padding: 6 },
+  backBtn: { padding: _rf(6), marginRight: 2 },
+  headerName: { color: '#fff', fontSize: _rf(17), fontWeight: '700' },
+  headerSub: { color: 'rgba(255,255,255,0.72)', fontSize: _rf(12), marginTop: 1 },
+  headerActions: { flexDirection: 'row', gap: 2 },
+  iconBtn: { padding: _rf(8), borderRadius: _rf(20) },
   chatBg: { flex: 1, backgroundColor: '#E5DDD5' },
   loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  messageList: { paddingVertical: 8, paddingHorizontal: 4 },
+  messageList: { paddingVertical: _rf(8), paddingHorizontal: _rf(4) },
   inputArea: { backgroundColor: '#F0F2F5' },
   inputRow: {
-    flexDirection: 'row', alignItems: 'flex-end', gap: 4,
-    paddingHorizontal: 8, paddingVertical: 8,
+    flexDirection: 'row', alignItems: 'flex-end', gap: _rf(4),
+    paddingHorizontal: _rf(8), paddingVertical: _rf(8),
   },
-  emojiBtn: { padding: 6, paddingBottom: 10 },
+  emojiBtn: { padding: _rf(7), paddingBottom: _rf(10) },
   textInput: {
-    flex: 1, backgroundColor: '#fff', borderRadius: 24,
-    paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10,
-    fontSize: 15, color: COLORS.dark, maxHeight: 120,
+    flex: 1, backgroundColor: '#fff', borderRadius: _rf(24),
+    paddingHorizontal: _rf(14), paddingTop: _rf(11), paddingBottom: _rf(11),
+    fontSize: _rf(15.5), color: COLORS.dark, maxHeight: _rf(120),
     elevation: 1, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2,
   },
-  attachBtn: { padding: 6, paddingBottom: 10 },
+  attachBtn: { padding: _rf(7), paddingBottom: _rf(10) },
   sendBtn: {
-    width: 42, height: 42, borderRadius: 21, backgroundColor: COLORS.accent,
+    width: _rf(44), height: _rf(44), borderRadius: _rf(22), backgroundColor: COLORS.accent,
     alignItems: 'center', justifyContent: 'center',
-    elevation: 2, shadowColor: COLORS.accent, shadowOpacity: 0.3, shadowRadius: 4,
+    elevation: 3, shadowColor: COLORS.accent, shadowOpacity: 0.35, shadowRadius: 6,
   },
-  micBtn: { padding: 6, paddingBottom: 10 },
+  micBtn: { padding: _rf(7), paddingBottom: _rf(10) },
   imageModal: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
   imageModalClose: { position: 'absolute', top: 50, right: 20, zIndex: 10, padding: 8 },
   fullImage: { width: '100%', height: '80%' },

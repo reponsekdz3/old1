@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   Modal, TextInput, ActivityIndicator, Alert, Image,
-  SafeAreaView,
+  SafeAreaView, Dimensions,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +12,9 @@ import EmptyState from '../../components/EmptyState';
 import { useAuthStore, useStatusStore } from '../../services/store';
 import api from '../../services/api';
 import { COLORS } from '../../config';
+
+const { width: SW } = Dimensions.get('window');
+const rf = (n) => n * (SW / 390);
 
 const BG_COLORS = ['#075E54','#128C7E','#25D366','#3B82F6','#8B5CF6','#EC4899','#F59E0B','#EF4444'];
 
@@ -221,27 +224,27 @@ const sv = StyleSheet.create({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  myStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  myStatusRow: { flexDirection: 'row', alignItems: 'center', gap: rf(12), paddingHorizontal: rf(16), paddingVertical: rf(13), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
   addAvatarWrap: { position: 'relative' },
-  statusRing: { width: 54, height: 54, borderRadius: 27, borderWidth: 2.5, padding: 2, alignItems: 'center', justifyContent: 'center' },
+  statusRing: { width: rf(56), height: rf(56), borderRadius: rf(28), borderWidth: 2.5, padding: 2, alignItems: 'center', justifyContent: 'center' },
   addDot: {
     position: 'absolute', bottom: -2, right: -2,
-    width: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.accent,
+    width: rf(20), height: rf(20), borderRadius: rf(10), backgroundColor: COLORS.accent,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 2, borderColor: '#fff',
   },
-  myStatusName: { fontSize: 15, fontWeight: '600', color: COLORS.dark },
-  myStatusSub: { fontSize: 13, color: COLORS.textGray, marginTop: 2 },
-  sectionLabel: { fontSize: 12, fontWeight: '700', color: COLORS.textGray, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: COLORS.lightGray },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
-  statusName: { fontSize: 15, fontWeight: '600', color: COLORS.dark },
-  statusTime: { fontSize: 13, color: COLORS.textGray, marginTop: 2 },
+  myStatusName: { fontSize: rf(15.5), fontWeight: '600', color: COLORS.dark },
+  myStatusSub: { fontSize: rf(13), color: COLORS.textGray, marginTop: rf(2) },
+  sectionLabel: { fontSize: rf(12), fontWeight: '700', color: COLORS.textGray, paddingHorizontal: rf(16), paddingVertical: rf(9), backgroundColor: COLORS.lightGray, textTransform: 'uppercase', letterSpacing: 0.5 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: rf(12), paddingHorizontal: rf(16), paddingVertical: rf(13), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  statusName: { fontSize: rf(15.5), fontWeight: '600', color: COLORS.dark },
+  statusTime: { fontSize: rf(13), color: COLORS.textGray, marginTop: rf(2) },
   createModal: { flex: 1, backgroundColor: '#fff' },
-  createHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
-  createTitle: { fontSize: 18, fontWeight: '700', color: COLORS.dark },
-  previewBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  statusInput: { color: '#fff', fontSize: 22, fontWeight: '600', textAlign: 'center', lineHeight: 32, width: '100%' },
-  bgRow: { flexDirection: 'row', justifyContent: 'center', gap: 12, padding: 20 },
-  bgDot: { width: 32, height: 32, borderRadius: 16 },
+  createHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: rf(18), paddingVertical: rf(16), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  createTitle: { fontSize: rf(19), fontWeight: '800', color: COLORS.dark },
+  previewBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: rf(32) },
+  statusInput: { color: '#fff', fontSize: rf(22), fontWeight: '600', textAlign: 'center', lineHeight: rf(32), width: '100%' },
+  bgRow: { flexDirection: 'row', justifyContent: 'center', gap: rf(12), padding: rf(20) },
+  bgDot: { width: rf(34), height: rf(34), borderRadius: rf(17) },
   bgDotSelected: { borderWidth: 3, borderColor: '#fff', transform: [{ scale: 1.2 }] },
 });

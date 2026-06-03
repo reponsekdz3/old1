@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, FlatList, TextInput, TouchableOpacity, StyleSheet,
-  Text, Modal, SafeAreaView, Alert, ActivityIndicator, Animated,
+  Text, Modal, SafeAreaView, Alert, ActivityIndicator, Animated, Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import ChatListItem from '../../components/ChatListItem';
+
 import Avatar from '../../components/Avatar';
 import EmptyState from '../../components/EmptyState';
 import { useChatStore, useAuthStore } from '../../services/store';
@@ -15,6 +16,9 @@ import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { Cache } from '../../services/cache';
 import api from '../../services/api';
 import { COLORS } from '../../config';
+
+const { width: SW, height: SH } = Dimensions.get('window');
+const rf = (n) => n * (SW / 390);
 
 function OfflineBanner({ visible }) {
   const opacity = useRef(new Animated.Value(0)).current;
@@ -267,34 +271,36 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   offlineBanner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: '#636E72', paddingVertical: 6,
+    backgroundColor: '#636E72', paddingVertical: rf(7),
   },
-  offlineText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  offlineText: { color: '#fff', fontSize: rf(12.5), fontWeight: '600' },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    margin: 10, backgroundColor: COLORS.lightGray, borderRadius: 20,
-    paddingHorizontal: 14, paddingVertical: 9,
+    marginHorizontal: rf(12), marginVertical: rf(9),
+    backgroundColor: COLORS.lightGray, borderRadius: 22,
+    paddingHorizontal: rf(14), paddingVertical: rf(10),
   },
-  searchInput: { flex: 1, fontSize: 15, color: COLORS.dark },
+  searchInput: { flex: 1, fontSize: rf(15), color: COLORS.dark, paddingVertical: 0 },
   loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   fab: {
-    position: 'absolute', bottom: 20, right: 20,
-    width: 56, height: 56, borderRadius: 28,
+    position: 'absolute', bottom: rf(20), right: rf(20),
+    width: rf(58), height: rf(58), borderRadius: rf(29),
     backgroundColor: COLORS.accent, alignItems: 'center', justifyContent: 'center',
-    elevation: 6, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 4 },
+    elevation: 8, shadowColor: COLORS.accent, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
   },
   modal: { flex: 1, backgroundColor: '#fff' },
   modalHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border,
+    paddingHorizontal: rf(18), paddingVertical: rf(16),
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border,
   },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: COLORS.dark },
-  modalBody: { padding: 20, gap: 4 },
-  modalLabel: { fontSize: 13, fontWeight: '600', color: COLORS.dark, marginBottom: 6, marginTop: 8 },
+  modalTitle: { fontSize: rf(19), fontWeight: '800', color: COLORS.dark },
+  modalBody: { padding: rf(18), gap: 4 },
+  modalLabel: { fontSize: rf(13), fontWeight: '700', color: COLORS.dark, marginBottom: 6, marginTop: 10 },
   searchRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   modalInput: {
     borderWidth: 1.5, borderColor: COLORS.border, borderRadius: 14,
-    fontSize: 15, color: COLORS.dark, paddingHorizontal: 16, paddingVertical: 13,
+    fontSize: rf(15), color: COLORS.dark, paddingHorizontal: rf(16), paddingVertical: rf(14),
     marginBottom: 8,
   },
   searchResultsBox: {
@@ -302,31 +308,32 @@ const styles = StyleSheet.create({
     overflow: 'hidden', marginBottom: 8,
   },
   searchResultsLabel: {
-    fontSize: 11, fontWeight: '700', color: COLORS.textGray,
-    paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#F9F9F9',
+    fontSize: rf(11), fontWeight: '700', color: COLORS.textGray,
+    paddingHorizontal: rf(14), paddingVertical: 8, backgroundColor: '#F9F9F9',
     textTransform: 'uppercase', letterSpacing: 0.4,
   },
   searchResultRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 14, paddingVertical: 11,
+    paddingHorizontal: rf(14), paddingVertical: rf(12),
     borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border,
   },
-  searchResultName: { fontSize: 14, fontWeight: '600', color: COLORS.dark },
-  searchResultPhone: { fontSize: 12, color: COLORS.textGray },
+  searchResultName: { fontSize: rf(14.5), fontWeight: '600', color: COLORS.dark },
+  searchResultPhone: { fontSize: rf(12.5), color: COLORS.textGray },
   addBtn: {
-    backgroundColor: COLORS.accent, borderRadius: 14, paddingVertical: 15,
+    backgroundColor: COLORS.accent, borderRadius: 14, paddingVertical: rf(16),
     alignItems: 'center', marginTop: 8,
+    shadowColor: COLORS.accent, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4,
   },
-  addBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  addBtnText: { color: '#fff', fontSize: rf(16), fontWeight: '800' },
   qrBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    borderWidth: 1.5, borderColor: COLORS.border, borderRadius: 14, paddingVertical: 13, marginTop: 8,
+    borderWidth: 1.5, borderColor: COLORS.border, borderRadius: 14, paddingVertical: rf(14), marginTop: 8,
   },
-  qrBtnText: { color: COLORS.accent, fontSize: 15, fontWeight: '600' },
+  qrBtnText: { color: COLORS.accent, fontSize: rf(15), fontWeight: '600' },
   contactsBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    borderWidth: 1.5, borderColor: COLORS.primary + '40', borderRadius: 14, paddingVertical: 13, marginTop: 8,
+    borderWidth: 1.5, borderColor: COLORS.primary + '40', borderRadius: 14, paddingVertical: rf(14), marginTop: 8,
     backgroundColor: '#F0FFF4',
   },
-  contactsBtnText: { color: COLORS.primary, fontSize: 15, fontWeight: '600' },
+  contactsBtnText: { color: COLORS.primary, fontSize: rf(15), fontWeight: '600' },
 });

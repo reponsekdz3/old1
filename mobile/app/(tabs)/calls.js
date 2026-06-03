@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert, Modal, SafeAreaView, TextInput,
+  ActivityIndicator, Alert, Modal, SafeAreaView, TextInput, Dimensions,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +11,9 @@ import { useCallStore } from '../../services/store';
 import { getSocket } from '../../services/socket';
 import api from '../../services/api';
 import { COLORS } from '../../config';
+
+const { width: SW } = Dimensions.get('window');
+const rf = (n) => n * (SW / 390);
 
 function formatCallTime(ts) {
   if (!ts) return '';
@@ -254,33 +257,33 @@ const cs = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
-  name: { fontSize: 16, fontWeight: '600', color: COLORS.dark },
-  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
-  detail: { fontSize: 13, color: COLORS.textGray },
-  time: { fontSize: 11, color: COLORS.gray, marginTop: 2 },
-  rightActions: { alignItems: 'center', gap: 6 },
-  callTypeBadge: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: rf(12), paddingHorizontal: rf(16), paddingVertical: rf(12) },
+  name: { fontSize: rf(16), fontWeight: '600', color: COLORS.dark },
+  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: rf(3) },
+  detail: { fontSize: rf(13), color: COLORS.textGray },
+  time: { fontSize: rf(11.5), color: COLORS.gray, marginTop: 2 },
+  rightActions: { alignItems: 'center', gap: rf(6) },
+  callTypeBadge: { width: rf(34), height: rf(34), borderRadius: rf(17), alignItems: 'center', justifyContent: 'center' },
   callBackBtns: { flexDirection: 'row' },
-  callBackBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#E8F5E9', alignItems: 'center', justifyContent: 'center' },
-  separator: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginLeft: 78 },
+  callBackBtn: { width: rf(34), height: rf(34), borderRadius: rf(17), backgroundColor: '#E8F5E9', alignItems: 'center', justifyContent: 'center' },
+  separator: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginLeft: rf(78) },
 
   fab: {
-    position: 'absolute', bottom: 20, right: 20,
-    width: 56, height: 56, borderRadius: 28,
+    position: 'absolute', bottom: rf(20), right: rf(20),
+    width: rf(58), height: rf(58), borderRadius: rf(29),
     backgroundColor: COLORS.accent, alignItems: 'center', justifyContent: 'center',
-    elevation: 6, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 4 },
+    elevation: 8, shadowColor: COLORS.accent, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
   },
 
   modal: { flex: 1, backgroundColor: '#fff' },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: COLORS.dark },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: rf(18), paddingVertical: rf(16), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  modalTitle: { fontSize: rf(19), fontWeight: '800', color: COLORS.dark },
 
-  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, margin: 12, backgroundColor: COLORS.lightGray, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9 },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: rf(12), marginVertical: rf(10), backgroundColor: COLORS.lightGray, borderRadius: 22, paddingHorizontal: rf(14), paddingVertical: rf(10) },
   searchInput: { flex: 1, fontSize: 15, color: COLORS.dark },
 
-  contactRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
-  contactName: { fontSize: 15, fontWeight: '600', color: COLORS.dark },
-  contactPhone: { fontSize: 13, color: COLORS.textGray, marginTop: 1 },
-  callBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  contactRow: { flexDirection: 'row', alignItems: 'center', gap: rf(12), paddingHorizontal: rf(16), paddingVertical: rf(12) },
+  contactName: { fontSize: rf(15.5), fontWeight: '600', color: COLORS.dark },
+  contactPhone: { fontSize: rf(13), color: COLORS.textGray, marginTop: 1 },
+  callBtn: { width: rf(42), height: rf(42), borderRadius: rf(21), alignItems: 'center', justifyContent: 'center' },
 });

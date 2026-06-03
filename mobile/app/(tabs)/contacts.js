@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert, SectionList, Share, TextInput,
+  ActivityIndicator, Alert, SectionList, Share, TextInput, Dimensions,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +11,9 @@ import { usePhoneContactsStore, useChatStore } from '../../services/store';
 import { syncPhoneContacts } from '../../services/phoneContacts';
 import api from '../../services/api';
 import { COLORS } from '../../config';
+
+const { width: SW } = Dimensions.get('window');
+const rf = (n) => n * (SW / 390);
 
 function formatLastSynced(ts) {
   if (!ts) return null;
@@ -236,51 +239,52 @@ const cs = StyleSheet.create({
 
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    margin: 10, backgroundColor: COLORS.lightGray, borderRadius: 20,
-    paddingHorizontal: 14, paddingVertical: 9,
+    marginHorizontal: rf(12), marginVertical: rf(9),
+    backgroundColor: COLORS.lightGray, borderRadius: 22,
+    paddingHorizontal: rf(14), paddingVertical: rf(10),
   },
-  searchInput: { flex: 1, fontSize: 15, color: COLORS.dark },
+  searchInput: { flex: 1, fontSize: rf(15), color: COLORS.dark, paddingVertical: 0 },
 
   syncBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 6, backgroundColor: '#F9FFF9',
+    paddingHorizontal: rf(16), paddingVertical: rf(7), backgroundColor: '#F9FFF9',
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border,
   },
-  syncText: { fontSize: 12, color: COLORS.textGray },
-  syncBtn: { padding: 4 },
+  syncText: { fontSize: rf(12.5), color: COLORS.textGray },
+  syncBtn: { padding: rf(5) },
 
   sectionHeader: {
-    backgroundColor: '#F2F2F7', paddingHorizontal: 16, paddingVertical: 7,
+    backgroundColor: '#F2F2F7', paddingHorizontal: rf(16), paddingVertical: rf(8),
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border,
   },
-  sectionTitle: { fontSize: 11, fontWeight: '700', color: COLORS.textGray, letterSpacing: 0.4 },
+  sectionTitle: { fontSize: rf(11.5), fontWeight: '700', color: COLORS.textGray, letterSpacing: 0.5, textTransform: 'uppercase' },
 
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 11 },
-  name: { fontSize: 15, fontWeight: '600', color: COLORS.dark },
-  sub: { fontSize: 13, color: COLORS.textGray, marginTop: 1 },
-  sep: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginLeft: 76 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: rf(12), paddingHorizontal: rf(16), paddingVertical: rf(12) },
+  name: { fontSize: rf(15.5), fontWeight: '600', color: COLORS.dark },
+  sub: { fontSize: rf(13), color: COLORS.textGray, marginTop: rf(2) },
+  sep: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginLeft: rf(76) },
 
   onlineDot: {
     position: 'absolute', bottom: 1, right: 1,
-    width: 13, height: 13, borderRadius: 7,
+    width: rf(13), height: rf(13), borderRadius: rf(7),
     backgroundColor: '#34C759', borderWidth: 2, borderColor: '#fff',
   },
 
   actions: { flexDirection: 'row', alignItems: 'center' },
   actionBtn: {
-    width: 36, height: 36, borderRadius: 18,
+    width: rf(38), height: rf(38), borderRadius: rf(19),
     backgroundColor: '#F0FFF4', alignItems: 'center', justifyContent: 'center',
   },
 
   phoneAvatar: {
-    width: 48, height: 48, borderRadius: 24, backgroundColor: COLORS.lightGray,
+    width: rf(50), height: rf(50), borderRadius: rf(25), backgroundColor: COLORS.lightGray,
     alignItems: 'center', justifyContent: 'center',
   },
-  phoneInitial: { fontSize: 20, fontWeight: '700', color: COLORS.textGray },
+  phoneInitial: { fontSize: rf(20), fontWeight: '700', color: COLORS.textGray },
 
   inviteBtn: {
-    paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20,
+    paddingHorizontal: rf(16), paddingVertical: rf(8), borderRadius: rf(20),
     backgroundColor: '#E8F5E9', borderWidth: 1, borderColor: COLORS.accent,
   },
-  inviteBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.accent },
+  inviteBtnText: { fontSize: rf(13.5), fontWeight: '700', color: COLORS.accent },
 });

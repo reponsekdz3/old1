@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, ActivityIndicator, Alert, Image, Share,
+  ScrollView, ActivityIndicator, Alert, Image, Share, Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -12,6 +12,9 @@ import Avatar from '../components/Avatar';
 import { useAuthStore } from '../services/store';
 import api from '../services/api';
 import { COLORS } from '../config';
+
+const { width: SW } = Dimensions.get('window');
+const rf = (n) => n * (SW / 390);
 
 const STATUS_PRESETS = [
   { icon: '👋', text: 'Hey there! I am using VipChat.' },
@@ -467,43 +470,43 @@ export default function ProfileScreen() {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F2F2F7' },
 
-  header: { paddingBottom: 20 },
-  headerInner: { alignItems: 'center', paddingTop: 20, paddingHorizontal: 20 },
-  avatarWrap: { position: 'relative', marginBottom: 10 },
-  avatarImg: { width: 96, height: 96, borderRadius: 48, borderWidth: 3, borderColor: 'rgba(255,255,255,0.5)' },
-  avatarPlaceholder: { width: 96, height: 96, borderRadius: 48, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  header: { paddingBottom: rf(20) },
+  headerInner: { alignItems: 'center', paddingTop: rf(22), paddingHorizontal: rf(20) },
+  avatarWrap: { position: 'relative', marginBottom: rf(10) },
+  avatarImg: { width: rf(96), height: rf(96), borderRadius: rf(48), borderWidth: 3, borderColor: 'rgba(255,255,255,0.5)' },
+  avatarPlaceholder: { width: rf(96), height: rf(96), borderRadius: rf(48), backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
   cameraBadge: {
     position: 'absolute', bottom: 0, right: 0,
-    width: 30, height: 30, borderRadius: 15,
+    width: rf(32), height: rf(32), borderRadius: rf(16),
     backgroundColor: COLORS.accent, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: '#fff',
+    borderWidth: 2.5, borderColor: '#fff',
   },
-  headerName: { fontSize: 22, fontWeight: '800', color: '#fff', marginBottom: 2 },
-  headerPhone: { fontSize: 14, color: 'rgba(255,255,255,0.7)', marginBottom: 4 },
-  headerBio: { fontSize: 13, color: 'rgba(255,255,255,0.55)', textAlign: 'center', maxWidth: 260, marginBottom: 16 },
-  headerActions: { flexDirection: 'row', gap: 24, marginTop: 4 },
+  headerName: { fontSize: rf(22), fontWeight: '800', color: '#fff', marginBottom: 2 },
+  headerPhone: { fontSize: rf(14), color: 'rgba(255,255,255,0.72)', marginBottom: 4 },
+  headerBio: { fontSize: rf(13), color: 'rgba(255,255,255,0.57)', textAlign: 'center', maxWidth: SW * 0.68, marginBottom: rf(16) },
+  headerActions: { flexDirection: 'row', gap: rf(24), marginTop: 4 },
   headerAction: { alignItems: 'center', gap: 4 },
-  headerActionLabel: { fontSize: 11, color: 'rgba(255,255,255,0.8)', fontWeight: '600' },
+  headerActionLabel: { fontSize: rf(11.5), color: 'rgba(255,255,255,0.82)', fontWeight: '600' },
 
   tabs: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
-  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 12 },
-  tabActive: { borderBottomWidth: 2, borderBottomColor: COLORS.accent },
-  tabLabel: { fontSize: 13, fontWeight: '600', color: COLORS.gray },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: rf(13) },
+  tabActive: { borderBottomWidth: 2.5, borderBottomColor: COLORS.accent },
+  tabLabel: { fontSize: rf(13), fontWeight: '600', color: COLORS.gray },
   tabLabelActive: { color: COLORS.accent },
 
-  form: { padding: 16, gap: 4 },
-  field: { marginBottom: 14 },
-  fieldLabel: { fontSize: 12, fontWeight: '700', color: COLORS.textGray, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
-  fieldHint: { fontSize: 11, color: COLORS.gray, marginTop: 3 },
+  form: { padding: rf(16), gap: 4 },
+  field: { marginBottom: rf(14) },
+  fieldLabel: { fontSize: rf(12), fontWeight: '700', color: COLORS.textGray, marginBottom: rf(6), textTransform: 'uppercase', letterSpacing: 0.5 },
+  fieldHint: { fontSize: rf(11.5), color: COLORS.gray, marginTop: 3 },
   input: {
-    borderWidth: 1, borderColor: COLORS.border, borderRadius: 12,
-    fontSize: 15, color: COLORS.dark, paddingHorizontal: 14, paddingVertical: 12,
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: 14,
+    fontSize: rf(15.5), color: COLORS.dark, paddingHorizontal: rf(14), paddingVertical: rf(13),
     backgroundColor: '#fff',
   },
-  twoCol: { flexDirection: 'row', gap: 12 },
-  statusRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  twoCol: { flexDirection: 'row', gap: rf(12) },
+  statusRow: { flexDirection: 'row', gap: rf(8), alignItems: 'center' },
   statusPickerBtn: {
-    width: 44, height: 44, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
+    width: rf(46), height: rf(46), borderRadius: rf(13), borderWidth: 1, borderColor: COLORS.border,
     alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff',
   },
   statusPresets: {
@@ -511,86 +514,86 @@ const s = StyleSheet.create({
     backgroundColor: '#fff', marginBottom: 8, overflow: 'hidden',
   },
   presetsLabel: {
-    fontSize: 11, fontWeight: '700', color: COLORS.textGray,
-    paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#F9F9F9',
+    fontSize: rf(11), fontWeight: '700', color: COLORS.textGray,
+    paddingHorizontal: rf(14), paddingVertical: rf(9), backgroundColor: '#F9F9F9',
     textTransform: 'uppercase', letterSpacing: 0.4,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border,
   },
   presetRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 14, paddingVertical: 11,
+    flexDirection: 'row', alignItems: 'center', gap: rf(10),
+    paddingHorizontal: rf(14), paddingVertical: rf(12),
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border,
   },
-  presetIcon: { fontSize: 18 },
-  presetText: { flex: 1, fontSize: 14, color: COLORS.dark },
+  presetIcon: { fontSize: rf(18) },
+  presetText: { flex: 1, fontSize: rf(14.5), color: COLORS.dark },
   saveBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: COLORS.accent, borderRadius: 14, paddingVertical: 16, marginTop: 8,
-    elevation: 3, shadowColor: COLORS.accent, shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 4 },
+    backgroundColor: COLORS.accent, borderRadius: 14, paddingVertical: rf(16), marginTop: 8,
+    elevation: 4, shadowColor: COLORS.accent, shadowOpacity: 0.4, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
   },
-  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  saveBtnText: { color: '#fff', fontSize: rf(16), fontWeight: '800' },
 
-  infoSection: { padding: 12, gap: 12 },
+  infoSection: { padding: rf(13), gap: rf(12) },
   card: {
-    backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden',
+    backgroundColor: '#fff', borderRadius: 18, overflow: 'hidden',
     elevation: 1, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 3, shadowOffset: { width: 0, height: 1 },
   },
   cardTitle: {
-    fontSize: 12, fontWeight: '700', color: COLORS.textGray,
-    paddingHorizontal: 16, paddingVertical: 10, textTransform: 'uppercase', letterSpacing: 0.5,
+    fontSize: rf(12), fontWeight: '700', color: COLORS.textGray,
+    paddingHorizontal: rf(16), paddingVertical: rf(10), textTransform: 'uppercase', letterSpacing: 0.5,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border,
     backgroundColor: '#FAFAFA',
   },
   infoRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 16, paddingVertical: 13,
+    flexDirection: 'row', alignItems: 'center', gap: rf(12),
+    paddingHorizontal: rf(16), paddingVertical: rf(13),
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border,
   },
   infoIconWrap: {
-    width: 34, height: 34, borderRadius: 9, backgroundColor: '#E8F5E9',
+    width: rf(36), height: rf(36), borderRadius: rf(10), backgroundColor: '#E8F5E9',
     alignItems: 'center', justifyContent: 'center',
   },
-  infoLabel: { fontSize: 12, color: COLORS.textGray, marginBottom: 1 },
-  infoValue: { fontSize: 14, fontWeight: '600', color: COLORS.dark },
+  infoLabel: { fontSize: rf(12), color: COLORS.textGray, marginBottom: 1 },
+  infoValue: { fontSize: rf(14.5), fontWeight: '600', color: COLORS.dark },
 
   linkBox: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    margin: 12, padding: 14, backgroundColor: '#F0FFF4',
-    borderRadius: 12, borderWidth: 1, borderColor: COLORS.accent + '30',
+    flexDirection: 'row', alignItems: 'center', gap: rf(12),
+    margin: rf(13), padding: rf(14), backgroundColor: '#F0FFF4',
+    borderRadius: 14, borderWidth: 1, borderColor: COLORS.accent + '30',
   },
-  linkText: { fontSize: 13, color: COLORS.accent, fontWeight: '600' },
-  linkHint: { fontSize: 11, color: COLORS.textGray, marginTop: 2 },
+  linkText: { fontSize: rf(13.5), color: COLORS.accent, fontWeight: '600' },
+  linkHint: { fontSize: rf(11.5), color: COLORS.textGray, marginTop: 2 },
 
   deviceRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 16, paddingVertical: 13,
+    flexDirection: 'row', alignItems: 'center', gap: rf(12),
+    paddingHorizontal: rf(16), paddingVertical: rf(13),
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border,
   },
-  deviceName: { fontSize: 14, fontWeight: '600', color: COLORS.dark },
-  deviceSub: { fontSize: 12, color: COLORS.textGray, marginTop: 1 },
-  activeDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#34C759' },
+  deviceName: { fontSize: rf(14.5), fontWeight: '600', color: COLORS.dark },
+  deviceSub: { fontSize: rf(12.5), color: COLORS.textGray, marginTop: 1 },
+  activeDot: { width: rf(10), height: rf(10), borderRadius: rf(5), backgroundColor: '#34C759' },
   addDeviceBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 16, paddingVertical: 13,
+    flexDirection: 'row', alignItems: 'center', gap: rf(8),
+    paddingHorizontal: rf(16), paddingVertical: rf(13),
   },
-  addDeviceBtnText: { fontSize: 14, color: COLORS.accent, fontWeight: '600' },
+  addDeviceBtnText: { fontSize: rf(14.5), color: COLORS.accent, fontWeight: '600' },
 
   securityRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 16, paddingVertical: 13,
+    flexDirection: 'row', alignItems: 'center', gap: rf(12),
+    paddingHorizontal: rf(16), paddingVertical: rf(13),
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border,
   },
-  secIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  secLabel: { fontSize: 14, fontWeight: '600', color: COLORS.dark },
-  secSub: { fontSize: 12, color: COLORS.textGray, marginTop: 1 },
-  comingSoonBadge: { backgroundColor: '#FFF3E0', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
-  comingSoonText: { fontSize: 10, fontWeight: '700', color: '#FF9500' },
+  secIcon: { width: rf(38), height: rf(38), borderRadius: rf(11), alignItems: 'center', justifyContent: 'center' },
+  secLabel: { fontSize: rf(14.5), fontWeight: '600', color: COLORS.dark },
+  secSub: { fontSize: rf(12.5), color: COLORS.textGray, marginTop: 1 },
+  comingSoonBadge: { backgroundColor: '#FFF3E0', paddingHorizontal: rf(8), paddingVertical: 3, borderRadius: rf(10) },
+  comingSoonText: { fontSize: rf(10), fontWeight: '700', color: '#FF9500' },
 
   encryptionBox: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 14,
-    margin: 14, padding: 14, backgroundColor: '#F0FFF4',
-    borderRadius: 12, borderWidth: 1, borderColor: COLORS.accent + '30',
+    flexDirection: 'row', alignItems: 'flex-start', gap: rf(14),
+    margin: rf(14), padding: rf(14), backgroundColor: '#F0FFF4',
+    borderRadius: 14, borderWidth: 1, borderColor: COLORS.accent + '30',
   },
-  encTitle: { fontSize: 14, fontWeight: '700', color: COLORS.dark, marginBottom: 4 },
-  encSub: { fontSize: 12, color: COLORS.textGray, lineHeight: 17 },
+  encTitle: { fontSize: rf(14.5), fontWeight: '700', color: COLORS.dark, marginBottom: 4 },
+  encSub: { fontSize: rf(12.5), color: COLORS.textGray, lineHeight: rf(19) },
 });

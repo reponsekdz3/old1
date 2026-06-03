@@ -1,7 +1,10 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import Avatar from './Avatar';
 import { COLORS } from '../config';
+
+const { width: SW } = Dimensions.get('window');
+const rf = (n) => n * (SW / 390);
 
 function formatTime(ts) {
   if (!ts) return '';
@@ -68,32 +71,32 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 12,
+    paddingHorizontal: rf(16),
+    paddingVertical: rf(10),
+    gap: rf(12),
     backgroundColor: '#fff',
   },
-  info: { flex: 1, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border, paddingBottom: 10 },
-  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 },
-  name: { fontSize: 16, fontWeight: '600', color: COLORS.dark, flex: 1, marginRight: 8 },
-  time: { fontSize: 11.5, color: COLORS.textGray, flexShrink: 0 },
+  info: { flex: 1, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border, paddingBottom: rf(10) },
+  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: rf(3) },
+  name: { fontSize: rf(16), fontWeight: '600', color: COLORS.dark, flex: 1, marginRight: rf(8) },
+  time: { fontSize: rf(11.5), color: COLORS.textGray, flexShrink: 0 },
   timeUnread: { color: COLORS.accent },
   bottomRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  preview: { fontSize: 13.5, color: COLORS.textGray, flex: 1, marginRight: 8 },
+  preview: { fontSize: rf(13.5), color: COLORS.textGray, flex: 1, marginRight: rf(8) },
   previewUnread: { color: COLORS.dark, fontWeight: '500' },
   badge: {
     backgroundColor: COLORS.accent,
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+    borderRadius: rf(10),
+    minWidth: rf(20),
+    height: rf(20),
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 5,
+    paddingHorizontal: rf(5),
   },
-  badgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  badgeText: { color: '#fff', fontSize: rf(11), fontWeight: '800' },
   onlineDot: {
     position: 'absolute', bottom: 1, right: 1,
-    width: 13, height: 13, borderRadius: 7,
+    width: rf(13), height: rf(13), borderRadius: rf(7),
     backgroundColor: '#34C759', borderWidth: 2, borderColor: '#fff',
   },
 });

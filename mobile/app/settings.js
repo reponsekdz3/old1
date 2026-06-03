@@ -1,17 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, Switch, TouchableOpacity, StyleSheet,
-  ScrollView, ActivityIndicator, Alert, Image,
+  ScrollView, ActivityIndicator, Alert, Image, Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+
 import { useAuthStore } from '../services/store';
 import { TokenStorage } from '../services/storage';
 import { disconnectSocket } from '../services/socket';
 import api from '../services/api';
 import { COLORS } from '../config';
+
+const { width: SW, height: SH } = Dimensions.get('window');
+const rf = (n) => n * (SW / 390);
 
 function SettingRow({ icon, iconBg, label, sublabel, value, onToggle, onPress, danger, rightText, rightElement }) {
   return (
@@ -424,38 +428,38 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F2F2F7' },
   loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  profileCard: { margin: 12, borderRadius: 20, overflow: 'hidden', elevation: 4, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
-  profileGrad: { padding: 16 },
-  profileInner: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  profileCard: { margin: rf(14), borderRadius: 22, overflow: 'hidden', elevation: 5, shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+  profileGrad: { padding: rf(18) },
+  profileInner: { flexDirection: 'row', alignItems: 'center', gap: rf(14) },
   avatarWrap: { position: 'relative' },
-  avatarImg: { width: 58, height: 58, borderRadius: 29, borderWidth: 2, borderColor: 'rgba(255,255,255,0.4)' },
-  avatarFallback: { width: 58, height: 58, borderRadius: 29, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
-  avatarInitial: { color: '#fff', fontSize: 24, fontWeight: '800' },
-  onlineDot: { position: 'absolute', bottom: 1, right: 1, width: 14, height: 14, borderRadius: 7, backgroundColor: '#34C759', borderWidth: 2, borderColor: '#fff' },
-  profileName: { fontSize: 18, fontWeight: '800', color: '#fff' },
-  profilePhone: { fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
-  profileBio: { fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 2, maxWidth: 220 },
+  avatarImg: { width: rf(62), height: rf(62), borderRadius: rf(31), borderWidth: 2.5, borderColor: 'rgba(255,255,255,0.45)' },
+  avatarFallback: { width: rf(62), height: rf(62), borderRadius: rf(31), backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
+  avatarInitial: { color: '#fff', fontSize: rf(26), fontWeight: '800' },
+  onlineDot: { position: 'absolute', bottom: 1, right: 1, width: rf(15), height: rf(15), borderRadius: rf(8), backgroundColor: '#34C759', borderWidth: 2.5, borderColor: '#fff' },
+  profileName: { fontSize: rf(18), fontWeight: '800', color: '#fff' },
+  profilePhone: { fontSize: rf(13), color: 'rgba(255,255,255,0.75)', marginTop: 2 },
+  profileBio: { fontSize: rf(12.5), color: 'rgba(255,255,255,0.58)', marginTop: 3, maxWidth: SW * 0.55 },
 
-  quickRow: { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: '#fff', marginHorizontal: 12, marginBottom: 12, borderRadius: 16, padding: 16, elevation: 1, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
-  quickBtn: { alignItems: 'center', gap: 6 },
-  quickIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  quickLabel: { fontSize: 11, fontWeight: '600', color: COLORS.dark },
+  quickRow: { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: '#fff', marginHorizontal: rf(14), marginBottom: rf(12), borderRadius: 18, padding: rf(16), elevation: 1, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, shadowOffset: { width: 0, height: 1 } },
+  quickBtn: { alignItems: 'center', gap: 7, minWidth: rf(56) },
+  quickIcon: { width: rf(46), height: rf(46), borderRadius: rf(15), alignItems: 'center', justifyContent: 'center' },
+  quickLabel: { fontSize: rf(11.5), fontWeight: '600', color: COLORS.dark },
 
-  section: { marginHorizontal: 12, marginBottom: 10 },
-  sectionTitle: { fontSize: 12, fontWeight: '700', color: COLORS.textGray, paddingHorizontal: 4, paddingVertical: 7, textTransform: 'uppercase', letterSpacing: 0.5 },
-  sectionBody: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', elevation: 1, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
+  section: { marginHorizontal: rf(14), marginBottom: rf(10) },
+  sectionTitle: { fontSize: rf(11.5), fontWeight: '700', color: COLORS.textGray, paddingHorizontal: 4, paddingVertical: 7, textTransform: 'uppercase', letterSpacing: 0.6 },
+  sectionBody: { backgroundColor: '#fff', borderRadius: 18, overflow: 'hidden', elevation: 1, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
 
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#F2F2F7' },
-  iconWrap: { width: 34, height: 34, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: rf(12), paddingHorizontal: rf(14), paddingVertical: rf(13.5), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#F2F2F7' },
+  iconWrap: { width: rf(36), height: rf(36), borderRadius: rf(10), alignItems: 'center', justifyContent: 'center' },
   iconWrapDanger: { backgroundColor: '#FFEBEE' },
   rowInfo: { flex: 1 },
-  rowLabel: { fontSize: 15, color: COLORS.dark, fontWeight: '500' },
-  rowSublabel: { fontSize: 12, color: COLORS.textGray, marginTop: 1 },
-  rightText: { fontSize: 13, color: COLORS.gray, textTransform: 'capitalize' },
+  rowLabel: { fontSize: rf(15.5), color: COLORS.dark, fontWeight: '500' },
+  rowSublabel: { fontSize: rf(12.5), color: COLORS.textGray, marginTop: 2 },
+  rightText: { fontSize: rf(13.5), color: COLORS.gray, textTransform: 'capitalize' },
 
-  footer: { alignItems: 'center', padding: 32, gap: 4 },
-  footerLogo: { width: 48, height: 48, borderRadius: 14, backgroundColor: '#E8F5E9', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  footerText: { fontSize: 14, fontWeight: '700', color: COLORS.textGray },
-  footerSub: { fontSize: 12, color: COLORS.gray },
-  footerEnc: { fontSize: 11, color: COLORS.gray, marginTop: 2 },
+  footer: { alignItems: 'center', paddingVertical: rf(36), paddingHorizontal: 24, gap: 5 },
+  footerLogo: { width: rf(52), height: rf(52), borderRadius: rf(16), backgroundColor: '#E8F5E9', alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  footerText: { fontSize: rf(14), fontWeight: '700', color: COLORS.textGray },
+  footerSub: { fontSize: rf(12.5), color: COLORS.gray },
+  footerEnc: { fontSize: rf(11.5), color: COLORS.gray, marginTop: 2 },
 });
