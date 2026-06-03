@@ -36,10 +36,14 @@ export default function ChatListItem({ contact, lastMessage, unread = 0, onPress
   const avatar = contact.avatar_url;
   const time = lastMessage?.created_at || contact.lastMessageTime;
   const preview = previewContent(lastMessage);
+  const isOnline = contact.is_online;
 
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
-      <Avatar uri={avatar} name={name} size={50} />
+      <View style={{ position: 'relative' }}>
+        <Avatar uri={avatar} name={name} size={50} />
+        {isOnline && <View style={styles.onlineDot} />}
+      </View>
       <View style={styles.info}>
         <View style={styles.topRow}>
           <Text style={styles.name} numberOfLines={1}>{name}</Text>
@@ -87,4 +91,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   badgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  onlineDot: {
+    position: 'absolute', bottom: 1, right: 1,
+    width: 13, height: 13, borderRadius: 7,
+    backgroundColor: '#34C759', borderWidth: 2, borderColor: '#fff',
+  },
 });

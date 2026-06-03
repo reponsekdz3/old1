@@ -92,3 +92,29 @@ export const useCallStore = create((set) => ({
   setCallHistory: (callHistory) => set({ callHistory }),
   addCall: (call) => set((state) => ({ callHistory: [call, ...state.callHistory] })),
 }));
+
+export const usePhoneContactsStore = create((set) => ({
+  vipchatContacts: [],
+  phoneOnlyContacts: [],
+  lastSynced: null,
+  syncing: false,
+  permissionGranted: null,
+  setPhoneContacts: ({ vipchatContacts, phoneOnlyContacts, lastSynced, granted }) => set({
+    vipchatContacts: vipchatContacts || [],
+    phoneOnlyContacts: phoneOnlyContacts || [],
+    lastSynced,
+    permissionGranted: granted,
+  }),
+  setSyncing: (syncing) => set({ syncing }),
+}));
+
+export const useOfflineStore = create((set, get) => ({
+  queue: [],
+  addToQueue: (item) => set((state) => ({
+    queue: [...state.queue, { ...item, queuedAt: Date.now(), queueId: Math.random().toString(36).slice(2) }],
+  })),
+  removeFromQueue: (queueId) => set((state) => ({
+    queue: state.queue.filter(i => i.queueId !== queueId),
+  })),
+  clearQueue: () => set({ queue: [] }),
+}));

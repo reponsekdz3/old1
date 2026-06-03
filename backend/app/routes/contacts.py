@@ -158,6 +158,63 @@ def search_users():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@contacts_bp.route('/sync-phone', methods=['POST'])
+@jwt_required()
+def sync_phone_contacts():
+    """Accept phone numbers from device, return which are on VipChat."""
+    try:
+        user_id = get_jwt_identity()
+        data = request.json or {}
+        phone_numbers = data.get('phone_numbers', [])
+        if not phone_numbers:
+            return jsonify({'registered': [], 'unregistered': []}), 200
+
+        def normalize(p):
+            return str(p).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '').replace('\u00a0', '')
+
+        normalized_map = {}
+        for p in phone_numbers:
+            if p:
+                norm = normalize(p)
+                if norm:
+                    normalized_map[norm] = p
+
+        current_user = User.query.get(user_id)
+        if not current_user:
+            return jsonify({'error': 'User not found'}), 404
+
+        registered = []
+        unregistered = []
+
+        for norm, original in normalized_map.items():
+            user = User.query.filter_by(phone_number=norm).first()
+            if not user and not norm.startswith('+'):
+                user = User.query.filter_by(phone_number='+' + norm).first()
+            if not user and norm.startswith('+'):
+                user = User.query.filter_by(phone_number=norm[1:]).first()
+
+            if user and user.id != user_id:
+                registered.append({
+                    'phone_number': original,
+                    'normalized_phone': norm,
+                    'id': user.id,
+                    'full_name': user.full_name,
+                    'avatar_url': user.avatar_url,
+                    'about': getattr(user, 'about', None) or getattr(user, 'bio', None) or 'Hey there! I am using VipChat.',
+                    'is_online': getattr(user, 'is_online', False),
+                })
+            else:
+                unregistered.append(original)
+
+        return jsonify({
+            'registered': registered,
+            'unregistered': unregistered,
+            'total_checked': len(normalized_map),
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # ── Status routes ─────────────────────────────────────────────────────────────
 status_bp = Blueprint('status', __name__, url_prefix='/api/status')
 

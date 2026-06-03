@@ -82,6 +82,21 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="contacts"
+        options={{
+          title: 'Contacts',
+          tabBarLabel: 'Contacts',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'people' : 'people-outline'} size={24} color={color} />
+          ),
+          headerRight: () => (
+            <TouchableOpacity style={styles.headerBtn} onPress={() => router.push('/qr')}>
+              <Ionicons name="qr-code-outline" size={22} color="#fff" />
+            </TouchableOpacity>
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="status"
         options={{
           title: 'Updates',
@@ -100,7 +115,7 @@ export default function TabsLayout() {
             <Ionicons name={focused ? 'call' : 'call-outline'} size={24} color={color} />
           ),
           headerRight: () => (
-            <TouchableOpacity style={styles.headerBtn} onPress={() => router.push('/(tabs)/calls')}>
+            <TouchableOpacity style={styles.headerBtn}>
               <Ionicons name="add" size={26} color="#fff" />
             </TouchableOpacity>
           ),

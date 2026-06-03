@@ -15,6 +15,8 @@ import VoiceRecorder from '../../components/VoiceRecorder';
 import Avatar from '../../components/Avatar';
 import { useChatStore, useAuthStore } from '../../services/store';
 import { getSocket } from '../../services/socket';
+import { useNetworkStatus } from '../../hooks/useNetworkStatus';
+import { Cache } from '../../services/cache';
 import api from '../../services/api';
 import { COLORS } from '../../config';
 
@@ -25,6 +27,7 @@ export default function ChatScreen() {
   const { messages: allMessages, setMessages, addMessage, updateMessage, typing } = useChatStore();
   const messages = allMessages[id] || [];
 
+  const { isOnline } = useNetworkStatus();
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -47,12 +50,20 @@ export default function ChatScreen() {
   }, [id]);
 
   const loadMessages = async () => {
+    // Show cached messages immediately for fast load
+    const cached = await Cache.getMessages(id);
+    if (cached?.length) {
+      setMessages(id, cached);
+      setLoading(false);
+    }
+    // Then try to fetch fresh from network
     try {
       const { data } = await api.get(`/messages/chat/${id}`);
       const msgs = data.messages || [];
       setMessages(id, msgs);
+      await Cache.setMessages(id, msgs);
     } catch (e) {
-      console.warn('Failed to load messages:', e.message);
+      console.warn('Messages fetch failed, using cache:', e.message);
     } finally {
       setLoading(false);
     }
@@ -158,6 +169,14 @@ export default function ChatScreen() {
     addMessage(id, tempMsg);
     setText('');
 
+    // If offline, queue the message
+    if (!isOnline) {
+      await Cache.addToOfflineQueue({ chatId: id, content, mediaUrl, mediaType, tempId });
+      updateMessage(id, tempId, { status: 'queued' });
+      setSending(false);
+      return;
+    }
+
     try {
       const { data } = await api.post(`/messages/${id}`, {
         content: content || undefined,
@@ -165,15 +184,37 @@ export default function ChatScreen() {
         media_type: mediaType || undefined,
       });
       updateMessage(id, tempId, { ...data, id: data.id || tempId });
+      await Cache.appendMessage(id, { ...data });
       const socket = getSocket();
       if (socket) socket.emit('message', data);
     } catch (err) {
       updateMessage(id, tempId, { status: 'failed' });
-      Alert.alert('Error', 'Failed to send message');
+      Alert.alert('Failed', 'Message could not be sent. Tap to retry when connected.');
     } finally {
       setSending(false);
     }
   };
+
+  // Flush queued messages when back online
+  useEffect(() => {
+    if (!isOnline) return;
+    Cache.getOfflineQueue().then(async (queue) => {
+      for (const item of queue) {
+        if (item.chatId !== id) continue;
+        try {
+          const { data } = await api.post(`/messages/${item.chatId}`, {
+            content: item.content || undefined,
+            media_url: item.mediaUrl || undefined,
+            media_type: item.mediaType || undefined,
+          });
+          updateMessage(id, item.tempId, { ...data, id: data.id || item.tempId });
+          await Cache.removeFromOfflineQueue(item.id);
+          const socket = getSocket();
+          if (socket) socket.emit('message', data);
+        } catch {}
+      }
+    });
+  }, [isOnline, id]);
 
   const handleSend = () => {
     if (text.trim()) sendMessage(text.trim(), null, null);
@@ -305,6 +346,13 @@ export default function ChatScreen() {
         </View>
       </SafeAreaView>
 
+      {!isOnline && (
+        <View style={styles.offlineBanner}>
+          <Ionicons name="cloud-offline-outline" size={14} color="#fff" />
+          <Text style={styles.offlineBannerText}>You're offline — messages will be sent when connected</Text>
+        </View>
+      )}
+
       <View style={styles.chatBg}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
@@ -400,6 +448,11 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
+  offlineBanner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, backgroundColor: '#FF9500', paddingVertical: 6, paddingHorizontal: 12,
+  },
+  offlineBannerText: { color: '#fff', fontSize: 12, fontWeight: '500', flex: 1, textAlign: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 8, paddingVertical: 10, backgroundColor: COLORS.primary,

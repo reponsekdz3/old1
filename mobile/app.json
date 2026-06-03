@@ -19,7 +19,8 @@
         "NSCameraUsageDescription": "VipChat needs camera access to scan QR codes and send photos.",
         "NSMicrophoneUsageDescription": "VipChat needs microphone access for voice messages and calls.",
         "NSPhotoLibraryUsageDescription": "VipChat needs photo library access to send images.",
-        "NSPhotoLibraryAddUsageDescription": "VipChat needs to save images to your photo library."
+        "NSPhotoLibraryAddUsageDescription": "VipChat needs to save images to your photo library.",
+        "NSContactsUsageDescription": "VipChat needs access to your contacts to show which of your friends are on VipChat."
       }
     },
     "android": {
@@ -33,6 +34,7 @@
         "RECORD_AUDIO",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
+        "READ_CONTACTS",
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
         "USE_FULL_SCREEN_INTENT",
@@ -71,6 +73,12 @@
           "icon": "./assets/icon.png",
           "color": "#25D366",
           "sounds": ["./assets/notification.wav", "./assets/ringtone.wav"]
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "VipChat needs access to your contacts to show which of your friends are already on VipChat."
         }
       ]
     ],

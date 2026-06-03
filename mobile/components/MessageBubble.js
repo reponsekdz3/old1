@@ -9,6 +9,12 @@ function formatTime(ts) {
 }
 
 function DeliveryTicks({ status }) {
+  if (status === 'failed') {
+    return <Ionicons name="alert-circle" size={13} color="#FF3B30" />;
+  }
+  if (status === 'queued') {
+    return <Ionicons name="cloud-upload-outline" size={12} color="rgba(255,255,255,0.5)" />;
+  }
   if (status === 'read') {
     return (
       <View style={{ flexDirection: 'row' }}>
@@ -39,7 +45,9 @@ export default function MessageBubble({ message, isOwn, onLongPress, onImagePres
     reactions, is_deleted,
   } = message;
 
-  const bg = isOwn ? COLORS.lightGreen : '#fff';
+  const isFailed = status === 'failed';
+  const isQueued = status === 'queued';
+  const bg = isOwn ? (isFailed ? '#FFEBEE' : isQueued ? '#F5F5F5' : COLORS.lightGreen) : '#fff';
   const textColor = COLORS.dark;
 
   const renderContent = () => {
