@@ -400,6 +400,13 @@ export default function LoginPage() {
       localStorage.setItem('access_token', data.access_token);
       localStorage.setItem('refresh_token', data.refresh_token);
       setUser(data.user);
+      // Ensure Signal Protocol keys are ready (regenerates if missing)
+      try {
+        const { ensureKeysReady } = await import('../services/e2ee');
+        await ensureKeysReady(api);
+      } catch (keyErr) {
+        console.warn('[E2EE] ensureKeysReady failed:', keyErr.message);
+      }
       toast.success(`Welcome back, ${data.user.full_name}! 👋`);
       registerPushNotifications(data.access_token).catch(() => {});
       navigate('/');

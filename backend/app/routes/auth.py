@@ -1,6 +1,10 @@
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import (
+    create_access_token, create_refresh_token,
+    jwt_required, get_jwt_identity, get_jwt,
+)
 from app.models.models import db, User, VerificationCode
+from app.models.e2ee_models import JWTBlocklist, log_security_event
 from app.services.app_services import AuthService
 from werkzeug.security import generate_password_hash
 import secrets
@@ -290,16 +294,38 @@ def update_status():
 @auth_bp.route('/logout', methods=['POST'])
 @jwt_required()
 def logout():
-    """Logout user"""
+    """Logout user — revokes the current JWT token via the blocklist."""
     try:
         from datetime import datetime
+        from flask_jwt_extended import get_jwt
+        from app.models.e2ee_models import JWTBlocklist, log_security_event
+
         user_id = get_jwt_identity()
+        jwt_data = get_jwt()
+        jti = jwt_data.get('jti')
+
+        if jti:
+            exp_ts = jwt_data.get('exp', 0)
+            exp_dt = datetime.utcfromtimestamp(exp_ts)
+            try:
+                db.session.add(JWTBlocklist(
+                    jti=jti,
+                    user_id=user_id,
+                    expires_at=exp_dt,
+                ))
+                db.session.flush()
+            except Exception:
+                db.session.rollback()
+
         user = User.query.get(user_id)
         if user:
             user.last_seen = datetime.utcnow()
             user.status = 'offline'
-            db.session.commit()
+
+        db.session.commit()
+        log_security_event(user_id, 'user_logout', 'info')
         return jsonify({'message': 'Logged out successfully'}), 200
+
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500

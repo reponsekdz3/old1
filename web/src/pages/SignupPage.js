@@ -142,6 +142,13 @@ export default function SignupPage() {
       localStorage.setItem('access_token', data.access_token);
       localStorage.setItem('refresh_token', data.refresh_token);
       setUser(data.user);
+      // Generate + publish Signal Protocol key bundle for new account
+      try {
+        const { generateAndPublishKeys } = await import('../services/e2ee');
+        await generateAndPublishKeys(api);
+      } catch (keyErr) {
+        console.warn('[E2EE] key generation failed — will retry on next login:', keyErr.message);
+      }
       toast.success(`Welcome to VipChat, ${data.user.full_name}! 🎉`);
       navigate('/');
     } catch (err) {

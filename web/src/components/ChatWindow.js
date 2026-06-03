@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
+import { encryptForUser, decryptFromUser } from '../services/e2ee';
 import { useAuthStore, useChatStore } from '../services/store';
 import api from '../services/api';
 import {
@@ -672,6 +673,21 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
         content: text,
         replied_to_id: replyTo?.id || null,
       };
+
+      // Attempt Signal Protocol E2EE — gracefully degrade if keys unavailable
+      try {
+        const enc = await encryptForUser(activeChat, text, api);
+        if (enc) {
+          payload.encrypted_payload = enc.encrypted_payload;
+          payload.e2ee_header      = enc.e2ee_header;
+          payload.e2ee_type        = enc.e2ee_type;
+          payload.content          = '[E2EE]'; // sentinel; cleared on decryption
+        }
+      } catch (encErr) {
+        // Keys not yet exchanged — send plaintext as fallback
+        console.warn('[E2EE] encrypt skipped:', encErr.message);
+      }
+
       const { data } = await api.post(`/messages/${activeChat}`, payload);
       addMessage(data);
       if (socket) {

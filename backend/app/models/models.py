@@ -44,9 +44,21 @@ class Message(db.Model):
     link_preview_url = db.Column(db.String(500), nullable=True)
     contact_name = db.Column(db.String(255), nullable=True)
     contact_phone = db.Column(db.String(50), nullable=True)
+    # ── Signal Protocol E2EE fields ──────────────────────────────────────
+    encrypted_payload = db.Column(db.Text, nullable=True)   # base64 AES-256-GCM ciphertext
+    e2ee_header = db.Column(db.Text, nullable=True)          # JSON: ratchet + optional X3DH header
+    e2ee_type = db.Column(db.Integer, default=0, nullable=True)  # 0=ratchet, 1=prekey
+    # ─────────────────────────────────────────────────────────────────────
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
+    __table_args__ = (
+        db.Index('ix_messages_sender_id', 'sender_id'),
+        db.Index('ix_messages_receiver_id', 'receiver_id'),
+        db.Index('ix_messages_created_at', 'created_at'),
+        db.Index('ix_messages_conversation', 'sender_id', 'receiver_id', 'created_at'),
+    )
+
     sender = db.relationship('User', foreign_keys=[sender_id], backref='sent_messages')
     receiver = db.relationship('User', foreign_keys=[receiver_id], backref='received_messages')
     replied_to = db.relationship('Message', remote_side=[id], foreign_keys=[replied_to_id], backref='replies')
@@ -89,7 +101,10 @@ class Message(db.Model):
                 'phone': self.contact_phone
             } if self.contact_phone else None,
             'created_at': self.created_at.isoformat(),
-            'reactions': [r.to_dict() for r in self.reactions]
+            'reactions': [r.to_dict() for r in self.reactions],
+            'encrypted_payload': self.encrypted_payload,
+            'e2ee_header': self.e2ee_header,
+            'e2ee_type': self.e2ee_type,
         }
 
 class MessageReaction(db.Model):

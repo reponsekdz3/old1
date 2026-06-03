@@ -21,7 +21,7 @@ def create_app(config_name='development'):
 
     db.init_app(app)
     CORS(app, origins=app.config['SOCKETIO_CORS_ALLOWED_ORIGINS'], supports_credentials=True)
-    JWTManager(app)
+    jwt = JWTManager(app)
     limiter.init_app(app)
 
     socketio = SocketIO(
@@ -80,6 +80,20 @@ def create_app(config_name='development'):
     app.register_blueprint(payments_bp)
     app.register_blueprint(api_platform_bp)
     app.register_blueprint(v1_bp)
+
+    from app.routes.e2ee import e2ee_bp
+    from app.routes.security_audit import security_audit_bp
+    app.register_blueprint(e2ee_bp)
+    app.register_blueprint(security_audit_bp)
+
+    # ── JWT token blocklist ────────────────────────────────────────────────
+    @jwt.token_in_blocklist_loader
+    def _check_token_revoked(jwt_header, jwt_payload):
+        from app.models.e2ee_models import JWTBlocklist
+        jti = jwt_payload.get('jti')
+        if not jti:
+            return False
+        return JWTBlocklist.query.filter_by(jti=jti).first() is not None
 
     # ── Security headers ──────────────────────────────────────────────────
     from app.middleware.security import add_security_headers
@@ -399,6 +413,7 @@ def create_app(config_name='development'):
 
     # ── Database setup ────────────────────────────────────────────────────
     with app.app_context():
+        from app.models import e2ee_models as _e2ee_models  # noqa: F401 — ensure E2EE tables created
         db.create_all()
         from sqlalchemy import text
         migrations = [
