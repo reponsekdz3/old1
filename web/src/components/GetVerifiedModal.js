@@ -61,9 +61,8 @@ export default function GetVerifiedModal({ onClose, onSuccess }) {
     try {
       const { data } = await api.post('/payments/stripe/create-checkout-session', {
         tier: selectedTier,
-        base_url: baseUrl,
       });
-      window.location.href = data.url;
+      window.open(data.url, '_blank', 'noopener,noreferrer');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Could not start Stripe checkout');
       setLoading(false);

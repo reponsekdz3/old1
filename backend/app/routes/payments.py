@@ -255,8 +255,32 @@ def flutterwave_verify(tx_ref):
             return jsonify({'verified': False, 'error': 'No matching transaction found'}), 200
 
         tx = transactions[0]
+
         if tx.get('status') != 'successful':
+            payment.status = 'failed'
+            db.session.commit()
             return jsonify({'verified': False, 'error': f'Transaction status: {tx.get("status")}'}), 200
+
+        actual_amount = float(tx.get('amount', 0))
+        expected_amount = float(payment.amount)
+        actual_currency = str(tx.get('currency', '')).upper()
+        expected_currency = str(payment.currency).upper()
+
+        if abs(actual_amount - expected_amount) > 0.01:
+            payment.status = 'failed'
+            db.session.commit()
+            return jsonify({
+                'verified': False,
+                'error': f'Amount mismatch: paid {actual_amount} but expected {expected_amount}',
+            }), 200
+
+        if actual_currency != expected_currency:
+            payment.status = 'failed'
+            db.session.commit()
+            return jsonify({
+                'verified': False,
+                'error': f'Currency mismatch: paid in {actual_currency} but expected {expected_currency}',
+            }), 200
 
         flw_ref = tx.get('flw_ref', tx_ref)
         payment.status = 'completed'
@@ -264,8 +288,8 @@ def flutterwave_verify(tx_ref):
         payment.metadata_json = json.dumps({
             'flw_ref': flw_ref,
             'tx_ref': tx_ref,
-            'amount': tx.get('amount'),
-            'currency': tx.get('currency'),
+            'amount': actual_amount,
+            'currency': actual_currency,
             'status': tx.get('status'),
         })
         db.session.commit()
@@ -316,16 +340,35 @@ def flutterwave_webhook():
                     payment = Payment.query.filter_by(provider_payment_id=flw_ref).first()
 
                 if payment and payment.status == 'pending':
-                    payment.status = 'completed'
-                    payment.provider_payment_id = flw_ref
-                    payment.metadata_json = json.dumps({
-                        'flw_ref': flw_ref,
-                        'tx_ref': tx_ref,
-                        'amount': tx_data.get('amount'),
-                        'currency': tx_data.get('currency'),
-                    })
-                    db.session.commit()
-                    _mark_user_verified(payment.user_id, payment.tier, flw_ref)
+                    actual_amount = float(tx_data.get('amount', 0))
+                    expected_amount = float(payment.amount)
+                    actual_currency = str(tx_data.get('currency', '')).upper()
+                    expected_currency = str(payment.currency).upper()
+
+                    amount_ok = abs(actual_amount - expected_amount) <= 0.01
+                    currency_ok = actual_currency == expected_currency
+
+                    if amount_ok and currency_ok:
+                        payment.status = 'completed'
+                        payment.provider_payment_id = flw_ref
+                        payment.metadata_json = json.dumps({
+                            'flw_ref': flw_ref,
+                            'tx_ref': tx_ref,
+                            'amount': actual_amount,
+                            'currency': actual_currency,
+                        })
+                        db.session.commit()
+                        _mark_user_verified(payment.user_id, payment.tier, flw_ref)
+                    else:
+                        payment.status = 'failed'
+                        payment.metadata_json = json.dumps({
+                            'error': 'amount or currency mismatch',
+                            'actual_amount': actual_amount,
+                            'expected_amount': expected_amount,
+                            'actual_currency': actual_currency,
+                            'expected_currency': expected_currency,
+                        })
+                        db.session.commit()
 
         return jsonify({'status': 'success'}), 200
 
