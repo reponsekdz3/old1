@@ -61,15 +61,15 @@ def register():
         return jsonify({'error': 'You already have an API client registered'}), 409
 
     raw_key, key_hash = generate_api_key()
-    client = ApiClient(
-        user_id=user_id,
-        business_name=business_name,
-        api_key_hash=key_hash,
-        api_key_prefix=raw_key[:20] + '...',
-        tier='starter',
-        is_active=True,
-        webhook_secret=secrets.token_hex(16),
-    )
+    client = ApiClient()
+    client.user_id = user_id
+    client.business_name = business_name
+    client.api_key_hash = key_hash
+    client.api_key_prefix = raw_key[:20] + '...'
+    client.tier = 'starter'
+    client.is_active = True
+    client.webhook_secret = secrets.token_hex(16)
+    
     db.session.add(client)
     db.session.commit()
 
@@ -209,12 +209,12 @@ def subscribe():
     stripe_key = current_app.config.get('STRIPE_SECRET_KEY', '')
     if not stripe_key:
         client.tier = tier
-        sub = ApiSubscription(
-            client_id=client.id,
-            tier=tier,
-            status='active',
-            current_period_end=datetime.utcnow() + timedelta(days=30),
-        )
+        sub = ApiSubscription()
+        sub.client_id = client.id
+        sub.tier = tier
+        sub.status = 'active'
+        sub.current_period_end = datetime.utcnow() + timedelta(days=30)
+        
         db.session.add(sub)
         db.session.commit()
         return jsonify({
@@ -223,7 +223,7 @@ def subscribe():
         }), 200
 
     try:
-        import stripe
+        import stripe  # type: ignore
         stripe.api_key = stripe_key
         user = User.query.get(user_id)
 
@@ -233,15 +233,15 @@ def subscribe():
             metadata={'client_id': client.id, 'user_id': user_id},
         )
 
-        price_id = STRIPE_PRICE_IDS.get(tier)
+        price_id = STRIPE_PRICE_IDS.get(tier) or 'price_default'
         checkout = stripe.checkout.Session.create(
             customer=customer.id,
             mode='subscription',
-            line_items=[{'price': price_id, 'quantity': 1}],
+            line_items=[{'price': str(price_id), 'quantity': 1}],
             success_url=data.get('success_url', 'https://vipchat.app/api-platform?success=1'),
             cancel_url=data.get('cancel_url', 'https://vipchat.app/api-platform?cancel=1'),
-            metadata={'client_id': client.id, 'tier': tier},
-            subscription_data={'metadata': {'client_id': client.id, 'tier': tier}},
+            metadata={'client_id': str(client.id), 'tier': tier},
+            subscription_data={'metadata': {'client_id': str(client.id), 'tier': tier}},
         )
         return jsonify({'checkout_url': checkout.url}), 200
     except Exception as e:
@@ -256,7 +256,7 @@ def stripe_webhook():
     secret = current_app.config.get('STRIPE_WEBHOOK_SECRET', '')
 
     try:
-        import stripe
+        import stripe  # type: ignore
         stripe.api_key = current_app.config.get('STRIPE_SECRET_KEY', '')
         event = stripe.Webhook.construct_event(payload, sig, secret)
     except Exception:
@@ -281,12 +281,12 @@ def stripe_webhook():
                     if period_end:
                         existing.current_period_end = datetime.utcfromtimestamp(period_end)
                 else:
-                    new_sub = ApiSubscription(
-                        client_id=client_id,
-                        stripe_subscription_id=sub_data['id'],
-                        tier=tier,
-                        status=status,
-                    )
+                    new_sub = ApiSubscription()
+                    new_sub.client_id = client_id
+                    new_sub.stripe_subscription_id = sub_data['id']
+                    new_sub.tier = tier
+                    new_sub.status = status
+                    
                     db.session.add(new_sub)
                 db.session.commit()
 
@@ -405,11 +405,12 @@ def billing_portal():
         }), 200
 
     try:
-        import stripe
+        import stripe  # type: ignore
         stripe.api_key = stripe_key
         subscription = stripe.Subscription.retrieve(sub.stripe_subscription_id)
+        customer_id = subscription.customer if isinstance(subscription.customer, str) else subscription.customer.id  # type: ignore
         portal_session = stripe.billing_portal.Session.create(
-            customer=subscription.customer,
+            customer=customer_id,
             return_url=request.args.get('return_url', current_app.config.get('FRONTEND_URL', '') + '/api-platform'),
         )
         return jsonify({

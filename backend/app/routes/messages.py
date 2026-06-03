@@ -34,20 +34,19 @@ def send_message(receiver_id):
         if getattr(receiver, 'is_banned', False):
             return jsonify({'error': 'User unavailable'}), 403
 
-        msg = Message(
-            sender_id=sender_id,
-            receiver_id=receiver_id,
-            content=content,
-            media_url=media_url,
-            media_type=media_type,
-            replied_to_id=replied_to_id,
-            contact_name=contact_name,
-            contact_phone=contact_phone,
-            latitude=latitude,
-            longitude=longitude,
-            location_name=location_name,
-            status=MessageStatus.SENT,
-        )
+        msg = Message()
+        msg.sender_id = sender_id
+        msg.receiver_id = receiver_id
+        msg.content = content
+        msg.media_url = media_url
+        msg.media_type = media_type
+        msg.replied_to_id = replied_to_id
+        msg.contact_name = contact_name
+        msg.contact_phone = contact_phone
+        msg.latitude = latitude
+        msg.longitude = longitude
+        msg.location_name = location_name
+        msg.status = MessageStatus.SENT
         db.session.add(msg)
         db.session.commit()
 
@@ -225,11 +224,16 @@ def add_reaction(message_id):
         if not emoji:
             return jsonify({'error': 'Emoji required'}), 400
         MessageReaction.query.filter_by(message_id=message_id, user_id=user_id).delete()
-        reaction = MessageReaction(message_id=message_id, user_id=user_id, reaction_emoji=emoji)
+        reaction = MessageReaction()
+        reaction.message_id = message_id
+        reaction.user_id = user_id
+        reaction.reaction_emoji = emoji
         db.session.add(reaction)
         db.session.commit()
         msg = Message.query.get(message_id)
-        return jsonify(msg.to_dict()), 200
+        if msg:
+            return jsonify(msg.to_dict()), 200
+        return jsonify({'error': 'Message not found'}), 404
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
@@ -254,7 +258,9 @@ def star_message(message_id):
         existing = StarredMessage.query.filter_by(user_id=user_id, message_id=message_id).first()
         if existing:
             return jsonify({'message': 'Already starred'}), 200
-        starred = StarredMessage(user_id=user_id, message_id=message_id)
+        starred = StarredMessage()
+        starred.user_id = user_id
+        starred.message_id = message_id
         db.session.add(starred)
         db.session.commit()
         return jsonify({'message': 'Starred'}), 201
@@ -327,14 +333,13 @@ def forward_message(message_id):
             return jsonify({'error': 'Not found'}), 404
         forwarded = []
         for rid in recipient_ids:
-            new_msg = Message(
-                sender_id=sender_id,
-                receiver_id=rid,
-                content=original.content,
-                media_url=original.media_url,
-                media_type=original.media_type,
-                forwarded_from_id=message_id,
-            )
+            new_msg = Message()
+            new_msg.sender_id = sender_id
+            new_msg.receiver_id = rid
+            new_msg.content = original.content
+            new_msg.media_url = original.media_url
+            new_msg.media_type = original.media_type
+            new_msg.forwarded_from_id = message_id
             db.session.add(new_msg)
             forwarded.append(new_msg)
         original.forward_count = (original.forward_count or 0) + len(recipient_ids)

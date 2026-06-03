@@ -68,15 +68,15 @@ def api_key_required(f):
 def log_usage(endpoint: str, method: str, status_code: int, message_count: int = 0):
     try:
         elapsed = int((time.time() - g.get('api_start_time', time.time())) * 1000)
-        log = ApiUsageLog(
-            client_id=g.api_client.id,
-            endpoint=endpoint,
-            method=method,
-            status_code=status_code,
-            message_count=message_count,
-            response_time_ms=elapsed,
-            ip_address=request.remote_addr,
-        )
+        log = ApiUsageLog()
+        log.client_id = g.api_client.id
+        log.endpoint = endpoint
+        log.method = method
+        log.status_code = status_code
+        log.message_count = message_count
+        log.response_time_ms = elapsed
+        log.ip_address = request.remote_addr
+        
         db.session.add(log)
         db.session.commit()
     except Exception:
@@ -131,13 +131,13 @@ def send_message():
         log_usage('/v1/messages/send', 'POST', 500)
         return jsonify({'error': 'API client owner not found'}), 500
 
-    msg = Message(
-        sender_id=sender.id,
-        receiver_id=recipient.id,
-        content=content or None,
-        media_url=media_url,
-        media_type=media_type,
-    )
+    msg = Message()
+    msg.sender_id = sender.id
+    msg.receiver_id = recipient.id
+    msg.content = content or None
+    msg.media_url = media_url
+    msg.media_type = media_type
+    
     db.session.add(msg)
     db.session.commit()
 
@@ -250,7 +250,11 @@ def create_group():
         log_usage('/v1/groups/create', 'POST', 500)
         return jsonify({'error': 'Client owner not found'}), 500
 
-    group = Group(name=name, description=description, creator_id=creator.id)
+    group = Group()
+    group.name = name
+    group.description = description
+    group.creator_id = creator.id
+    
     group.members.append(creator)
     group.admins.append(creator)
 
@@ -269,7 +273,7 @@ def create_group():
         'success': True,
         'group_id': group.id,
         'name': group.name,
-        'member_count': len(group.members),
+        'member_count': len(added) + 1,
         'members_added': added,
     }), 201
 
@@ -303,12 +307,12 @@ def send_broadcast():
     for phone in to_phones:
         recipient = User.query.filter_by(phone_number=phone.strip()).first()
         if recipient:
-            msg = Message(
-                sender_id=sender.id,
-                receiver_id=recipient.id,
-                content=content or None,
-                media_url=media_url,
-            )
+            msg = Message()
+            msg.sender_id = sender.id
+            msg.receiver_id = recipient.id
+            msg.content = content or None
+            msg.media_url = media_url
+            
             db.session.add(msg)
             sent.append(phone)
         else:

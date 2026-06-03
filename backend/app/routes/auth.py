@@ -124,16 +124,16 @@ def signup():
             return jsonify({'error': 'An account with this phone number already exists'}), 409
 
         # Create account directly (phone verified via OTP only after 2 days)
-        user = User(
-            phone_number=phone_number,
-            full_name=full_name,
-            email=email,
-            age=age,
-            country=country,
-            city=city,
-            is_verified=True,
-            status='available',
-        )
+        user = User()
+        user.phone_number = phone_number
+        user.full_name = full_name
+        user.email = email
+        user.age = age
+        user.country = country
+        user.city = city
+        user.is_verified = True
+        user.status = 'available'
+        
         user.set_password(password)
 
         # Generate QR code
@@ -308,11 +308,12 @@ def logout():
             exp_ts = jwt_data.get('exp', 0)
             exp_dt = datetime.utcfromtimestamp(exp_ts)
             try:
-                db.session.add(JWTBlocklist(
-                    jti=jti,
-                    user_id=user_id,
-                    expires_at=exp_dt,
-                ))
+                blocklist_entry = JWTBlocklist()
+                blocklist_entry.jti = jti
+                blocklist_entry.user_id = user_id
+                blocklist_entry.expires_at = exp_dt
+                
+                db.session.add(blocklist_entry)
                 db.session.flush()
             except Exception:
                 db.session.rollback()

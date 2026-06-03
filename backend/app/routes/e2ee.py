@@ -52,14 +52,13 @@ def publish_key_bundle():
             bundle.registration_id = registration_id
             bundle.updated_at = datetime.utcnow()
         else:
-            bundle = E2EEKeyBundle(
-                user_id=user_id,
-                identity_key_pub=identity_key,
-                signed_prekey_id=int(spk['id']),
-                signed_prekey_pub=spk['public_key'],
-                signed_prekey_sig=spk['signature'],
-                registration_id=registration_id,
-            )
+            bundle = E2EEKeyBundle()
+            bundle.user_id = user_id
+            bundle.identity_key_pub = identity_key
+            bundle.signed_prekey_id = int(spk['id'])
+            bundle.signed_prekey_pub = spk['public_key']
+            bundle.signed_prekey_sig = spk['signature']
+            bundle.registration_id = registration_id
             db.session.add(bundle)
             db.session.flush()
 
@@ -75,11 +74,11 @@ def publish_key_bundle():
                 kid = int(opk.get('id', 0))
                 pub = (opk.get('public_key') or '').strip()
                 if kid and pub and kid not in existing_ids:
-                    db.session.add(E2EEOneTimePreKey(
-                        user_id=user_id,
-                        key_id=kid,
-                        public_key=pub,
-                    ))
+                    new_opk = E2EEOneTimePreKey()
+                    new_opk.user_id = user_id
+                    new_opk.key_id = kid
+                    new_opk.public_key = pub
+                    db.session.add(new_opk)
                     existing_ids.add(kid)
                     added += 1
 
@@ -185,9 +184,11 @@ def upload_one_time_prekeys():
             kid = int(opk.get('id', 0))
             pub = (opk.get('public_key') or '').strip()
             if kid and pub and kid not in existing_ids:
-                db.session.add(E2EEOneTimePreKey(
-                    user_id=user_id, key_id=kid, public_key=pub,
-                ))
+                new_opk = E2EEOneTimePreKey()
+                new_opk.user_id = user_id
+                new_opk.key_id = kid
+                new_opk.public_key = pub
+                db.session.add(new_opk)
                 existing_ids.add(kid)
                 added += 1
 

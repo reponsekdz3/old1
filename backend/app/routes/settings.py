@@ -15,7 +15,8 @@ def get_settings():
         
         settings = UserSettings.query.filter_by(user_id=user_id).first()
         if not settings:
-            settings = UserSettings(user_id=user_id)
+            settings = UserSettings()
+            settings.user_id = user_id
             db.session.add(settings)
             db.session.commit()
         
@@ -48,7 +49,8 @@ def update_settings():
         
         settings = UserSettings.query.filter_by(user_id=user_id).first()
         if not settings:
-            settings = UserSettings(user_id=user_id)
+            settings = UserSettings()
+            settings.user_id = user_id
             db.session.add(settings)
         
         if 'read_receipts' in data:
@@ -109,11 +111,10 @@ def mute_chat(chat_id):
         elif duration == '1week':
             muted_until = datetime.utcnow() + timedelta(weeks=1)
         
-        muted = MutedChat(
-            user_id=user_id,
-            chat_with_id=chat_id,
-            muted_until=muted_until
-        )
+        muted = MutedChat()
+        muted.user_id = user_id
+        muted.chat_with_id = chat_id
+        muted.muted_until = muted_until
         
         db.session.add(muted)
         db.session.commit()
@@ -203,12 +204,11 @@ def create_backup():
         
         backup_size = os.path.getsize(filepath)
         
-        backup = ChatBackup(
-            user_id=user_id,
-            backup_url=f"/backups/{filename}",
-            backup_size=backup_size,
-            message_count=len(messages)
-        )
+        backup = ChatBackup()
+        backup.user_id = user_id
+        backup.backup_url = f"/backups/{filename}"
+        backup.backup_size = backup_size
+        backup.message_count = len(messages)
         
         db.session.add(backup)
         db.session.commit()

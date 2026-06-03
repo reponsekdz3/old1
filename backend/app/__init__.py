@@ -35,6 +35,50 @@ def create_app(config_name='development'):
 
     app.active_connections = {}
 
+    # ── Enterprise Services Initialization ──────────────────────────────────
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        logger.info("Initializing enterprise services...")
+        
+        # E2EE & Encryption
+        from app.security.encryption import EncryptionService, KeyManager
+        from app.services.e2ee_service import E2EEMessageService, GroupE2EEService
+        
+        app.key_manager = KeyManager()
+        app.enc_service = EncryptionService(app.key_manager)
+        app.e2ee_service = E2EEMessageService(app.enc_service)
+        app.group_e2ee_service = GroupE2EEService(app.enc_service)
+        
+        # Security
+        from app.security.advanced_security import SecurityManager
+        app.security_manager = SecurityManager()
+        
+        # Scalability
+        from app.infrastructure.scalability import (
+            ShardManager, CacheManager, CDNManager,
+            MessageQueue, MetricsCollector
+        )
+        
+        app.shard_manager = ShardManager(shard_count=app.config.get('SHARD_COUNT', 256))
+        app.cache_manager = CacheManager(app.config.get('REDIS_URL', 'redis://localhost:6379/0'))
+        app.cdn_manager = CDNManager(app.config.get('CDN_URL', 'https://cdn.bitese.app'))
+        app.message_queue = MessageQueue(app.config.get('REDIS_URL'))
+        app.metrics = MetricsCollector(app.config.get('REDIS_URL'))
+        
+        # Monetization (if enabled)
+        if app.config.get('FEATURE_PAYMENTS', True):
+            from app.services.monetization import StripePaymentProcessor, BillingService, RevenueAnalytics
+            app.stripe_processor = StripePaymentProcessor(app.config.get('STRIPE_API_KEY', ''))
+            app.billing_service = BillingService(app.stripe_processor)
+            app.revenue_analytics = RevenueAnalytics()
+        
+        logger.info("✓ Enterprise services initialized successfully")
+    except Exception as e:
+        logger.error(f"⚠ Error initializing enterprise services: {e}")
+        # Don't fail app startup if services init fails
+
     # ── Blueprints ─────────────────────────────────────────────────────────
     from app.routes.auth import auth_bp
     from app.routes.messages import messages_bp
@@ -85,6 +129,28 @@ def create_app(config_name='development'):
     from app.routes.security_audit import security_audit_bp
     app.register_blueprint(e2ee_bp)
     app.register_blueprint(security_audit_bp)
+    
+    # ── Enterprise Blueprints ──────────────────────────────────────────────
+    try:
+        from app.routes.e2ee_enhanced import e2ee_enhanced_bp
+        app.register_blueprint(e2ee_enhanced_bp)
+        logger.info("✓ E2EE Enhanced routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ E2EE Enhanced routes not available: {e}")
+    
+    try:
+        from app.routes.monetization import monetization_bp
+        app.register_blueprint(monetization_bp)
+        logger.info("✓ Monetization routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ Monetization routes not available: {e}")
+    
+    try:
+        from app.routes.webrtc_e2ee import webrtc_e2ee_bp
+        app.register_blueprint(webrtc_e2ee_bp)
+        logger.info("✓ WebRTC E2EE routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ WebRTC E2EE routes not available: {e}")
 
     # ── JWT token blocklist ────────────────────────────────────────────────
     @jwt.token_in_blocklist_loader

@@ -45,14 +45,14 @@ def create_stripe_session():
         if not user:
             return jsonify({'error': 'User not found'}), 404
 
-        payment = Payment(
-            user_id=user_id,
-            provider='stripe',
-            amount=t['amount_usd'],
-            currency='USD',
-            status='pending',
-            tier=tier,
-        )
+        payment = Payment()
+        payment.user_id = user_id
+        payment.provider = 'stripe'
+        payment.amount = t['amount_usd']
+        payment.currency = 'USD'
+        payment.status = 'pending'
+        payment.tier = tier
+        
         db.session.add(payment)
         db.session.commit()
 
@@ -75,11 +75,11 @@ def create_stripe_session():
             success_url=f'{base_url}/settings?verified=success&payment_id={payment.id}',
             cancel_url=f'{base_url}/settings?verified=cancel',
             metadata={
-                'user_id': user_id,
+                'user_id': str(user_id),
                 'tier': tier,
-                'payment_id': payment.id,
+                'payment_id': str(payment.id),
             },
-            customer_email=user.email or None,
+            customer_email=user.email if user.email else 'noemail@vipchat.app',
         )
 
         payment.provider_payment_id = session.id
@@ -116,12 +116,13 @@ def stripe_webhook():
 
         try:
             event = stripe_lib.Webhook.construct_event(payload, sig_header, webhook_secret)
-        except stripe_lib.error.SignatureVerificationError:
-            return jsonify({'error': 'Invalid webhook signature'}), 400
-        except Exception as parse_err:
-            return jsonify({'error': f'Webhook parse error: {parse_err}'}), 400
+        except Exception as sig_err:  # type: ignore
+            if 'Signature' in str(sig_err):
+                return jsonify({'error': 'Invalid webhook signature'}), 400
+            return jsonify({'error': f'Webhook parse error: {sig_err}'}), 400
 
-        if event.get('type') == 'checkout.session.completed':
+        event_type = event.get('type') if hasattr(event, 'get') else event['type']  # type: ignore
+        if event_type == 'checkout.session.completed':
             session_obj = event['data']['object']
             meta = session_obj.get('metadata', {})
             user_id = meta.get('user_id')
@@ -174,16 +175,16 @@ def flutterwave_initialize():
 
         tx_ref = f'vipchat-{user_id[:8]}-{uuid.uuid4().hex[:8]}'
 
-        payment = Payment(
-            user_id=user_id,
-            provider='flutterwave',
-            amount=t['amount_usd'],
-            currency='USD',
-            status='pending',
-            tier=tier,
-            provider_payment_id=tx_ref,
-            metadata_json=json.dumps({'tx_ref': tx_ref}),
-        )
+        payment = Payment()
+        payment.user_id = user_id
+        payment.provider = 'flutterwave'
+        payment.amount = t['amount_usd']
+        payment.currency = 'USD'
+        payment.status = 'pending'
+        payment.tier = tier
+        payment.provider_payment_id = tx_ref
+        payment.metadata_json = json.dumps({'tx_ref': tx_ref})
+        
         db.session.add(payment)
         db.session.commit()
 

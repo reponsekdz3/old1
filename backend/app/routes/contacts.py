@@ -236,14 +236,14 @@ def _do_create_status():
             if len(parts) >= 3:
                 background_color = parts[1].replace('bg:', '')
                 content = parts[2] if len(parts) > 2 else ''
-        status = Status(
-            user_id=user_id,
-            content=content,
-            media_url=media_url,
-            media_type=media_type,
-            background_color=background_color,
-            expires_at=expires_at,
-        )
+        status = Status()
+        status.user_id = user_id
+        status.content = content
+        status.media_url = media_url
+        status.media_type = media_type
+        status.background_color = background_color
+        status.expires_at = expires_at
+        
         db.session.add(status)
         db.session.commit()
         return jsonify({'message': 'Status created', 'status': status.to_dict()}), 201

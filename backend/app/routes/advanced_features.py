@@ -26,14 +26,13 @@ def forward_message(message_id):
         
         forwarded_messages = []
         for recipient_id in recipient_ids:
-            new_message = Message(
-                sender_id=user_id,
-                receiver_id=recipient_id,
-                content=original_message.content,
-                media_url=original_message.media_url,
-                media_type=original_message.media_type,
-                forwarded_from_id=message_id
-            )
+            new_message = Message()
+            new_message.sender_id = user_id
+            new_message.receiver_id = recipient_id
+            new_message.content = original_message.content
+            new_message.media_url = original_message.media_url
+            new_message.media_type = original_message.media_type
+            new_message.forwarded_from_id = message_id
             db.session.add(new_message)
             forwarded_messages.append(new_message)
         
@@ -69,7 +68,9 @@ def star_message(message_id):
         if existing:
             return jsonify({'error': 'Message already starred'}), 409
         
-        starred = StarredMessage(user_id=user_id, message_id=message_id)
+        starred = StarredMessage()
+        starred.user_id = user_id
+        starred.message_id = message_id
         db.session.add(starred)
         db.session.commit()
         
@@ -205,15 +206,14 @@ def send_voice_message():
         filepath = os.path.join(upload_folder, filename)
         audio_data.save(filepath)
         
-        message = Message(
-            sender_id=user_id,
-            receiver_id=receiver_id,
-            content="Voice message",
-            media_url=f"/uploads/voice/{filename}",
-            media_type='voice',
-            media_duration=duration,
-            media_size=os.path.getsize(filepath)
-        )
+        message = Message()
+        message.sender_id = user_id
+        message.receiver_id = receiver_id
+        message.content = "Voice message"
+        message.media_url = f"/uploads/voice/{filename}"
+        message.media_type = 'voice'
+        message.media_duration = duration
+        message.media_size = os.path.getsize(filepath)
         
         db.session.add(message)
         db.session.commit()
@@ -242,29 +242,27 @@ def send_location():
         if not all([receiver_id, latitude, longitude]):
             return jsonify({'error': 'Receiver, latitude, and longitude required'}), 400
         
-        message = Message(
-            sender_id=user_id,
-            receiver_id=receiver_id,
-            content=location_name or "Location",
-            media_type='location',
-            latitude=latitude,
-            longitude=longitude,
-            location_name=location_name,
-            is_live_location=is_live,
-            live_location_duration=duration if is_live else None
-        )
+        message = Message()
+        message.sender_id = user_id
+        message.receiver_id = receiver_id
+        message.content = location_name or "Location"
+        message.media_type = 'location'
+        message.latitude = latitude
+        message.longitude = longitude
+        message.location_name = location_name
+        message.is_live_location = is_live
+        message.live_location_duration = duration if is_live else None
         
         db.session.add(message)
         db.session.flush()
         
         if is_live:
-            live_location = LiveLocation(
-                user_id=user_id,
-                message_id=message.id,
-                latitude=latitude,
-                longitude=longitude,
-                expires_at=datetime.utcnow() + timedelta(minutes=duration)
-            )
+            live_location = LiveLocation()
+            live_location.user_id = user_id
+            live_location.message_id = message.id
+            live_location.latitude = latitude
+            live_location.longitude = longitude
+            live_location.expires_at = datetime.utcnow() + timedelta(minutes=duration)
             db.session.add(live_location)
         
         db.session.commit()
@@ -325,14 +323,13 @@ def send_contact():
         if not all([receiver_id, contact_name, contact_phone]):
             return jsonify({'error': 'All fields required'}), 400
         
-        message = Message(
-            sender_id=user_id,
-            receiver_id=receiver_id,
-            content=f"Contact: {contact_name}",
-            media_type='contact',
-            contact_name=contact_name,
-            contact_phone=contact_phone
-        )
+        message = Message()
+        message.sender_id = user_id
+        message.receiver_id = receiver_id
+        message.content = f"Contact: {contact_name}"
+        message.media_type = 'contact'
+        message.contact_name = contact_name
+        message.contact_phone = contact_phone
         
         db.session.add(message)
         db.session.commit()
@@ -387,12 +384,11 @@ def send_broadcast():
         
         messages = []
         for recipient_id in recipient_ids:
-            message = Message(
-                sender_id=user_id,
-                receiver_id=recipient_id,
-                content=content,
-                media_url=media_url
-            )
+            message = Message()
+            message.sender_id = user_id
+            message.receiver_id = recipient_id
+            message.content = content
+            message.media_url = media_url
             db.session.add(message)
             messages.append(message)
         
@@ -425,7 +421,9 @@ def archive_chat(chat_id):
         if existing:
             return jsonify({'error': 'Chat already archived'}), 409
         
-        archived = ArchivedChat(user_id=user_id, chat_with_id=chat_id)
+        archived = ArchivedChat()
+        archived.user_id = user_id
+        archived.chat_with_id = chat_id
         db.session.add(archived)
         db.session.commit()
         
@@ -477,12 +475,11 @@ def initiate_call():
         if not receiver_id:
             return jsonify({'error': 'Receiver required'}), 400
         
-        call = Call(
-            caller_id=caller_id,
-            receiver_id=receiver_id,
-            call_type=call_type,
-            status='initiated'
-        )
+        call = Call()
+        call.caller_id = caller_id
+        call.receiver_id = receiver_id
+        call.call_type = call_type
+        call.status = 'initiated'
         
         db.session.add(call)
         db.session.commit()
