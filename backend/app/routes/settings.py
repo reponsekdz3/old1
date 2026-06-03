@@ -1,7 +1,8 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from app.models.models import db, UserSettings, MutedChat, User
+from app.models.models import db, UserSettings, MutedChat, User, Message
 from datetime import datetime, timedelta
+import io
 
 settings_bp = Blueprint('settings', __name__, url_prefix='/api/settings')
 

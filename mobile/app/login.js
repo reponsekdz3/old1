@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
-  Alert, useWindowDimensions, Animated,
+  Alert, useWindowDimensions, Animated, Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -63,6 +63,9 @@ export default function LoginPage() {
 
   return (
     <View style={s.screen}>
+      {/* Fixed download banner at bottom — always visible */}
+      <DownloadBanner rf={fs} />
+
       <LinearGradient colors={['#064E45', '#075E54', '#0A8C7E']} style={[s.hero, { height: heroH }]}>
         <SafeAreaView edges={['top']} style={s.heroInner}>
           <View style={s.logoWrap}>
@@ -162,6 +165,40 @@ export default function LoginPage() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+function DownloadBanner({ rf }) {
+  const open = (url) => Linking.openURL(url).catch(() => {});
+  return (
+    <View style={{
+      position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 99,
+      backgroundColor: '#075E54', paddingVertical: 8, paddingHorizontal: 16,
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+    }}>
+      <Ionicons name="phone-portrait-outline" size={rf(15)} color="#fff" />
+      <Text style={{ color: '#fff', fontSize: rf(11.5), fontWeight: '700', flex: 1 }}>
+        VipChat — Download on your phone
+      </Text>
+      <TouchableOpacity
+        onPress={() => open('https://apps.apple.com/app/vipchat')}
+        style={{ backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+        activeOpacity={0.75}
+        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+      >
+        <Ionicons name="logo-apple" size={rf(12)} color="#fff" />
+        <Text style={{ color: '#fff', fontSize: rf(10.5), fontWeight: '700' }}>iOS</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        onPress={() => open('https://play.google.com/store/apps/details?id=com.vipchat.app')}
+        style={{ backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+        activeOpacity={0.75}
+        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+      >
+        <Ionicons name="logo-google-playstore" size={rf(12)} color="#fff" />
+        <Text style={{ color: '#fff', fontSize: rf(10.5), fontWeight: '700' }}>Android</Text>
+      </TouchableOpacity>
     </View>
   );
 }

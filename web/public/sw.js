@@ -1,48 +1,71 @@
-/* Bitese Service Worker - Push Notifications + Offline Cache */
-const CACHE_NAME = 'bitese-v1';
-const OFFLINE_URLS = ['/', '/login'];
+/* VipChat Service Worker — push notifications + offline caching */
+const CACHE_NAME = 'vipchat-v3';
+const STATIC_ASSETS = ['/', '/index.html', '/logo192.png', '/manifest.json'];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(OFFLINE_URLS)).catch(() => {})
-  );
   self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS).catch(() => {}))
+  );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    )
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-/* ── Push event handler ──────────────────────────────────────────────────── */
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/uploads/')) return;
+
+  event.respondWith(
+    fetch(event.request)
+      .then((resp) => {
+        if (resp && resp.status === 200 && resp.type === 'basic') {
+          const cloned = resp.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
+        }
+        return resp;
+      })
+      .catch(() => caches.match(event.request).then(r => r || caches.match('/index.html')))
+  );
+});
+
+// ── Push Notifications ────────────────────────────────────────────────────────
 self.addEventListener('push', (event) => {
-  let payload = { title: 'Bitese', body: 'New message', icon: '/logo192.png', url: '/' };
-  try {
-    if (event.data) payload = { ...payload, ...JSON.parse(event.data.text()) };
-  } catch {}
+  let payload = {};
+  try { payload = event.data ? event.data.json() : {}; } catch {}
 
-  const options = {
-    body: payload.body,
-    icon: payload.icon || '/logo192.png',
-    badge: '/logo192.png',
-    vibrate: [200, 100, 200],
-    tag: 'bitese-message',
-    renotify: true,
-    data: { url: payload.url || '/' },
-    actions: [
-      { action: 'open', title: 'Open Bitese' },
-      { action: 'dismiss', title: 'Dismiss' },
-    ],
-  };
+  const title = payload.title || 'VipChat';
+  const body  = payload.body  || 'You have a new message';
+  const icon  = payload.icon  || '/logo192.png';
+  const badge = '/logo192.png';
+  const tag   = payload.tag   || `vipchat-${payload.sender_id || 'msg'}`;
+  const data  = { url: payload.url || '/', ...payload };
 
-  event.waitUntil(self.registration.showNotification(payload.title, options));
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon,
+      badge,
+      tag,
+      renotify: true,
+      vibrate: [200, 100, 200],
+      requireInteraction: false,
+      silent: false,
+      data,
+      actions: [
+        { action: 'open',    title: '💬 Open Chat' },
+        { action: 'dismiss', title: '✕ Dismiss' },
+      ],
+    })
+  );
 });
 
-/* ── Notification click handler ─────────────────────────────────────────── */
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   if (event.action === 'dismiss') return;
@@ -50,25 +73,24 @@ self.addEventListener('notificationclick', (event) => {
   const targetUrl = event.notification.data?.url || '/';
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
-      const existing = windowClients.find(c => c.url.includes(self.location.origin));
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      const existing = clients.find(c => c.url.startsWith(self.location.origin));
       if (existing) {
         existing.focus();
-        existing.postMessage({ type: 'PUSH_CLICK', url: targetUrl });
-      } else {
-        clients.openWindow(self.location.origin + targetUrl);
+        existing.postMessage({ type: 'PUSH_CLICK', url: targetUrl, data: event.notification.data });
+        return;
       }
+      return self.clients.openWindow(targetUrl);
     })
   );
 });
 
-/* ── Fetch: network-first, fall back to cache ────────────────────────────── */
-self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
-  if (!event.request.url.startsWith(self.location.origin)) return;
-  if (event.request.url.includes('/api/')) return;
-
-  event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
-  );
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'vipchat-sync-messages') {
+    event.waitUntil(
+      self.clients.matchAll().then(clients =>
+        clients.forEach(c => c.postMessage({ type: 'BACKGROUND_SYNC' }))
+      )
+    );
+  }
 });

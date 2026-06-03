@@ -75,7 +75,8 @@ class AuthService:
                 return False
             if verification.attempts >= 5:
                 return False
-            verification.attempts += 1
+            # Invalidate code after successful verification (prevent reuse)
+            db.session.delete(verification)
             db.session.commit()
             return True
         except Exception as e:

@@ -287,8 +287,32 @@ function QRLoginPanel() {
 }
 
 // ── Download App Banner ─────────────────────────────────────────────────────
-function DownloadAppBanner() {
+function DownloadAppBanner({ compact }) {
   const DOWNLOAD_URL = window.location.origin + '/download';
+  if (compact) {
+    return (
+      <div className="py-3 flex items-center gap-3">
+        <div className="bg-white p-1 rounded-lg border border-gray-100 shadow-sm flex-shrink-0">
+          <QRCodeSVG value={DOWNLOAD_URL} size={48} level="M" fgColor="#075E54" bgColor="#fff" includeMargin={false} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-bold text-gray-800 mb-1">📱 Get VipChat on your phone</p>
+          <div className="flex gap-1.5 flex-wrap">
+            <a href="https://apps.apple.com/app/vipchat" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1 bg-black text-white rounded-lg px-2 py-1 hover:bg-gray-800 transition text-[10px] font-semibold">
+              <svg viewBox="0 0 24 24" className="w-3 h-3 fill-current flex-shrink-0"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+              App Store
+            </a>
+            <a href="https://play.google.com/store/apps/details?id=com.vipchat.app" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1 bg-black text-white rounded-lg px-2 py-1 hover:bg-gray-800 transition text-[10px] font-semibold">
+              <svg viewBox="0 0 24 24" className="w-3 h-3 fill-current flex-shrink-0"><path d="M3.18 23.76c.3.17.64.24.99.2l12.6-7.17-2.68-2.68-10.91 9.65zM.55 1.12C.2 1.5 0 2.08 0 2.82v18.36c0 .74.2 1.32.55 1.7l.09.09L10.39 12.9v-.22L.64 1.03l-.09.09zM20.5 10.56L17.29 8.7l-3.03 3.03 3.03 3.03L20.5 13.5c.86-.49.86-1.46 0-1.94zM3.18.24l10.91 9.65 2.68-2.68L4.17.04C3.83 0 3.48.07 3.18.24z"/></svg>
+              Google Play
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="mt-6 rounded-2xl border-2 border-dashed border-gray-200 p-5 bg-gradient-to-br from-[#f0fdf4] to-white">
       <div className="flex items-center gap-2 mb-3">
@@ -342,7 +366,7 @@ function DownloadAppBanner() {
   );
 }
 
-// ── Main Login Page ──────────────────────────────────────────────────────────
+// ── Main Login Page ─────────────────────────────────────────────────────────
 export default function LoginPage() {
   const navigate = useNavigate();
   const { setUser } = useAuthStore();
@@ -458,9 +482,9 @@ export default function LoginPage() {
       </div>
 
       {/* RIGHT — login form */}
-      <div className="w-full lg:w-[480px] flex flex-col bg-white relative overflow-y-auto">
+      <div className="w-full lg:w-[480px] flex flex-col bg-white relative overflow-hidden">
         <div className="lg:hidden absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#075E54] to-[#25D366]" />
-        <div className="px-8 sm:px-10 py-8 max-w-md mx-auto w-full flex-1">
+        <div className="px-8 sm:px-10 py-8 max-w-md mx-auto w-full flex-1 overflow-y-auto">
           {/* Logo */}
           <div className="flex items-center gap-3 mb-7">
             <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#075E54] to-[#25D366] flex items-center justify-center shadow-lg shadow-green-200">
@@ -562,8 +586,10 @@ export default function LoginPage() {
             )}
           </AnimatePresence>
 
-          {/* Download App Banner */}
-          <DownloadAppBanner />
+        </div>
+        {/* Download App Banner — always visible, never scrolls away */}
+        <div className="border-t border-gray-100 bg-white px-8 sm:px-10 max-w-md mx-auto w-full flex-shrink-0">
+          <DownloadAppBanner compact />
         </div>
       </div>
     </div>

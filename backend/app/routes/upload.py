@@ -283,22 +283,53 @@ def upload_multiple():
             try:
                 if file.filename == '':
                     continue
-                
+
                 file_type = get_file_type(file.filename)
-                
                 if file_type == 'unknown':
                     errors.append(f"{file.filename}: Invalid file type")
                     continue
-                
-                # Route to appropriate upload handler
+
+                safe_name = secure_filename(file.filename)
+                ext = safe_name.rsplit('.', 1)[1].lower() if '.' in safe_name else 'bin'
+                filename = f"{user_id}_{uuid.uuid4().hex}.{ext}"
+
+                # Check size
+                file.seek(0, os.SEEK_END)
+                file_size = file.tell()
+                file.seek(0)
+
+                size_limits = {
+                    'image': MAX_IMAGE_SIZE,
+                    'video': MAX_VIDEO_SIZE,
+                    'audio': MAX_AUDIO_SIZE,
+                    'document': MAX_DOCUMENT_SIZE,
+                }
+                if file_size > size_limits.get(file_type, MAX_DOCUMENT_SIZE):
+                    errors.append(f"{file.filename}: File too large")
+                    continue
+
+                sub_dir = f"{file_type}s"
+                upload_dir = os.path.join(UPLOAD_FOLDER, sub_dir)
+                os.makedirs(upload_dir, exist_ok=True)
+                filepath = os.path.join(upload_dir, filename)
+                file.save(filepath)
+
+                # Compress images
                 if file_type == 'image':
-                    # Similar logic as upload_image
-                    pass
-                elif file_type == 'video':
-                    # Similar logic as upload_video
-                    pass
-                # ... etc
-                
+                    compress_image(filepath)
+
+                file_url = f"/uploads/{sub_dir}/{filename}"
+                result = {
+                    'url': file_url,
+                    'filename': filename,
+                    'original_name': safe_name,
+                    'size': file_size,
+                    'type': file_type,
+                }
+                if file_type == 'video':
+                    result['thumbnail_url'] = generate_thumbnail(filepath)
+                uploaded_files.append(result)
+
             except Exception as e:
                 errors.append(f"{file.filename}: {str(e)}")
         

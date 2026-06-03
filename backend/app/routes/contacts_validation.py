@@ -3,7 +3,6 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.models import db, User, Contact
 import phonenumbers
 from phonenumbers import geocoder, carrier, timezone, number_type
-import requests
 
 contacts_validation_bp = Blueprint('contacts_validation', __name__, url_prefix='/api/contacts')
 
@@ -165,54 +164,39 @@ def search_by_country():
 @contacts_validation_bp.route('/countries', methods=['GET'])
 @jwt_required()
 def get_supported_countries():
-    """Get list of supported countries"""
+    """Get list of supported countries — built from phonenumbers library (no external HTTP)."""
     try:
-        # Get all supported regions
-        supported_regions = phonenumbers.SUPPORTED_REGIONS
-        
+        from phonenumbers import geocoder as _geo
         countries = []
-        for region in sorted(supported_regions):
+        for region in sorted(phonenumbers.SUPPORTED_REGIONS):
             try:
                 country_code = phonenumbers.country_code_for_region(region)
-                example_number = phonenumbers.example_number(region)
-                
-                if example_number:
-                    formatted = phonenumbers.format_number(
-                        example_number,
-                        phonenumbers.PhoneNumberFormat.INTERNATIONAL
-                    )
-                    
-                    # Get country info
-                    country_response = requests.get(
-                        f'https://restcountries.com/v3.1/alpha/{region}',
-                        timeout=2
-                    )
-                    
+                example = phonenumbers.example_number(region)
+                formatted = phonenumbers.format_number(example, phonenumbers.PhoneNumberFormat.INTERNATIONAL) if example else f'+{country_code} ...'
+                country_name = _geo.country_name_for_number(example, 'en') if example else region
+                if not country_name:
                     country_name = region
-                    flag = None
-                    
-                    if country_response.status_code == 200:
-                        country_data = country_response.json()[0]
-                        country_name = country_data.get('name', {}).get('common', region)
-                        flag = country_data.get('flags', {}).get('svg')
-                    
-                    countries.append({
-                        'code': region,
-                        'name': country_name,
-                        'country_code': country_code,
-                        'flag': flag,
-                        'example': formatted
-                    })
+                countries.append({
+                    'code': region,
+                    'name': country_name,
+                    'country_code': country_code,
+                    'dial_code': f'+{country_code}',
+                    'example': formatted,
+                    'flag': _region_to_flag(region),
+                })
             except Exception:
                 continue
-        
-        return jsonify({
-            'countries': countries,
-            'total': len(countries)
-        }), 200
-    
+        return jsonify({'countries': countries, 'total': len(countries)}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+def _region_to_flag(region_code):
+    """Convert 2-letter ISO region code to emoji flag."""
+    try:
+        return ''.join(chr(ord(c) + 127397) for c in region_code.upper())
+    except Exception:
+        return ''
 
 @contacts_validation_bp.route('/lookup', methods=['POST'])
 @jwt_required()

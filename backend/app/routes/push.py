@@ -63,6 +63,38 @@ def unsubscribe():
         return jsonify({'error': str(e)}), 500
 
 
+@push_bp.route('/register-expo-token', methods=['POST'])
+@jwt_required()
+def register_expo_token():
+    """Register an Expo push token from the mobile app."""
+    try:
+        user_id = get_jwt_identity()
+        data = request.json or {}
+        expo_token = data.get('expo_token', '').strip()
+        platform = data.get('platform', 'unknown')
+        if not expo_token:
+            return jsonify({'error': 'expo_token is required'}), 400
+        existing = PushSubscription.query.filter_by(user_id=str(user_id), endpoint=expo_token).first()
+        if existing:
+            existing.active = True
+            existing.p256dh = platform
+            existing.auth = 'expo'
+        else:
+            sub = PushSubscription(
+                user_id=str(user_id),
+                endpoint=expo_token,
+                p256dh=platform,
+                auth='expo',
+                active=True,
+            )
+            db.session.add(sub)
+        db.session.commit()
+        return jsonify({'message': 'Expo push token registered'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
 @push_bp.route('/test', methods=['POST'])
 @jwt_required()
 def test_push():
