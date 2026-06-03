@@ -13,7 +13,7 @@ A full-stack WhatsApp-like messaging platform built with React, React Native (Ex
 | Backend | Flask, Flask-SocketIO, Flask-JWT-Extended, Flask-Limiter |
 | Database | SQLite (dev) / PostgreSQL (prod) |
 | Real-time | WebSocket (Socket.IO) |
-| Calling | WebRTC (STUN/TURN, mesh topology) |
+| Calling | WebRTC (SFU architecture for group calls, STUN/TURN) |
 | Auth | JWT (access + refresh tokens), phone verification |
 
 ---
@@ -36,11 +36,14 @@ A full-stack WhatsApp-like messaging platform built with React, React Native (Ex
 
 ### Calls
 - One-to-one WebRTC voice and video calls
-- **Group voice/video calls** (mesh topology, up to ~8 participants)
+- **Group voice/video calls with SFU architecture** (up to 50 participants)
+- Scalable media routing with bandwidth optimization
+- E2EE support for group calls with AES-256-GCM
 - STUN + TURN ICE servers for NAT traversal
 - Full call screen with ring tone, accept/reject UI
 - Minimizable call screen during active calls
 - Mute / camera toggle / speaker / flip camera
+- Screen sharing (web only)
 - In-app call notifications with sound
 - Call history with call-back buttons (voice + video)
 - New call modal with contact search
@@ -55,6 +58,7 @@ A full-stack WhatsApp-like messaging platform built with React, React Native (Ex
 - Full WhatsApp-like mobile UI (portrait only)
 - Bottom tab bar: Chats, Updates, Calls
 - Per-tab unread badge count
+- **Automatic phone contact sync on login** (real device contacts)
 - QR code scanner and generator
 - Voice recorder with waveform
 - Camera integration for photos/videos
@@ -77,9 +81,13 @@ A full-stack WhatsApp-like messaging platform built with React, React Native (Ex
 
 ### Security (Backend)
 - JWT authentication (access + refresh tokens)
+- **Advanced DDoS protection** with IP-based rate limiting and auto-blocking
+- **Request signature verification** (HMAC-SHA256 with nonce)
 - **Rate limiting** on auth endpoints (Flask-Limiter + custom in-memory sliding window)
   - Login: 10 req/min
   - Signup: 5 req/min
+  - API calls: 100 req/min per IP
+- **Media encryption** for WebRTC calls (AES-256-GCM, per-frame encryption)
 - **Hardened HTTP security headers** on every response:
   - `Content-Security-Policy` (full policy)
   - `X-Content-Type-Options: nosniff`
@@ -87,12 +95,15 @@ A full-stack WhatsApp-like messaging platform built with React, React Native (Ex
   - `X-XSS-Protection: 1; mode=block`
   - `Referrer-Policy: strict-origin-when-cross-origin`
   - `Strict-Transport-Security` (HTTPS enforced)
+  - `Permissions-Policy` for camera/mic/geolocation
   - Server fingerprinting removed (`Server`, `X-Powered-By`)
   - API cache headers (`Cache-Control: no-store`)
 - Input sanitization middleware (null-byte stripping, max-length enforcement)
 - Account ban/unban via admin panel
 - SMS phone verification (Africa's Talking)
 - VAPID push notification security
+- Automatic IP blocking after 10 failed auth attempts
+- Suspicious activity monitoring
 
 ---
 
@@ -153,6 +164,7 @@ npx expo start --port 8080
 | POST | `/api/upload/document` | Upload document |
 | GET | `/api/contacts` | Contact list |
 | POST | `/api/contacts` | Add contact |
+| POST | `/api/contacts/sync-phone` | Sync device contacts with VipChat users |
 | GET | `/api/status/all` | All friend statuses |
 | POST | `/api/status` | Post status update |
 | GET | `/api/calls/history` | Call history |
@@ -160,6 +172,8 @@ npx expo start --port 8080
 | GET | `/api/groups` | List groups |
 | POST | `/api/groups` | Create group |
 | POST | `/api/groups/:id/messages` | Send group message |
+| POST | `/api/sfu/room/create` | Create SFU room for group call |
+| GET | `/api/sfu/room/:id/participants` | Get SFU room participants |
 | GET | `/api/settings` | Get user settings |
 | PUT | `/api/settings` | Update user settings |
 | GET | `/api/health` | Health check |
@@ -189,7 +203,19 @@ npx expo start --port 8080
 | `call_reject` / `call_rejected` | Decline a call |
 | `call_end` / `call_ended` | End a call |
 
-### Group Calls
+### Group Calls (SFU Architecture)
+| Event | Description |
+|---|---|
+| `sfu_join` | Join SFU room for group call |
+| `sfu_joined` | Confirmation with existing participants |
+| `sfu_peer_joined` | New participant joined |
+| `sfu_peer_left` | Participant left |
+| `sfu_offer` / `sfu_answer` | Per-peer WebRTC negotiation |
+| `sfu_ice_candidate` | Per-peer ICE candidate relay |
+| `sfu_media_state` | Audio/video/screen toggle |
+| `sfu_leave` | Leave group call |
+
+### Legacy Group Calls (Deprecated)
 | Event | Description |
 |---|---|
 | `group_call_start` | Initiate group call, notifies all members |
