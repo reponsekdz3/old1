@@ -10,6 +10,7 @@ import {
   FiActivity, FiTrendingUp, FiUserCheck, FiAlertTriangle,
   FiGrid, FiList, FiMoreVertical, FiSend, FiX, FiEye,
   FiToggleLeft, FiToggleRight, FiDownload, FiFilter,
+  FiCode, FiZap,
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -171,6 +172,7 @@ const TABS = [
   { id: 'messages', label: 'Messages', icon: FiMessageSquare },
   { id: 'groups', label: 'Groups', icon: FiUsers },
   { id: 'activity', label: 'Activity', icon: FiActivity },
+  { id: 'api_clients', label: 'API Clients', icon: FiCode },
 ];
 
 function AdminPage() {
@@ -197,6 +199,11 @@ function AdminPage() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [apiClients, setApiClients] = useState([]);
+  const [apiClientsTotal, setApiClientsTotal] = useState(0);
+  const [apiClientsPage, setApiClientsPage] = useState(1);
+  const [apiClientsTotalPages, setApiClientsTotalPages] = useState(1);
+  const [apiClientsSearch, setApiClientsSearch] = useState('');
 
   useEffect(() => {
     checkAdminAccess();
@@ -221,6 +228,17 @@ function AdminPage() {
     await Promise.allSettled([loadStats(), loadUsers(1), loadMessages(1), loadGroups(1), loadActivity()]);
     setLoading(false);
   };
+
+  const loadApiClients = useCallback(async (page = 1, q = apiClientsSearch) => {
+    try {
+      const params = new URLSearchParams({ page, per_page: 20, search: q });
+      const { data } = await api.get(`/platform/admin/clients?${params}`);
+      setApiClients(data.clients || []);
+      setApiClientsTotalPages(data.pages || 1);
+      setApiClientsTotal(data.total || 0);
+      setApiClientsPage(page);
+    } catch {}
+  }, [apiClientsSearch]);
 
   const loadStats = async () => {
     try {
@@ -352,11 +370,34 @@ function AdminPage() {
     } catch (e) { toast.error(e.response?.data?.error || 'Failed'); throw e; }
   };
 
+  const handleSuspendClient = async (clientId) => {
+    if (!window.confirm('Suspend this API client? They will lose API access.')) return;
+    try {
+      await api.put(`/platform/admin/clients/${clientId}/suspend`);
+      toast.success('Client suspended');
+      loadApiClients(apiClientsPage);
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
+  const handleReinstateClient = async (clientId) => {
+    try {
+      await api.put(`/platform/admin/clients/${clientId}/reinstate`);
+      toast.success('Client reinstated');
+      loadApiClients(apiClientsPage);
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
   useEffect(() => {
     if (!isAdmin) return;
     const delayDebounce = setTimeout(() => loadUsers(1, search, filter), 400);
     return () => clearTimeout(delayDebounce);
   }, [search, filter, isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin || activeTab !== 'api_clients') return;
+    const delay = setTimeout(() => loadApiClients(1, apiClientsSearch), 400);
+    return () => clearTimeout(delay);
+  }, [apiClientsSearch, isAdmin, activeTab]);
 
   if (checkingAdmin) {
     return (
@@ -451,6 +492,7 @@ function AdminPage() {
               {activeTab === 'messages' && 'All messages on the platform'}
               {activeTab === 'groups' && 'All groups and communities'}
               {activeTab === 'activity' && 'Usage trends over time'}
+              {activeTab === 'api_clients' && `${apiClientsTotal.toLocaleString()} registered API clients`}
             </p>
           </div>
           {activeTab === 'users' && (
@@ -467,6 +509,13 @@ function AdminPage() {
                 <option value="banned">Banned</option>
                 <option value="admins">Admins</option>
               </select>
+            </div>
+          )}
+          {activeTab === 'api_clients' && (
+            <div className="relative">
+              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={15}/>
+              <input value={apiClientsSearch} onChange={e => setApiClientsSearch(e.target.value)} placeholder="Search clients..."
+                className="pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-[#25D366] w-56"/>
             </div>
           )}
         </div>
@@ -828,6 +877,96 @@ function AdminPage() {
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* ── API CLIENTS ── */}
+              {activeTab === 'api_clients' && (
+                <div className="space-y-4">
+                  {apiClients.length === 0 ? (
+                    <div className="bg-white rounded-2xl p-16 shadow-sm border border-gray-100 text-center">
+                      <FiCode size={40} className="text-gray-300 mx-auto mb-3"/>
+                      <p className="text-gray-400">No API clients registered yet</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50 border-b border-gray-100">
+                            <tr className="text-left text-xs text-gray-400 font-semibold uppercase tracking-wider">
+                              <th className="px-5 py-3">Business</th>
+                              <th className="px-5 py-3">Owner</th>
+                              <th className="px-5 py-3">Tier</th>
+                              <th className="px-5 py-3">Today</th>
+                              <th className="px-5 py-3">Total Calls</th>
+                              <th className="px-5 py-3">Status</th>
+                              <th className="px-5 py-3">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                            {apiClients.map(c => (
+                              <tr key={c.id} className="hover:bg-gray-50 transition-colors">
+                                <td className="px-5 py-3">
+                                  <div>
+                                    <p className="font-semibold text-gray-900">{c.business_name}</p>
+                                    <p className="text-xs text-gray-400 font-mono">{c.api_key_prefix}</p>
+                                  </div>
+                                </td>
+                                <td className="px-5 py-3 text-gray-600">{c.user_name || '—'}</td>
+                                <td className="px-5 py-3">
+                                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                                    c.tier === 'enterprise' ? 'bg-purple-100 text-purple-700' :
+                                    c.tier === 'pro' ? 'bg-blue-100 text-blue-700' :
+                                    'bg-gray-100 text-gray-600'
+                                  }`}>
+                                    {c.tier?.charAt(0).toUpperCase() + c.tier?.slice(1)}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-3">
+                                  <span className="flex items-center gap-1">
+                                    <FiZap size={12} className="text-[#25D366]"/>
+                                    {c.today_messages ?? 0}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-3 text-gray-600">{(c.total_calls || 0).toLocaleString()}</td>
+                                <td className="px-5 py-3">
+                                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${c.is_active ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                                    {c.is_active ? 'Active' : 'Suspended'}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-3">
+                                  {c.is_active
+                                    ? <button onClick={() => handleSuspendClient(c.id)}
+                                        className="text-xs text-red-600 hover:text-red-700 font-medium px-3 py-1.5 bg-red-50 hover:bg-red-100 rounded-lg transition flex items-center gap-1">
+                                        <FiSlash size={12}/>Suspend
+                                      </button>
+                                    : <button onClick={() => handleReinstateClient(c.id)}
+                                        className="text-xs text-green-600 hover:text-green-700 font-medium px-3 py-1.5 bg-green-50 hover:bg-green-100 rounded-lg transition flex items-center gap-1">
+                                        <FiCheckCircle size={12}/>Reinstate
+                                      </button>
+                                  }
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {apiClientsTotalPages > 1 && (
+                        <div className="flex items-center justify-center gap-3">
+                          <button onClick={() => loadApiClients(apiClientsPage - 1)} disabled={apiClientsPage <= 1}
+                            className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50 disabled:opacity-40 transition">
+                            <FiChevronLeft size={16}/>
+                          </button>
+                          <span className="text-sm text-gray-500">Page {apiClientsPage} of {apiClientsTotalPages}</span>
+                          <button onClick={() => loadApiClients(apiClientsPage + 1)} disabled={apiClientsPage >= apiClientsTotalPages}
+                            className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50 disabled:opacity-40 transition">
+                            <FiChevronRight size={16}/>
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
             </>

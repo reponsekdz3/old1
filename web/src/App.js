@@ -8,6 +8,7 @@ import ChatPage from './pages/ChatPage';
 import StarredMessages from './pages/StarredMessages';
 import SettingsPage from './pages/SettingsPage';
 import AdminPage from './pages/AdminPage';
+import ApiPlatformPage from './pages/ApiPlatformPage';
 import AccountVerificationPage from './pages/AccountVerificationPage';
 import DownloadPage from './pages/DownloadPage';
 import { Toaster } from 'react-hot-toast';
@@ -103,6 +104,9 @@ function App() {
           } />
           <Route path="/admin" element={
             <ProtectedRoute user={user}><AdminPage /></ProtectedRoute>
+          } />
+          <Route path="/api-platform" element={
+            <ProtectedRoute user={user}><ApiPlatformPage /></ProtectedRoute>
           } />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

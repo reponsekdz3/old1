@@ -53,6 +53,8 @@ def create_app(config_name='development'):
     from app.routes.qr_login import qr_login_bp
     from app.routes.verification import verification_bp
     from app.routes.payments import payments_bp
+    from app.routes.api_platform import api_platform_bp
+    from app.routes.business_api_v1 import v1_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(messages_bp)
@@ -76,6 +78,8 @@ def create_app(config_name='development'):
     app.register_blueprint(qr_login_bp)
     app.register_blueprint(verification_bp)
     app.register_blueprint(payments_bp)
+    app.register_blueprint(api_platform_bp)
+    app.register_blueprint(v1_bp)
 
     # ── Security headers ──────────────────────────────────────────────────
     from app.middleware.security import add_security_headers
@@ -429,6 +433,39 @@ def create_app(config_name='development'):
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''',
             'ALTER TABLE payments ADD COLUMN metadata_json TEXT',
+            # Business API platform tables
+            '''CREATE TABLE IF NOT EXISTS api_clients (
+                id VARCHAR(36) PRIMARY KEY,
+                user_id VARCHAR(36) NOT NULL REFERENCES users(id),
+                business_name VARCHAR(255) NOT NULL,
+                api_key_hash VARCHAR(255) NOT NULL,
+                api_key_prefix VARCHAR(20) NOT NULL,
+                tier VARCHAR(20) DEFAULT 'starter',
+                is_active BOOLEAN DEFAULT TRUE,
+                webhook_url VARCHAR(500),
+                webhook_secret VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )''',
+            '''CREATE TABLE IF NOT EXISTS api_subscriptions (
+                id VARCHAR(36) PRIMARY KEY,
+                client_id VARCHAR(36) NOT NULL REFERENCES api_clients(id),
+                stripe_subscription_id VARCHAR(255),
+                tier VARCHAR(20) NOT NULL,
+                status VARCHAR(20) DEFAULT 'active',
+                current_period_end TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )''',
+            '''CREATE TABLE IF NOT EXISTS api_usage_logs (
+                id VARCHAR(36) PRIMARY KEY,
+                client_id VARCHAR(36) NOT NULL REFERENCES api_clients(id),
+                endpoint VARCHAR(255) NOT NULL,
+                method VARCHAR(10) NOT NULL,
+                status_code INTEGER NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                message_count INTEGER DEFAULT 0,
+                response_time_ms INTEGER,
+                ip_address VARCHAR(45)
+            )''',
         ]
         for sql in migrations:
             try:

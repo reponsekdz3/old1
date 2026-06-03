@@ -570,3 +570,85 @@ class PushSubscription(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship('User')
+
+
+# ── Business API Platform models ──────────────────────────────────────────────
+
+class ApiClient(db.Model):
+    __tablename__ = 'api_clients'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
+    business_name = db.Column(db.String(255), nullable=False)
+    api_key_hash = db.Column(db.String(255), nullable=False)
+    api_key_prefix = db.Column(db.String(20), nullable=False)
+    tier = db.Column(db.String(20), default='starter')
+    is_active = db.Column(db.Boolean, default=True)
+    webhook_url = db.Column(db.String(500), nullable=True)
+    webhook_secret = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('api_client', uselist=False))
+    subscriptions = db.relationship('ApiSubscription', backref='client', lazy=True, cascade='all, delete-orphan')
+    usage_logs = db.relationship('ApiUsageLog', backref='client', lazy=True, cascade='all, delete-orphan')
+
+    def to_dict(self, admin=False):
+        d = {
+            'id': self.id,
+            'business_name': self.business_name,
+            'api_key_prefix': self.api_key_prefix,
+            'tier': self.tier,
+            'is_active': self.is_active,
+            'webhook_url': self.webhook_url,
+            'created_at': self.created_at.isoformat(),
+        }
+        if admin:
+            d['user_id'] = self.user_id
+            d['user_name'] = self.user.full_name if self.user else None
+        return d
+
+
+class ApiSubscription(db.Model):
+    __tablename__ = 'api_subscriptions'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    client_id = db.Column(db.String(36), db.ForeignKey('api_clients.id'), nullable=False)
+    stripe_subscription_id = db.Column(db.String(255), nullable=True)
+    tier = db.Column(db.String(20), nullable=False)
+    status = db.Column(db.String(20), default='active')
+    current_period_end = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'tier': self.tier,
+            'status': self.status,
+            'current_period_end': self.current_period_end.isoformat() if self.current_period_end else None,
+            'created_at': self.created_at.isoformat(),
+        }
+
+
+class ApiUsageLog(db.Model):
+    __tablename__ = 'api_usage_logs'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    client_id = db.Column(db.String(36), db.ForeignKey('api_clients.id'), nullable=False)
+    endpoint = db.Column(db.String(255), nullable=False)
+    method = db.Column(db.String(10), nullable=False)
+    status_code = db.Column(db.Integer, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    message_count = db.Column(db.Integer, default=0)
+    response_time_ms = db.Column(db.Integer, nullable=True)
+    ip_address = db.Column(db.String(45), nullable=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'endpoint': self.endpoint,
+            'method': self.method,
+            'status_code': self.status_code,
+            'timestamp': self.timestamp.isoformat(),
+            'message_count': self.message_count,
+            'response_time_ms': self.response_time_ms,
+        }
