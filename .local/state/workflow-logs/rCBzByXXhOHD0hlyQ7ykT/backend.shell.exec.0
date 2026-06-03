@@ -1,0 +1,30 @@
+/home/runner/workspace/.pythonlibs/lib/python3.12/site-packages/flask_limiter/_extension.py:364: UserWarning: Using the in-memory storage for tracking rate limits as no storage was explicitly specified. This is not recommended for production use. See: https://flask-limiter.readthedocs.io#configuring-a-storage-backend for documentation about configuring the storage backend.
+  warnings.warn(
+ * Serving Flask app 'app'
+ * Debug mode: on
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8000
+ * Running on http://172.24.0.2:8000
+[33mPress CTRL+C to quit[0m
+ * Restarting with stat
+/home/runner/workspace/.pythonlibs/lib/python3.12/site-packages/flask_limiter/_extension.py:364: UserWarning: Using the in-memory storage for tracking rate limits as no storage was explicitly specified. This is not recommended for production use. See: https://flask-limiter.readthedocs.io#configuring-a-storage-backend for documentation about configuring the storage backend.
+  warnings.warn(
+ * Debugger is active!
+ * Debugger PIN: 129-991-619
+127.0.0.1 - - [03/Jun/2026 10:28:53] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [03/Jun/2026 10:28:53] "[35m[1mPOST /api/payments/stripe/webhook HTTP/1.1[0m" 503 -
+127.0.0.1 - - [03/Jun/2026 10:28:53] "[35m[1mPOST /api/payments/flutterwave/webhook HTTP/1.1[0m" 503 -
+127.0.0.1 - - [03/Jun/2026 10:28:53] "[31m[1mPOST /api/payments/flutterwave/verify/fake-tx HTTP/1.1[0m" 401 -
+ * Detected change in '/home/runner/workspace/backend/app/routes/payments.py', reloading
+ * Restarting with stat
+/home/runner/workspace/.pythonlibs/lib/python3.12/site-packages/flask_limiter/_extension.py:364: UserWarning: Using the in-memory storage for tracking rate limits as no storage was explicitly specified. This is not recommended for production use. See: https://flask-limiter.readthedocs.io#configuring-a-storage-backend for documentation about configuring the storage backend.
+  warnings.warn(
+ * Debugger is active!
+ * Debugger PIN: 129-991-619
+ * Detected change in '/home/runner/workspace/backend/app/routes/payments.py', reloading
+ * Restarting with stat
+/home/runner/workspace/.pythonlibs/lib/python3.12/site-packages/flask_limiter/_extension.py:364: UserWarning: Using the in-memory storage for tracking rate limits as no storage was explicitly specified. This is not recommended for production use. See: https://flask-limiter.readthedocs.io#configuring-a-storage-backend for documentation about configuring the storage backend.
+  warnings.warn(
+ * Debugger is active!
+ * Debugger PIN: 129-991-619

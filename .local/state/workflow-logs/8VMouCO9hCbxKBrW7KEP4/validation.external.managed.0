@@ -1,0 +1,29 @@
+VERDICT: REJECTED
+The diff does not satisfy core acceptance criteria because the CRA startup fix is broken: `npm --prefix web start` currently exits with `Error: Unknown keyword formatMinimum` from `ajv-keywords`/`schema-utils` incompatibility, so `npm start` in `web/` still fails.
+
+Critical findings:
+- **Blocking functional failure (web startup):** `web/package.json` uses global `overrides` forcing `ajv@8` and `ajv-keywords@5` across all transitive deps. CRA/react-scripts still pulls older `schema-utils` versions (2.x/3.x) that require `ajv@6` + `ajv-keywords@3`, causing immediate startup crash. This directly fails the primary “Done looks like” requirement.
+- **Verified badge model/API divergence from spec:** task text specifies badge fields around `is_verified`; implementation introduced parallel `badge_verified` and kept `is_verified` for phone/account verification. This may be intentional to avoid auth regression, but it is not aligned with stated contract and can confuse downstream consumers expecting `is_verified` for badge state.
+- **Potential data exposure:** `User.to_dict()` now includes `verification_payment_id`, which is returned in broad user payloads (contacts/group members/etc.). Payment IDs are internal billing metadata and shouldVERDICT: REJECTED
+ not be exposed to general clients/users.
+
+Security:
+- Serious concern observed: **overexposure of `verification_payment_id`** in user serialization. This is a sensitive internal identifier and should be restricted to admin/internal payment endpoints only.The diff does not satisfy core acceptance criteria because the CRA startup fix is broken: `npm --prefix web start` currently exits with `Error: Unknown keyword formatMinimum` from `ajv-keywords`/`schema-utils` incompatibility, so `npm start` in `web/` still fails.
+
+
+Next actions:
+1. Fix dependency strategy for CRA: remove blanket `ov
+errides` for ajv packages, then pin compatible versions per dependency tree (or upgrade toolchain consistently) so `npm start` succeeds.
+2. Align verified badge contract with task requirement (`is_verified` vs `badge_verified`) and ensure API/UI use one canonical field.
+3. Remove `verification_payment_id` from default `User.to_dict()`; expose only in privileged/admin contexts if needed.Critical findings:
+- **Blocking functional failure (web startup):** `web/package.json` uses global `overrides` forcing `ajv@8` and `ajv-keywords@5` across all transitive deps. CRA/react-scripts still pulls older `schema-utils` versions (2.x/3.x) that require `ajv@6` + `ajv-keywords@3`, causing immediate startup crash. This directly fails the primary “Done looks like” requirement.
+- **Verified badge model/API divergence from spec:** task text specifies badge fields around `is_verified`; implementation introduced parallel `badge_verified` and kept `is_verified` for phone/account verification. This may be intentional to avoid auth regression, but it is not aligned with stated contract and can confuse downstream consumers expecting `is_verified` for badge state.
+- **Potential data exposure:** `User.to_dict()` now includes `verification_payment_id`, which is returned in broad user payloads (contacts/group members/etc.). Payment IDs are internal billing metadata and should not be exposed to general clients/users.
+
+Security:
+- Serious concern observed: **overexposure of `verification_payment_id`** in user serialization. This is a sensitive internal identifier and should be restricted to admin/internal payment endpoints only.
+
+Next actions:
+1. Fix dependency strategy for CRA: remove blanket `overrides` for ajv packages, then pin compatible versions per dependency tree (or upgrade toolchain consistently) so `npm start` succeeds.
+2. Align verified badge contract with task requirement (`is_verified` vs `badge_verified`) and ensure API/UI use one canonical field.
+3. Remove `verification_payment_id` from default `User.to_dict()`; expose only in privileged/admin contexts if needed.

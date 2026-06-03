@@ -137,56 +137,6 @@ function ApiKeyModal({ apiKey, onClose }) {
 }
 
 // ── Endpoint docs ─────────────────────────────────────────────────────────────
-const ENDPOINTS = [
-  {
-    method: 'POST', path: '/v1/messages/send', title: 'Send Message',
-    desc: 'Send a text or media message to a phone number on the platform.',
-    body: `{\n  "to": "+1234567890",\n  "message": "Hello from the API!"\n}`,
-    response: `{\n  "success": true,\n  "message_id": "uuid",\n  "status": "sent"\n}`,
-  },
-  {
-    method: 'GET', path: '/v1/messages', title: 'List Messages',
-    desc: 'Retrieve sent messages with delivery status.',
-    body: null,
-    response: `{\n  "messages": [...],\n  "count": 50\n}`,
-  },
-  {
-    method: 'POST', path: '/v1/contacts/import', title: 'Import Contacts',
-    desc: 'Bulk-import contacts by phone number to check which ones are on the platform.',
-    body: `{\n  "contacts": [\n    {"phone": "+1234567890"},\n    {"phone": "+0987654321"}\n  ]\n}`,
-    response: `{\n  "imported": 1,\n  "not_found": 1\n}`,
-  },
-  {
-    method: 'GET', path: '/v1/contacts', title: 'List Contacts',
-    desc: 'List contacts associated with your API account.',
-    body: null,
-    response: `{\n  "contacts": [...],\n  "count": 10\n}`,
-  },
-  {
-    method: 'POST', path: '/v1/groups/create', title: 'Create Group',
-    desc: 'Create a messaging group and add members by phone number.',
-    body: `{\n  "name": "Customer Group",\n  "member_phones": ["+1234567890"]\n}`,
-    response: `{\n  "group_id": "uuid",\n  "member_count": 2\n}`,
-  },
-  {
-    method: 'POST', path: '/v1/broadcasts/send', title: 'Send Broadcast',
-    desc: 'Send the same message to up to 1,000 recipients at once.',
-    body: `{\n  "to": ["+1234567890", "+0987654321"],\n  "message": "Announcement!"\n}`,
-    response: `{\n  "sent": 2,\n  "failed": 0\n}`,
-  },
-  {
-    method: 'GET', path: '/v1/analytics', title: 'Analytics',
-    desc: 'Message delivery stats and API usage breakdown.',
-    body: null,
-    response: `{\n  "total_messages": 450,\n  "daily": [...]\n}`,
-  },
-  {
-    method: 'POST', path: '/v1/webhooks/configure', title: 'Configure Webhook',
-    desc: 'Set a webhook URL to receive inbound message events.',
-    body: `{\n  "url": "https://yourdomain.com/webhook"\n}`,
-    response: `{\n  "webhook_url": "...",\n  "webhook_secret": "..."\n}`,
-  },
-];
 
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 const TABS = [
@@ -212,6 +162,9 @@ function ApiPlatformPage() {
   const [savingWebhook, setSavingWebhook] = useState(false);
   const [rotatingKey, setRotatingKey] = useState(false);
   const [expandedEndpoint, setExpandedEndpoint] = useState(null);
+  const [apiDocs, setApiDocs] = useState(null);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [billingInfo, setBillingInfo] = useState(null);
 
   const loadClient = useCallback(async () => {
     try {
@@ -243,6 +196,19 @@ function ApiPlatformPage() {
   useEffect(() => {
     if (client && activeTab === 'usage') loadUsage();
   }, [client, activeTab, loadUsage]);
+
+  useEffect(() => {
+    if (activeTab === 'docs' && !apiDocs) {
+      setDocsLoading(true);
+      api.get('/platform/docs').then(({ data }) => setApiDocs(data)).catch(() => {}).finally(() => setDocsLoading(false));
+    }
+  }, [activeTab, apiDocs]);
+
+  useEffect(() => {
+    if (activeTab === 'billing' && client && !billingInfo) {
+      api.get('/platform/billing').then(({ data }) => setBillingInfo(data)).catch(() => {});
+    }
+  }, [activeTab, client, billingInfo]);
 
   const handleRegisterSuccess = (data) => {
     setClient(data.client);
@@ -439,27 +405,34 @@ function ApiPlatformPage() {
             <div className="space-y-4">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">API Reference</h2>
-                <p className="text-gray-500 text-sm mt-1">Base URL: <code className="bg-gray-100 px-2 py-0.5 rounded text-xs">{baseUrl}</code> · Auth: <code className="bg-gray-100 px-2 py-0.5 rounded text-xs">Authorization: Bearer vck_live_...</code></p>
+                <p className="text-gray-500 text-sm mt-1">
+                  Base URL: <code className="bg-gray-100 px-2 py-0.5 rounded text-xs">{baseUrl}</code>
+                  {apiDocs && <span className="ml-2 text-xs text-gray-400">v{apiDocs.version} · {apiDocs.endpoints?.length || 0} endpoints</span>}
+                </p>
               </div>
 
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
                 <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2"><FiLock size={14}/>Authentication</h4>
-                <p className="text-sm text-gray-600 mb-3">All requests to <code className="bg-gray-100 px-1 rounded text-xs">/v1/</code> must include your API key in the Authorization header:</p>
+                <p className="text-sm text-gray-600 mb-3">
+                  {apiDocs?.authentication?.description || 'All requests to /v1/ must include your API key in the Authorization header:'}
+                </p>
                 <CodeBlock code={`Authorization: Bearer vck_live_your_api_key`} />
               </div>
 
-              {ENDPOINTS.map((ep, idx) => (
+              {docsLoading ? (
+                <div className="text-center py-10 text-gray-400 text-sm">Loading endpoints…</div>
+              ) : (apiDocs?.endpoints || []).map((ep, idx) => (
                 <div key={idx} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                   <button className="w-full flex items-center justify-between p-5 hover:bg-gray-50 transition"
                     onClick={() => setExpandedEndpoint(expandedEndpoint === idx ? null : idx)}>
-                    <div className="flex items-center gap-3">
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${ep.method === 'POST' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-lg flex-shrink-0 ${ep.method === 'POST' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
                         {ep.method}
                       </span>
-                      <code className="text-sm font-mono text-gray-900">{ep.path}</code>
-                      <span className="text-sm text-gray-500">{ep.title}</span>
+                      <code className="text-sm font-mono text-gray-900 truncate">{ep.path}</code>
+                      <span className="text-sm text-gray-500 hidden sm:block">{ep.title}</span>
                     </div>
-                    <FiChevronRight size={16} className={`text-gray-400 transition-transform ${expandedEndpoint === idx ? 'rotate-90' : ''}`}/>
+                    <FiChevronRight size={16} className={`text-gray-400 transition-transform flex-shrink-0 ${expandedEndpoint === idx ? 'rotate-90' : ''}`}/>
                   </button>
 
                   <AnimatePresence>
@@ -467,24 +440,59 @@ function ApiPlatformPage() {
                       <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
                         className="overflow-hidden border-t border-gray-100">
                         <div className="p-5 space-y-4">
-                          <p className="text-sm text-gray-600">{ep.desc}</p>
-                          {ep.body && (
+                          <p className="text-sm text-gray-600">{ep.description}</p>
+
+                          {ep.request_body && Object.keys(ep.request_body).length > 0 && (
                             <div>
                               <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Request Body</p>
-                              <CodeBlock code={ep.body} language="json"/>
+                              <CodeBlock code={JSON.stringify(
+                                Object.fromEntries(Object.entries(ep.request_body).map(([k, v]) => [k, v.description || v.type || ''])),
+                                null, 2
+                              )} language="json"/>
                             </div>
                           )}
-                          <div>
-                            <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Response</p>
-                            <CodeBlock code={ep.response} language="json"/>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">cURL Example</p>
-                            <CodeBlock code={`curl ${ep.method !== 'GET' ? `-X ${ep.method} ` : ''}"${baseUrl}${ep.path}" \\
-  -H "Authorization: Bearer vck_live_your_key"${ep.body ? ` \\
-  -H "Content-Type: application/json" \\
-  -d '${ep.body.replace(/\n/g, '').replace(/  /g, ' ')}'` : ''}`} />
-                          </div>
+
+                          {ep.query_params && Object.keys(ep.query_params).length > 0 && (
+                            <div>
+                              <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Query Parameters</p>
+                              <div className="space-y-1">
+                                {Object.entries(ep.query_params).map(([k, v]) => (
+                                  <div key={k} className="flex gap-3 text-sm">
+                                    <code className="text-xs bg-gray-100 px-2 py-0.5 rounded w-32 flex-shrink-0">{k}</code>
+                                    <span className="text-gray-500">{v.description || `${v.type}${v.default !== undefined ? `, default ${v.default}` : ''}`}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {ep.response_example && (
+                            <div>
+                              <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Response</p>
+                              <CodeBlock code={JSON.stringify(ep.response_example, null, 2)} language="json"/>
+                            </div>
+                          )}
+
+                          {ep.errors?.length > 0 && (
+                            <div>
+                              <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Error Codes</p>
+                              <div className="space-y-1">
+                                {ep.errors.map((e, i) => (
+                                  <div key={i} className="flex gap-3 text-sm">
+                                    <code className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded w-12 flex-shrink-0">{e.code}</code>
+                                    <span className="text-gray-500">{e.message}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {ep.curl_example && (
+                            <div>
+                              <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">cURL Example</p>
+                              <CodeBlock code={ep.curl_example} />
+                            </div>
+                          )}
                         </div>
                       </motion.div>
                     )}
@@ -492,21 +500,19 @@ function ApiPlatformPage() {
                 </div>
               ))}
 
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                <h4 className="font-semibold text-gray-900 mb-3">Rate Limit Headers</h4>
-                <div className="space-y-2 text-sm">
-                  {[
-                    ['X-RateLimit-Limit', 'Your daily message limit'],
-                    ['X-RateLimit-Remaining', 'Messages remaining today'],
-                    ['X-RateLimit-Reset', 'Unix timestamp when limit resets'],
-                  ].map(([h, d]) => (
-                    <div key={h} className="flex gap-4">
-                      <code className="text-xs bg-gray-100 px-2 py-1 rounded w-52 flex-shrink-0">{h}</code>
-                      <span className="text-gray-500">{d}</span>
-                    </div>
-                  ))}
+              {apiDocs?.response_headers && (
+                <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                  <h4 className="font-semibold text-gray-900 mb-3">Rate Limit Response Headers</h4>
+                  <div className="space-y-2 text-sm">
+                    {Object.entries(apiDocs.response_headers).map(([h, d]) => (
+                      <div key={h} className="flex gap-4">
+                        <code className="text-xs bg-gray-100 px-2 py-1 rounded w-52 flex-shrink-0">{h}</code>
+                        <span className="text-gray-500">{d}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 

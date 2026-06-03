@@ -7,6 +7,8 @@ import secrets
 import hashlib
 import hmac
 import json
+import bcrypt as _bcrypt
+import os
 
 api_platform_bp = Blueprint('api_platform', __name__, url_prefix='/api/platform')
 
@@ -23,18 +25,25 @@ TIER_PRICES = {
 }
 
 STRIPE_PRICE_IDS = {
-    'pro': 'price_pro_monthly',
-    'enterprise': 'price_enterprise_monthly',
+    'pro': os.environ.get('STRIPE_PRICE_ID_PRO', 'price_pro_monthly'),
+    'enterprise': os.environ.get('STRIPE_PRICE_ID_ENTERPRISE', 'price_enterprise_monthly'),
 }
 
 
-def _hash_key(raw_key: str) -> str:
-    return hashlib.sha256(raw_key.encode()).hexdigest()
+def _bcrypt_hash(raw_key: str) -> str:
+    return _bcrypt.hashpw(raw_key.encode(), _bcrypt.gensalt(10)).decode()
+
+
+def _bcrypt_verify(raw_key: str, stored_hash: str) -> bool:
+    try:
+        return _bcrypt.checkpw(raw_key.encode(), stored_hash.encode())
+    except Exception:
+        return False
 
 
 def generate_api_key():
     raw = 'vck_live_' + secrets.token_hex(32)
-    return raw, _hash_key(raw)
+    return raw, _bcrypt_hash(raw)
 
 
 # ── Register ──────────────────────────────────────────────────────────────────
@@ -56,7 +65,7 @@ def register():
         user_id=user_id,
         business_name=business_name,
         api_key_hash=key_hash,
-        api_key_prefix=raw_key[:16] + '...',
+        api_key_prefix=raw_key[:20] + '...',
         tier='starter',
         is_active=True,
         webhook_secret=secrets.token_hex(16),
@@ -98,7 +107,7 @@ def rotate_key():
 
     raw_key, key_hash = generate_api_key()
     client.api_key_hash = key_hash
-    client.api_key_prefix = raw_key[:16] + '...'
+    client.api_key_prefix = raw_key[:20] + '...'
     db.session.commit()
 
     return jsonify({
@@ -232,6 +241,7 @@ def subscribe():
             success_url=data.get('success_url', 'https://vipchat.app/api-platform?success=1'),
             cancel_url=data.get('cancel_url', 'https://vipchat.app/api-platform?cancel=1'),
             metadata={'client_id': client.id, 'tier': tier},
+            subscription_data={'metadata': {'client_id': client.id, 'tier': tier}},
         )
         return jsonify({'checkout_url': checkout.url}), 200
     except Exception as e:
@@ -369,6 +379,200 @@ def admin_reinstate_client(client_id):
     client.is_active = True
     db.session.commit()
     return jsonify({'message': 'Client reinstated'}), 200
+
+
+# ── Billing portal ────────────────────────────────────────────────────────────
+@api_platform_bp.route('/billing', methods=['GET'])
+@jwt_required()
+def billing_portal():
+    user_id = get_jwt_identity()
+    client = ApiClient.query.filter_by(user_id=user_id).first()
+    if not client:
+        return jsonify({'error': 'No API client found'}), 404
+
+    sub = ApiSubscription.query.filter_by(client_id=client.id, status='active').order_by(
+        ApiSubscription.created_at.desc()
+    ).first()
+
+    stripe_key = current_app.config.get('STRIPE_SECRET_KEY', '')
+    if not stripe_key or not sub or not sub.stripe_subscription_id:
+        return jsonify({
+            'tier': client.tier,
+            'status': sub.status if sub else 'none',
+            'current_period_end': sub.current_period_end.isoformat() if sub and sub.current_period_end else None,
+            'portal_url': None,
+            'demo_mode': True,
+        }), 200
+
+    try:
+        import stripe
+        stripe.api_key = stripe_key
+        subscription = stripe.Subscription.retrieve(sub.stripe_subscription_id)
+        portal_session = stripe.billing_portal.Session.create(
+            customer=subscription.customer,
+            return_url=request.args.get('return_url', current_app.config.get('FRONTEND_URL', '') + '/api-platform'),
+        )
+        return jsonify({
+            'tier': client.tier,
+            'status': sub.status,
+            'current_period_end': sub.current_period_end.isoformat() if sub.current_period_end else None,
+            'portal_url': portal_session.url,
+            'demo_mode': False,
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ── API docs schema (auto-generated from route metadata) ─────────────────────
+@api_platform_bp.route('/docs', methods=['GET'])
+def get_api_docs():
+    return jsonify({
+        'version': '1.0',
+        'base_url': '/v1',
+        'authentication': {
+            'type': 'Bearer',
+            'header': 'Authorization',
+            'format': 'Bearer vck_live_<key>',
+            'description': 'All /v1/ endpoints require a valid API key in the Authorization header.',
+        },
+        'rate_limits': {
+            'starter': {'daily_messages': 100, 'price_usd': 0},
+            'pro': {'daily_messages': 10000, 'price_usd': 29},
+            'enterprise': {'daily_messages': 'unlimited', 'price_usd': 99},
+        },
+        'response_headers': {
+            'X-RateLimit-Limit': 'Your daily message limit',
+            'X-RateLimit-Remaining': 'Messages remaining today',
+            'X-RateLimit-Reset': 'Unix timestamp when the limit resets',
+        },
+        'endpoints': [
+            {
+                'method': 'POST',
+                'path': '/v1/messages/send',
+                'title': 'Send Message',
+                'description': 'Send a text or media message to a phone number registered on the platform.',
+                'request_body': {
+                    'to': {'type': 'string', 'required': True, 'description': 'Recipient phone number (E.164 format, e.g. +1234567890)'},
+                    'message': {'type': 'string', 'required': False, 'description': 'Text content of the message'},
+                    'media_url': {'type': 'string', 'required': False, 'description': 'URL to a media file (image, video, document)'},
+                    'media_type': {'type': 'string', 'required': False, 'enum': ['image', 'video', 'document'], 'description': 'Type of media'},
+                },
+                'response_example': {'success': True, 'message_id': 'uuid', 'to': '+1234567890', 'status': 'sent', 'timestamp': '2026-01-01T00:00:00'},
+                'errors': [
+                    {'code': 400, 'message': 'to and (message or media_url) required'},
+                    {'code': 404, 'message': 'Recipient phone not registered on platform'},
+                    {'code': 429, 'message': 'Daily message limit exceeded'},
+                ],
+                'curl_example': 'curl -X POST https://api.vipchat.app/v1/messages/send \\\n  -H "Authorization: Bearer vck_live_..." \\\n  -H "Content-Type: application/json" \\\n  -d \'{"to":"+1234567890","message":"Hello!"}\'',
+            },
+            {
+                'method': 'GET',
+                'path': '/v1/messages',
+                'title': 'List Messages',
+                'description': 'Retrieve sent messages with delivery status, newest first.',
+                'query_params': {
+                    'limit': {'type': 'integer', 'default': 50, 'max': 200, 'description': 'Number of messages to return'},
+                    'offset': {'type': 'integer', 'default': 0, 'description': 'Pagination offset'},
+                },
+                'response_example': {'messages': [], 'count': 0, 'offset': 0},
+                'errors': [],
+                'curl_example': 'curl https://api.vipchat.app/v1/messages?limit=20 \\\n  -H "Authorization: Bearer vck_live_..."',
+            },
+            {
+                'method': 'POST',
+                'path': '/v1/contacts/import',
+                'title': 'Import Contacts',
+                'description': 'Bulk-import contacts by phone number to see which are registered on the platform.',
+                'request_body': {
+                    'contacts': {'type': 'array', 'required': True, 'items': {'phone': 'string'}, 'description': 'Array of objects with a phone field'},
+                },
+                'response_example': {'imported': 2, 'not_found': 1, 'contacts': [], 'missing': ['+9990000000']},
+                'errors': [{'code': 400, 'message': 'contacts array required'}],
+                'curl_example': 'curl -X POST https://api.vipchat.app/v1/contacts/import \\\n  -H "Authorization: Bearer vck_live_..." \\\n  -H "Content-Type: application/json" \\\n  -d \'{"contacts":[{"phone":"+1234567890"}]}\'',
+            },
+            {
+                'method': 'GET',
+                'path': '/v1/contacts',
+                'title': 'List Contacts',
+                'description': 'List all contacts associated with your API account.',
+                'response_example': {'contacts': [], 'count': 0},
+                'errors': [],
+                'curl_example': 'curl https://api.vipchat.app/v1/contacts \\\n  -H "Authorization: Bearer vck_live_..."',
+            },
+            {
+                'method': 'POST',
+                'path': '/v1/groups/create',
+                'title': 'Create Group',
+                'description': 'Create a messaging group and optionally add members by phone number.',
+                'request_body': {
+                    'name': {'type': 'string', 'required': True, 'description': 'Group display name'},
+                    'description': {'type': 'string', 'required': False, 'description': 'Group description'},
+                    'member_phones': {'type': 'array', 'required': False, 'items': 'string', 'description': 'Phone numbers to add on creation'},
+                },
+                'response_example': {'group_id': 'uuid', 'name': 'My Group', 'member_count': 3, 'members_added': []},
+                'errors': [{'code': 400, 'message': 'name required'}],
+                'curl_example': 'curl -X POST https://api.vipchat.app/v1/groups/create \\\n  -H "Authorization: Bearer vck_live_..." \\\n  -H "Content-Type: application/json" \\\n  -d \'{"name":"Support Team","member_phones":["+1234567890"]}\'',
+            },
+            {
+                'method': 'POST',
+                'path': '/v1/broadcasts/send',
+                'title': 'Send Broadcast',
+                'description': 'Send the same message to up to 1,000 recipients at once.',
+                'request_body': {
+                    'to': {'type': 'array', 'required': True, 'items': 'string', 'max': 1000, 'description': 'List of recipient phone numbers'},
+                    'message': {'type': 'string', 'required': False, 'description': 'Text content (required if no media_url)'},
+                    'media_url': {'type': 'string', 'required': False, 'description': 'Media URL (required if no message)'},
+                },
+                'response_example': {'success': True, 'sent': 98, 'failed': 2, 'failed_phones': []},
+                'errors': [
+                    {'code': 400, 'message': 'to array and message or media_url required'},
+                    {'code': 400, 'message': 'Maximum 1000 recipients per broadcast'},
+                    {'code': 429, 'message': 'Daily message limit exceeded'},
+                ],
+                'curl_example': 'curl -X POST https://api.vipchat.app/v1/broadcasts/send \\\n  -H "Authorization: Bearer vck_live_..." \\\n  -H "Content-Type: application/json" \\\n  -d \'{"to":["+1234567890","+0987654321"],"message":"Flash sale now on!"}\'',
+            },
+            {
+                'method': 'GET',
+                'path': '/v1/analytics',
+                'title': 'Analytics',
+                'description': 'Message delivery stats and API usage by endpoint, broken down by day.',
+                'query_params': {
+                    'days': {'type': 'integer', 'default': 7, 'max': 90, 'description': 'Number of days to look back'},
+                },
+                'response_example': {'period_days': 7, 'total_calls': 42, 'total_messages': 310, 'daily': [], 'by_endpoint': {}},
+                'errors': [],
+                'curl_example': 'curl "https://api.vipchat.app/v1/analytics?days=30" \\\n  -H "Authorization: Bearer vck_live_..."',
+            },
+            {
+                'method': 'POST',
+                'path': '/v1/webhooks/configure',
+                'title': 'Configure Webhook',
+                'description': 'Set an HTTPS URL to receive real-time inbound message events from platform users who reply to your messages.',
+                'request_body': {
+                    'url': {'type': 'string', 'required': True, 'format': 'https://...', 'description': 'Your HTTPS endpoint that will receive POST events'},
+                },
+                'response_example': {'success': True, 'webhook_url': 'https://yourapp.com/webhook', 'webhook_secret': 'abc123...'},
+                'errors': [{'code': 400, 'message': 'URL must use HTTPS'}],
+                'curl_example': 'curl -X POST https://api.vipchat.app/v1/webhooks/configure \\\n  -H "Authorization: Bearer vck_live_..." \\\n  -H "Content-Type: application/json" \\\n  -d \'{"url":"https://yourapp.com/webhook"}\'',
+            },
+            {
+                'method': 'GET',
+                'path': '/v1/account',
+                'title': 'Account Info',
+                'description': 'View your API account details, current tier, daily usage, and webhook configuration.',
+                'response_example': {
+                    'business_name': 'Acme Corp',
+                    'tier': 'pro',
+                    'daily_limit': 10000,
+                    'today_used': 342,
+                    'remaining_today': 9658,
+                    'webhook_url': 'https://yourapp.com/webhook',
+                },
+                'errors': [],
+                'curl_example': 'curl https://api.vipchat.app/v1/account \\\n  -H "Authorization: Bearer vck_live_..."',
+            },
+        ],
+    }), 200
 
 
 # ── Deliver inbound webhook ───────────────────────────────────────────────────

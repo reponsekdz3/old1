@@ -1,0 +1,31 @@
+VERDICT: REJECTED
+The diff is close, but it introduces a blocking functional bug in the core Stripe success flow and leaves a reliability gap that can prevent verification from activating as required.
+
+Critical findings:
+- **Blocking bug: `setUser` misuse in `SettingsPage`**. In the Stripe return handler (`verified=success`), code calls `setUser(prev => ({ ...prev, ... }))`, but Zustand store defines `setUser: (user) => set({ user, ... })` (no functional updater support). This sets `user` to a function object, corrupting auth/user state on the payment success path.
+- **Stripe success activation is not robustly implemented**. Requirement calls for polling verification status after Stripe return; current implementation performs only a single `GET /payments/my-verification`. Since webhook processing is asynchronous, users can land in a “paid but not yet verified” state with no retry loop, causing intermittent failure to activate badge immediately.
+- Non-blocking: `showVerifiedModal` state/modal in `SettingsPage` is dead code (never opened), which adds confusion but not core breakage.
+
+Security:
+- No serious security violation observed in this diff’s core webhook flows (Stripe signature and Flutterwave hash checks are present).
+- Note: client-supplied `base_url` is used to build Stripe success/cancel URLs; this is a potential open-redirect/phishing vector and should be constrained to trusted origins.
+
+Next actions:
+1. Fix `setUser` usage in `SettingsPage` Stripe success handler to pass anVERDICT: REJECTED
+ object, e.g. `setUser({ ...user, badge_verified: true, verification_tier: data.verification_tier })` (or update store to support functional updaters consistently).
+2. Implement real polling/backoff after Stripe redirect (e.g., poll `/payments/my-verificThe diff is close, but it introduces a blocking functional bug in the core Stripe success flow and leaves a reliability gap that can prevent verification from activating as required.
+ation` for 30–60s until `badge_verified===true`, then show success state).
+3. Restrict/derive Stripe redirect origin server-side (ignore arbitrary `base_url` from client or validate against allowlist).
+Critical findings:
+- **Blocking bug: `setUser` misuse in `SettingsPage`**. In the Stripe return handler (`verified=success`), code calls `setUser(prev => ({ ...prev, ... }))`, but Zustand store defines `setUser: (user) => set({ user, ... })` (no functional updater support). This sets `user` to a function object, corrupting auth/user state on the payment success path.
+- **Stripe success activation is not robustly implemented**. Requirement calls for polling verification status after Stripe return; current implementation performs only a single `GET /payments/my-verification`. Since webhook processing is asynchronous, users can land in a “paid but not yet verified” state with no retry loop, causing intermittent failure to activate badge immediately.
+- Non-blocking: `showVerifiedModal` state/modal in `SettingsPage` is dead code (never opened), which adds confusion but not core breakage.
+
+Security:
+- No serious security violation observed in this diff’s core webhook flows (Stripe signature and Flutterwave hash checks are present).
+- Note: client-supplied `base_url` is used to build Stripe success/cancel URLs; this is a potential open-redirect/phishing vector and should be constrained to trusted origins.
+
+Next actions:
+1. Fix `setUser` usage in `SettingsPage` Stripe success handler to pass an object, e.g. `setUser({ ...user, badge_verified: true, verification_tier: data.verification_tier })` (or update store to support functional updaters consistently).
+2. Implement real polling/backoff after Stripe redirect (e.g., poll `/payments/my-verification` for 30–60s until `badge_verified===true`, then show success state).
+3. Restrict/derive Stripe redirect origin server-side (ignore arbitrary `base_url` from client or validate against allowlist).

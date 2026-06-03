@@ -1,0 +1,39 @@
+VERDICT: REJECTED
+The diff delivers most of the payment UX and endpoint scaffolding, but it has a blocking verification integrity gap in Flutterwave flows that can mark users verified without enforcing the expected paid amount/currency for the selected tier.
+
+Critical findings / analysis:
+- **Blocking: Flutterwave verification does not validate amount/currency/tier against server expectations.**
+  - In `POST /api/payments/flutterwave/verify/<tx_ref>`, once Flutterwave returns `status == successful`, VERDICT: REJECTED
+code marks `payment.status='completed'` and verifies the user without checking `tx.amount` and `tx.currency` against the stored `Payment.amount`/`currency` and tier pricing.
+  -The diff delivers most of the payment UX and endpoint scaffolding, but it has a blocking verification integrity gap in Flutterwave flows that can mark users verified without enforcing the expected paid amount/currency for the selected tier.
+ In `POST /api/payments/flutterwave/webhook`, same issue: successful event d
+irectly completes payment and verifies user without amount/currency Critical findings / analysis:
+validation.
+  - This enables underpayment or mism- **Blocking: Flutterwave verification does not validate amount/currency/tier against server expectations.**
+atched-payment acceptance if checkout parameters are tampered client-s  - In `POST /api/payments/flutterwave/verify/<tx_ref>`, once Flutterwave returns `status == successful`, code marks `payment.status='completed'` and verifies the user without checking `tx.amount` and `tx.currency` against the stored `Payment.amount`/`currency` and tier pricing.
+ide or if an unexpected successful transaction with same ref is processed.
+  - In `POST /api/payments/flutterwave/webhook`, same issue: successful event directly completes payment and verifies user without amount/currency validation.
+- Stripe implementation is generally aligned (server-created Checkout Ses  - This enables underpayment or mismatched-payment acceptance if checkout parameters are tampered client-side or if an unexpected successful transaction with same ref is processed.
+sion, signature-verified webhook, pending->completed transition, verification update).
+- DB/model/API integration is broadly complete: `Payment` model, routes, blueprint registration, settings verification tab, purchase modal, and history endpoint are present.
+- Non-blocking mismatch: card flow redirects same tab (`window.location.href`) rather than opening a new tab as specified.
+
+Security:
+- **Serious issue observed:** Missing server-side amount/currency validation in Flutterwave verify/webhook before granting paid verification status.
+- No other severe authz/injection/secret-handling violations observed in the provided diff.
+
+Next actions (high impact):
+1. In both Flutterwave verify and webhook handlers, enforce strict checks before completion: `tx.status == successful`, `tx_ref` match, `amount == payment.amount` (with safe numeric comparison), `currency == payment.currency`, and (optionally) customer/email match expected user.
+2. Fail closed on mismatches (`status='failed'` or keep pending), log reason, and do **not** call `_mark_user_verified`.
+3. (Non-blocking polish) Update Stripe client behavior to open checkout in a new tab/window if this is a hard requirement.- Stripe implementation is generally aligned (server-created Checkout Session, signature-verified webhook, pending->completed transition, verification update).
+- DB/model/API integration is broadly complete: `Payment` model, routes, blueprint registration, settings verification tab, purchase modal, and history endpoint are present.
+- Non-blocking mismatch: card flow redirects same tab (`window.location.href`) rather than opening a new tab as specified.
+
+Security:
+- **Serious issue observed:** Missing server-side amount/currency validation in Flutterwave verify/webhook before granting paid verification status.
+- No other severe authz/injection/secret-handling violations observed in the provided diff.
+
+Next actions (high impact):
+1. In both Flutterwave verify and webhook handlers, enforce strict checks before completion: `tx.status == successful`, `tx_ref` match, `amount == payment.amount` (with safe numeric comparison), `currency == payment.currency`, and (optionally) customer/email match expected user.
+2. Fail closed on mismatches (`status='failed'` or keep pending), log reason, and do **not** call `_mark_user_verified`.
+3. (Non-blocking polish) Update Stripe client behavior to open checkout in a new tab/window if this is a hard requirement.

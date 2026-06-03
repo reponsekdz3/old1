@@ -61,6 +61,25 @@ def send_message(receiver_id):
         except Exception:
             pass
 
+        # Forward inbound event to business webhook if receiver has an API client
+        try:
+            from app.models.models import ApiClient
+            from app.routes.api_platform import deliver_webhook
+            biz_client = ApiClient.query.filter_by(user_id=receiver_id, is_active=True).first()
+            if biz_client and biz_client.webhook_url:
+                sender = User.query.get(sender_id)
+                deliver_webhook(biz_client, 'message.received', {
+                    'from': getattr(sender, 'phone_number', None),
+                    'from_name': getattr(sender, 'full_name', None),
+                    'content': content,
+                    'media_url': media_url,
+                    'media_type': media_type,
+                    'message_id': msg.id,
+                    'timestamp': msg.created_at.isoformat(),
+                })
+        except Exception:
+            pass
+
         return jsonify(msg.to_dict()), 201
     except Exception as e:
         db.session.rollback()

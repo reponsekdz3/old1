@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify, g
 from app.models.models import db, User, Message, Group, ApiClient, ApiUsageLog
 from datetime import datetime, timedelta
 from functools import wraps
-import hashlib
+import bcrypt as _bcrypt
 import time
 
 v1_bp = Blueprint('v1', __name__, url_prefix='/v1')
@@ -14,8 +14,11 @@ TIER_LIMITS = {
 }
 
 
-def _hash_key(raw_key: str) -> str:
-    return hashlib.sha256(raw_key.encode()).hexdigest()
+def _bcrypt_verify(raw_key: str, stored_hash: str) -> bool:
+    try:
+        return _bcrypt.checkpw(raw_key.encode(), stored_hash.encode())
+    except Exception:
+        return False
 
 
 def api_key_required(f):
@@ -26,10 +29,10 @@ def api_key_required(f):
             return jsonify({'error': 'Missing or invalid API key', 'code': 'AUTH_REQUIRED'}), 401
 
         raw_key = auth_header[len('Bearer '):]
-        key_hash = _hash_key(raw_key)
-        client = ApiClient.query.filter_by(api_key_hash=key_hash).first()
+        prefix = raw_key[:20] + '...'
+        client = ApiClient.query.filter_by(api_key_prefix=prefix).first()
 
-        if not client:
+        if not client or not _bcrypt_verify(raw_key, client.api_key_hash):
             return jsonify({'error': 'Invalid API key', 'code': 'AUTH_INVALID'}), 401
         if not client.is_active:
             return jsonify({'error': 'API client is suspended', 'code': 'CLIENT_SUSPENDED'}), 403

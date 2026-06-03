@@ -1,0 +1,39 @@
+VERDICT: REJECTED
+The diff delivers a substantial portion of the API platform, but it misses multiple core “done looks like” requirements and has one billing-path implementation flaw that will break real subscription lifecycle handling.
+
+Critical findings:
+- **Inbound webhook forwarding is not actually integrated**: `deliver_webhook(...)` is defined in `api_platform.py` but never invoked from message-receive/reply flows (e.g., `messages.py`). This means inbound user replies are **not forwarded** to configured business webhooks, which is a core requirement.
+- **Billing management is incomplete**: required `GET /api/platform/billing` (billing portal redirect) is missing. UI exposes plans, but backend billing management endpoint is not implemented.
+- **Stripe subscription lifecycle likely broken in production path**: `subscribVERDICT: REJECTED
+e()` creates Checkout Session with top-level `metadata`, but `stripe_webhook()` reads `customer.subscription.*` `metadata.client_id/tier`. In Stripe, subscription metadata must be set in `subscription_dataThe diff delivers a substantial portion of the API platform, but it misses multiple core “done looks like” requirements and has one billing-path implementation flaw that will break real subscription lifecycle handling.
+.metadata` (or retrieved via session linkage). Current approach risk
+s no client/tier mapping on webhook events.
+- **Docs are noCritical findings:
+t auto-generated from routes**: `/api-platform` docs are h- **Inbound webhook forwarding is not actually integrated**: `deliver_webhook(...)` is defined in `api_platform.py` but never invoked from message-receive/reply flows (e.g., `messages.py`). This means inbound user replies are **not forwarded** to configured business webhooks, which is a core requirement.
+ardcoded in frontend constants, contrary to explicit requirement - **Billing management is incomplete**: required `GET /api/platform/billing` (billing portal redirect) is missing. UI exposes plans, but backend billing management endpoint is not implemented.
+for auto-rendered/metadata-driven docs.
+- **Hashing spec m- **Stripe subscription lifecycle likely broken in production path**: `subscribe()` creates Checkout Session with top-level `metadata`, but `stripe_webhook()` reads `customer.subscription.*` `metadata.client_id/tier`. In Stripe, subscription metadata must be set in `subscription_data.metadata` (or retrieved via session linkage). Current approach risks no client/tier mapping on webhook events.
+ismatch**: API keys are hashed with SHA-256, not bcrypt as requested in - **Docs are not auto-generated from routes**: `/api-platform` docs are hardcoded in frontend constants, contrary to explicit requirement for auto-rendered/metadata-driven docs.
+implementation steps. Functionally hashed, but not as specified.
+
+Security:
+- No severe exploitable authz/injection issue observed in this diff.
+- Notable security/spec concern: API key hashing uses unsalted SHA-256 instead of bcrypt (lower defense-in-depth vs requirement, though keys are high entropy).
+
+Next actions (high impact):
+1. Wire inbound message events to webhook delivery path (on business-targeted inbound replies), include retry-attempt logging and status persistence.
+2. Add `GET /api/platform/billing` and fix Stripe mapping by attaching `subscription_data.metadata` (or robustly resolving client via Checkout Session/customer linkage in webhook handlers).
+3. Replace API key hash storage/verification with bcrypt (or Argon2), and implement metadata-driven docs generation so `/api-platform` reflects actual route schemas automatically.
+
+Status: Partial completion with clear functional gaps; not ready for approval against stated task requirements.- **Hashing spec mismatch**: API keys are hashed with SHA-256, not bcrypt as requested in implementation steps. Functionally hashed, but not as specified.
+
+Security:
+- No severe exploitable authz/injection issue observed in this diff.
+- Notable security/spec concern: API key hashing uses unsalted SHA-256 instead of bcrypt (lower defense-in-depth vs requirement, though keys are high entropy).
+
+Next actions (high impact):
+1. Wire inbound message events to webhook delivery path (on business-targeted inbound replies), include retry-attempt logging and status persistence.
+2. Add `GET /api/platform/billing` and fix Stripe mapping by attaching `subscription_data.metadata` (or robustly resolving client via Checkout Session/customer linkage in webhook handlers).
+3. Replace API key hash storage/verification with bcrypt (or Argon2), and implement metadata-driven docs generation so `/api-platform` reflects actual route schemas automatically.
+
+Status: Partial completion with clear functional gaps; not ready for approval against stated task requirements.
