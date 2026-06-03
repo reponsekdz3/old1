@@ -11,7 +11,7 @@ cd ..
 
 # Install frontend dependencies
 echo "[2/3] Installing frontend dependencies..."
-cd frontend
+cd web
 npm install --legacy-peer-deps --silent 2>&1 | tail -3
 cd ..
 
@@ -31,9 +31,9 @@ for i in {1..20}; do
   sleep 1
 done
 
-# Start frontend on port 5000
-echo "     Starting frontend on :5000..."
-cd frontend
+# Start web on port 5000
+echo "     Starting web on :5000..."
+cd web
 PORT=5000 BROWSER=none npm start
 
 # Cleanup on exit
