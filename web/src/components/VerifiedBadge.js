@@ -8,7 +8,7 @@ export default function VerifiedBadge({ tier = 'personal', size = 14, className 
   };
   const c = colors[tier] || colors.personal;
 
-  const badge = (
+  return (
     <motion.span
       initial={{ scale: 0 }}
       animate={{ scale: 1 }}
@@ -34,15 +34,13 @@ export default function VerifiedBadge({ tier = 'personal', size = 14, className 
       </svg>
     </motion.span>
   );
-
-  return badge;
 }
 
 export function VerifiedBadgeInline({ user, size = 14, className = '' }) {
-  if (!user?.is_account_verified) return null;
+  if (!user?.badge_verified) return null;
   return (
     <VerifiedBadge
-      tier={user.account_verification_tier || 'personal'}
+      tier={user.verification_tier || 'personal'}
       size={size}
       className={className}
     />

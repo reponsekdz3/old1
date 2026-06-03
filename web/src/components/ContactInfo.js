@@ -9,9 +9,12 @@ function ContactInfo({ contact, onClose }) {
   const [mediaFiles, setMediaFiles] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [groupMembers, setGroupMembers] = useState([]);
   const [isMuted, setIsMuted] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [activeTab, setActiveTab] = useState('media');
+
+  const isGroup = Boolean(contact?.members_count !== undefined && contact?.group_id === undefined && contact?.name && !contact?.phone_number);
 
   useEffect(() => {
     loadContactData();
@@ -27,9 +30,15 @@ function ContactInfo({ contact, onClose }) {
       const docsResponse = await api.get(`/messages/media-gallery/${contact.id}?type=document`);
       setDocuments(docsResponse.data.media);
 
-      // Load common groups
-      const groupsResponse = await api.get(`/contacts/${contact.id}/groups`);
-      setGroups(groupsResponse.data.groups || []);
+      if (isGroup) {
+        // Load group members (with badge data)
+        const membersResponse = await api.get(`/groups/${contact.id}/members`);
+        setGroupMembers(membersResponse.data.members || []);
+      } else {
+        // Load common groups for 1-on-1 contacts
+        const groupsResponse = await api.get(`/contacts/${contact.id}/groups`);
+        setGroups(groupsResponse.data.groups || []);
+      }
 
       // Check if muted
       const mutedResponse = await api.get('/settings/muted');
@@ -220,8 +229,36 @@ function ContactInfo({ contact, onClose }) {
           </div>
         </div>
 
+        {/* Group Members List (shown when viewing a group chat info) */}
+        {isGroup && groupMembers.length > 0 && (
+          <div className="bg-white mt-4 p-4">
+            <p className="text-sm text-gray-600 mb-3">{groupMembers.length} member{groupMembers.length !== 1 ? 's' : ''}</p>
+            <div className="space-y-2">
+              {groupMembers.map((member) => (
+                <div key={member.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-teal-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                    {member.avatar_url
+                      ? <img src={member.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
+                      : member.full_name?.[0]?.toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium flex items-center gap-1">
+                      {member.full_name}
+                      <VerifiedBadgeInline user={member} size={13} />
+                      {member.is_group_admin && (
+                        <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded ml-1">Admin</span>
+                      )}
+                    </p>
+                    <p className="text-sm text-gray-500 truncate">{member.phone_number}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Common Groups */}
-        {groups.length > 0 && (
+        {!isGroup && groups.length > 0 && (
           <div className="bg-white mt-4 p-4">
             <p className="text-sm text-gray-600 mb-3">{groups.length} group(s) in common</p>
             <div className="space-y-2">

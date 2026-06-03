@@ -89,7 +89,7 @@ def create_app(config_name='development'):
     # ── Health check ──────────────────────────────────────────────────────
     @app.route('/api/health', methods=['GET'])
     def health():
-        return jsonify({'status': 'healthy', 'app': 'VipChat'}), 200
+        return jsonify({'status': 'healthy'}), 200
 
     @app.errorhandler(404)
     def not_found(error):
@@ -409,10 +409,10 @@ def create_app(config_name='development'):
             'ALTER TABLE users ALTER COLUMN avatar_url TYPE TEXT',
             'ALTER TABLE users ALTER COLUMN qr_code_url TYPE TEXT',
             # Payment-based verified badge columns
-            'ALTER TABLE users ADD COLUMN is_account_verified BOOLEAN DEFAULT FALSE',
-            'ALTER TABLE users ADD COLUMN account_verification_tier VARCHAR(20) NULL',
-            'ALTER TABLE users ADD COLUMN account_verified_at TIMESTAMP NULL',
-            'ALTER TABLE users ADD COLUMN account_verification_payment_id VARCHAR(255) NULL',
+            'ALTER TABLE users ADD COLUMN badge_verified BOOLEAN DEFAULT FALSE',
+            'ALTER TABLE users ADD COLUMN verification_tier VARCHAR(20) NULL',
+            'ALTER TABLE users ADD COLUMN verified_at TIMESTAMP NULL',
+            'ALTER TABLE users ADD COLUMN verification_payment_id VARCHAR(255) NULL',
         ]
         for sql in migrations:
             try:

@@ -152,6 +152,29 @@ def get_group_messages(group_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@groups_bp.route('/<group_id>/members', methods=['GET'])
+@jwt_required()
+def get_group_members(group_id):
+    """List members of a group"""
+    try:
+        user_id = get_jwt_identity()
+        group = Group.query.get(group_id)
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+        user = User.query.get(user_id)
+        if user not in group.members:
+            return jsonify({'error': 'Not a group member'}), 403
+        admin_ids = {a.id for a in group.admins}
+        members_data = []
+        for m in group.members:
+            d = m.to_dict()
+            d['is_group_admin'] = m.id in admin_ids
+            members_data.append(d)
+        return jsonify({'members': members_data}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @groups_bp.route('/<group_id>/members', methods=['POST'])
 @jwt_required()
 def add_group_member(group_id):

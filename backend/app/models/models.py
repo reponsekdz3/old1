@@ -196,10 +196,10 @@ class User(db.Model):
     is_banned = db.Column(db.Boolean, default=False)
     account_confirmed_at = db.Column(db.DateTime, nullable=True)
     # ── Payment-based verified badge (blue checkmark) ─────────────────────────
-    is_account_verified = db.Column(db.Boolean, default=False)
-    account_verification_tier = db.Column(db.String(20), nullable=True)  # 'personal' | 'business'
-    account_verified_at = db.Column(db.DateTime, nullable=True)
-    account_verification_payment_id = db.Column(db.String(255), nullable=True)
+    badge_verified = db.Column(db.Boolean, default=False)
+    verification_tier = db.Column(db.String(20), nullable=True)  # 'personal' | 'business'
+    verified_at = db.Column(db.DateTime, nullable=True)
+    verification_payment_id = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -227,9 +227,10 @@ class User(db.Model):
             'is_admin': self.is_admin,
             'is_banned': self.is_banned,
             'account_confirmed_at': self.account_confirmed_at.isoformat() if self.account_confirmed_at else None,
-            'is_account_verified': self.is_account_verified,
-            'account_verification_tier': self.account_verification_tier,
-            'account_verified_at': self.account_verified_at.isoformat() if self.account_verified_at else None,
+            'badge_verified': self.badge_verified,
+            'verification_tier': self.verification_tier,
+            'verified_at': self.verified_at.isoformat() if self.verified_at else None,
+            'verification_payment_id': self.verification_payment_id,
             'created_at': self.created_at.isoformat()
         }
 
