@@ -79,15 +79,15 @@ python run.py
 
 Backend runs on **port 8000**.
 
-### Frontend
+### Web
 
 ```bash
-cd frontend
+cd web
 npm install
 npm start
 ```
 
-Frontend runs on **port 5000** and proxies API calls to `:8000`.
+Web app runs on **port 5000** and proxies API calls to `:8000`.
 
 ---
 
