@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2024-2026 BiteSe Communications
+Copyright (c) 2026 VipChat
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,26 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-ADDITIONAL SECURITY AND CRYPTOGRAPHY NOTICE:
-
-This software contains encryption and cryptographic technologies. In
-accordance with applicable regulations, BiteSe Communications states:
-
-1. All cryptographic implementations conform to NIST and IETF standards
-2. Signal Protocol implementation follows Signal Protocol Specification v3
-3. All key material is generated using cryptographically secure random sources
-4. All communications are protected with end-to-end encryption
-5. Perfect Forward Secrecy is guaranteed through Double Ratchet Algorithm
-
-For security concerns or vulnerability reports, please contact:
-security@bitese.com
-
----
-
-Enterprise License Available:
-For commercial deployments supporting millions of concurrent users,
-enterprise licensing, support, and SLA agreements are available.
-Contact: enterprise@bitese.com

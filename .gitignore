@@ -28,12 +28,17 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Env files
+# Env files - CRITICAL: Never commit secrets
 .env
 .env.local
 .env.*.local
+backend/.env
+backend/.env.complete
+mobile/.env
+web/.env
 
 # Logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -46,16 +51,32 @@ out/
 .expo/
 .expo-shared/
 
-# Database
+# Database - Never commit database files
 *.db
 *.sqlite
 *.sqlite3
+backend/instance/*.db
 
-# Uploads
+# Uploads - Never commit user uploads
 backend/uploads/*
 !backend/uploads/.gitkeep
+
+# Keys & Certificates
+*.pem
+*.key
+*.p12
+*.crt
+*.cert
+qr_key.json
 
 # Misc
 .cache/
 coverage/
 .vercel
+.replit
+
+# Test coverage
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/

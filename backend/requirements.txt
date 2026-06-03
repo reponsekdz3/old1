@@ -111,3 +111,14 @@ twilio==8.10.0
 # Deployment & Infrastructure
 docker==7.0.0
 kubernetes==28.1.0
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+
+# Production server
+gunicorn==21.2.0
+
+# Scalability
+redis==5.0.1
+psycopg2-binary==2.9.9

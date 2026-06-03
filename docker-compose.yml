@@ -1,219 +1,39 @@
-version: '3.9'
+version: '3.8'
 
 services:
-  # ═══════════════════════════════════════════════════════════════════════════
-  # PostgreSQL Database (with replication support)
-  # ═══════════════════════════════════════════════════════════════════════════
-  postgres:
-    image: postgres:15-alpine
-    container_name: bitese_db
-    environment:
-      POSTGRES_USER: bitese_user
-      POSTGRES_PASSWORD: bitese_password
-      POSTGRES_DB: bitese_db
-      POSTGRES_MAX_CONNECTIONS: 1000
+  backend:
+    build: ./backend
     ports:
-      - "5432:5432"
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://vipchat:vipchat@db:5432/vipchat
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=vipchat
+      - POSTGRES_PASSWORD=vipchat
+      - POSTGRES_DB=vipchat
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bitese_user"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - bitese_network
-    command:
-      - "postgres"
-      - "-c"
-      - "max_connections=1000"
-      - "-c"
-      - "shared_buffers=256MB"
-      - "-c"
-      - "effective_cache_size=1GB"
-      - "-c"
-      - "maintenance_work_mem=64MB"
-      - "-c"
-      - "checkpoint_completion_target=0.9"
-      - "-c"
-      - "wal_buffers=16MB"
-      - "-c"
-      - "default_statistics_target=100"
+    restart: unless-stopped
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # Redis (Caching, Message Queue, Session Store)
-  # ═══════════════════════════════════════════════════════════════════════════
   redis:
     image: redis:7-alpine
-    container_name: bitese_cache
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: >
-      redis-server
-      --maxmemory 2gb
-      --maxmemory-policy allkeys-lru
-      --save 60 1000
-      --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - bitese_network
+    restart: unless-stopped
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # Backend API Server
-  # ═══════════════════════════════════════════════════════════════════════════
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: bitese_backend
-    environment:
-      # Flask
-      FLASK_ENV: development
-      FLASK_APP: run.py
-      
-      # Database
-      DATABASE_URL: postgresql://bitese_user:bitese_password@postgres:5432/bitese_db
-      
-      # Redis
-      REDIS_URL: redis://redis:6379/0
-      
-      # Security
-      JWT_SECRET_KEY: dev-secret-key-change-in-production
-      ENCRYPTION_ALGORITHM: AES-256-GCM
-      E2EE_ENABLED: "true"
-      
-      # Payments
-      STRIPE_API_KEY: sk_test_...
-      PAYPAL_CLIENT_ID: ""
-      PAYPAL_CLIENT_SECRET: ""
-      
-      # Scalability
-      SHARD_COUNT: 256
-      SHARDING_STRATEGY: consistent_hash
-      
-      # Monitoring
-      LOG_LEVEL: DEBUG
-      SENTRY_DSN: ""
-      
+  web:
+    build: ./web
     ports:
       - "5000:5000"
-    volumes:
-      - ./backend:/app
-      - ./backend/uploads:/app/uploads
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - bitese_network
-    command: flask run --host=0.0.0.0
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # Web Frontend (React)
-  # ═══════════════════════════════════════════════════════════════════════════
-  web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-    container_name: bitese_web
-    environment:
-      REACT_APP_API_URL: http://localhost:5000
-      REACT_APP_WS_URL: ws://localhost:5000
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./web/src:/app/src
-      - ./web/public:/app/public
     depends_on:
       - backend
-    networks:
-      - bitese_network
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # Mobile Development Server (Expo)
-  # ═══════════════════════════════════════════════════════════════════════════
-  mobile:
-    build:
-      context: ./mobile
-      dockerfile: Dockerfile.dev
-    container_name: bitese_mobile
-    environment:
-      REACT_NATIVE_PACKAGER_HOSTNAME: mobile
-      EXPO_CLI_0_0_0_PACKAGER_HOSTNAME: mobile
-    ports:
-      - "19000:19000"
-      - "19001:19001"
-      - "19002:19002"
-    volumes:
-      - ./mobile:/app
-      - mobile_node_modules:/app/node_modules
-    depends_on:
-      - backend
-    networks:
-      - bitese_network
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # Monitoring & Logging
-  # ═══════════════════════════════════════════════════════════════════════════
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.5.0
-    container_name: bitese_elasticsearch
-    environment:
-      - discovery.type=single-node
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-      - xpack.security.enabled=false
-    ports:
-      - "9200:9200"
-    volumes:
-      - elasticsearch_data:/usr/share/elasticsearch/data
-    networks:
-      - bitese_network
-
-  kibana:
-    image: docker.elastic.co/kibana/kibana:8.5.0
-    container_name: bitese_kibana
-    ports:
-      - "5601:5601"
-    environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-    depends_on:
-      - elasticsearch
-    networks:
-      - bitese_network
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # pgAdmin - Database Management
-  # ═══════════════════════════════════════════════════════════════════════════
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: bitese_pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@bitese.app
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "5050:80"
-    depends_on:
-      - postgres
-    networks:
-      - bitese_network
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
+    restart: unless-stopped
 
 volumes:
   postgres_data:
-  redis_data:
-  elasticsearch_data:
-  pgadmin_data:
-  mobile_node_modules:
-
-networks:
-  bitese_network:
-    driver: bridge
