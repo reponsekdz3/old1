@@ -1,1 +1,2 @@
 - [Bitese overhaul decisions](bitese-overhaul.md) — comprehensive overhaul: login fixed no-scroll, group WebRTC, attachment preview, security hardening done
+- [Bitese mobile app structure](bitese-mobile.md) — Expo SDK 51 + expo-router in mobile/; backend URL via EXPO_PUBLIC_API_URL; CameraView API for QR
