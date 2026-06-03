@@ -51,6 +51,7 @@ def create_app(config_name='development'):
     from app.routes.admin import admin_bp
     from app.routes.push import push_bp
     from app.routes.qr_login import qr_login_bp
+    from app.routes.verification import verification_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(messages_bp)
@@ -72,6 +73,7 @@ def create_app(config_name='development'):
     app.register_blueprint(admin_bp)
     app.register_blueprint(push_bp)
     app.register_blueprint(qr_login_bp)
+    app.register_blueprint(verification_bp)
 
     # ── Security headers ──────────────────────────────────────────────────
     from app.middleware.security import add_security_headers
@@ -406,6 +408,11 @@ def create_app(config_name='development'):
             'ALTER TABLE users ALTER COLUMN password_hash TYPE TEXT',
             'ALTER TABLE users ALTER COLUMN avatar_url TYPE TEXT',
             'ALTER TABLE users ALTER COLUMN qr_code_url TYPE TEXT',
+            # Payment-based verified badge columns
+            'ALTER TABLE users ADD COLUMN is_account_verified BOOLEAN DEFAULT FALSE',
+            'ALTER TABLE users ADD COLUMN account_verification_tier VARCHAR(20) NULL',
+            'ALTER TABLE users ADD COLUMN account_verified_at TIMESTAMP NULL',
+            'ALTER TABLE users ADD COLUMN account_verification_payment_id VARCHAR(255) NULL',
         ]
         for sql in migrations:
             try:

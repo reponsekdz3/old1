@@ -16,6 +16,7 @@ import VoiceRecorder from './VoiceRecorder';
 import LocationShare from './LocationShare';
 import ForwardModal from './ForwardModal';
 import AttachmentPreviewModal from './AttachmentPreviewModal';
+import { VerifiedBadgeInline } from './VerifiedBadge';
 
 const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^[\]`]+)/gi;
 const LINK_PREVIEW_CACHE = new Map();
@@ -862,7 +863,10 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
 
         {/* Name + status */}
         <button className="flex-1 text-left min-w-0" onClick={onContactInfoClick}>
-          <h3 className="font-semibold text-gray-900 text-sm leading-tight truncate">{chatName}</h3>
+          <h3 className="font-semibold text-gray-900 text-sm leading-tight truncate flex items-center gap-1">
+            {chatName}
+            <VerifiedBadgeInline user={contactUser} size={13} />
+          </h3>
           <p className="text-xs text-gray-500 leading-tight">
             {isTyping ? <span className="text-[#25D366] font-medium">typing...</span>
               : isOnline ? 'online'

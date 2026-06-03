@@ -11,6 +11,7 @@ import api from '../services/api';
 import toast from 'react-hot-toast';
 import QRScannerModal from './QRScannerModal';
 import { PHONE_COUNTRIES, getFlag } from '../data/phoneCountries';
+import { VerifiedBadgeInline } from './VerifiedBadge';
 
 const ALL_COUNTRIES = [...new Set(PHONE_COUNTRIES.map(c => c.name))].sort();
 
@@ -178,7 +179,10 @@ export default function ProfilePanel({ onClose }) {
                 )}
                 <input ref={fileInputRef} type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
               </div>
-              <h3 className="text-lg font-bold mt-3">{user?.full_name}</h3>
+              <h3 className="text-lg font-bold mt-3 flex items-center gap-1.5">
+                {user?.full_name}
+                <VerifiedBadgeInline user={user} size={16} />
+              </h3>
               <p className="text-white/60 text-sm">{user?.phone_number}</p>
               {user?.status && (
                 <span className={`mt-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold

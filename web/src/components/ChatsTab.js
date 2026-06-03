@@ -11,6 +11,7 @@ import { format, isToday, isYesterday } from 'date-fns';
 import AddContactModal from './AddContactModal';
 import QRScannerModal from './QRScannerModal';
 import { motion, AnimatePresence } from 'framer-motion';
+import { VerifiedBadgeInline } from './VerifiedBadge';
 
 function ChatsTab({ socket, onChatSelect, onNewChat }) {
   const { contacts, setContacts, setActiveChat, activeChat } = useChatStore();
@@ -212,8 +213,9 @@ function ChatsTab({ socket, onChatSelect, onNewChat }) {
                 {/* Content */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-0.5">
-                    <h3 className="font-semibold text-[15px] text-gray-900 truncate">
+                    <h3 className="font-semibold text-[15px] text-gray-900 truncate flex items-center gap-1">
                       {contact.contact_name || contact.phone_number}
+                      <VerifiedBadgeInline user={contact.contact_info} size={13} />
                     </h3>
                     <div className="flex items-center gap-1 flex-shrink-0 ml-2">
                       {lastMsg && getStatusIcon(lastMsg)}

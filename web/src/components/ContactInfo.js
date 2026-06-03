@@ -3,6 +3,7 @@ import { FiX, FiPhone, FiVideo, FiSearch, FiStar, FiVolume2, FiVolumeX, FiTrash2
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { formatDistanceToNow } from 'date-fns';
+import { VerifiedBadgeInline } from './VerifiedBadge';
 
 function ContactInfo({ contact, onClose }) {
   const [mediaFiles, setMediaFiles] = useState([]);
@@ -107,7 +108,10 @@ function ContactInfo({ contact, onClose }) {
               contact.name?.[0]?.toUpperCase()
             )}
           </div>
-          <h3 className="text-2xl font-medium mb-2">{contact.name}</h3>
+          <h3 className="text-2xl font-medium mb-2 flex items-center justify-center gap-2">
+            {contact.name}
+            <VerifiedBadgeInline user={contact} size={18} />
+          </h3>
           <p className="text-gray-600">{contact.phone_number}</p>
           {contact.bio && (
             <p className="text-gray-500 mt-4 italic">{contact.bio}</p>

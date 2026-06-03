@@ -187,7 +187,7 @@ class User(db.Model):
     avatar_url = db.Column(db.Text, nullable=True)
     bio = db.Column(db.String(500), nullable=True)
     status = db.Column(db.String(50), default='available')  # available, away, offline
-    is_verified = db.Column(db.Boolean, default=False)
+    is_verified = db.Column(db.Boolean, default=False)  # phone/account verification
     verification_code = db.Column(db.String(6), nullable=True)
     verification_attempts = db.Column(db.Integer, default=0)
     qr_code_url = db.Column(db.Text, nullable=True)
@@ -195,6 +195,11 @@ class User(db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     is_banned = db.Column(db.Boolean, default=False)
     account_confirmed_at = db.Column(db.DateTime, nullable=True)
+    # ── Payment-based verified badge (blue checkmark) ─────────────────────────
+    is_account_verified = db.Column(db.Boolean, default=False)
+    account_verification_tier = db.Column(db.String(20), nullable=True)  # 'personal' | 'business'
+    account_verified_at = db.Column(db.DateTime, nullable=True)
+    account_verification_payment_id = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -222,6 +227,9 @@ class User(db.Model):
             'is_admin': self.is_admin,
             'is_banned': self.is_banned,
             'account_confirmed_at': self.account_confirmed_at.isoformat() if self.account_confirmed_at else None,
+            'is_account_verified': self.is_account_verified,
+            'account_verification_tier': self.account_verification_tier,
+            'account_verified_at': self.account_verified_at.isoformat() if self.account_verified_at else None,
             'created_at': self.created_at.isoformat()
         }
 
