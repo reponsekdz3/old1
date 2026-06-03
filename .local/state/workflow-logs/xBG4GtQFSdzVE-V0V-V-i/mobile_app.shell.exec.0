@@ -1,0 +1,38 @@
+[1G[0K⠙[1G[0K[90mStarting project at /home/runner/workspace/mobile[39m
+[80D[2KStarting Metro Bundler
+[33mThe following packages should be updated for best compatibility with the installed [1mexpo[22m version:[39m
+[33m  [1m@react-native-community/netinfo[22m[36m@[39m[33m[31m11.3.2[39m[33m - expected version: [32m11.3.1[39m[33m[39m
+[33m  [1mexpo-image-picker[22m[36m@[39m[33m[31m15.0.7[39m[33m - expected version: [32m~15.1.0[39m[33m[39m
+[33mYour project may not work correctly until you install the expected versions of the packages.[39m
+[80D[2K▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+█ ▄▄▄▄▄ █ ██▀▀ ▀▄██ ▄▄▄▄▄ █
+█ █   █ █  ▀█ ▀█▄▄█ █   █ █
+█ █▄▄▄█ █▀  █▄▀▀▄██ █▄▄▄█ █
+█▄▄▄▄▄▄▄█▄█ ▀▄█▄█ █▄▄▄▄▄▄▄█
+█▄ ██ ▄▄▀██▄█▄▀▄ ▄██ ▀▄▄ ▄█
+█▀▀▀▄  ▄██ ▄█▀██ ▀▀  ▄  ▀██
+█ ▀█▀▄ ▄▄ ▀▀▄▀▄ ▀▄▀▄▀▀▄ ▀██
+███▄█▀█▄▀ ▀█ ▄ ▄▄▄ ██▄ ▀███
+█▄▄██▄▄▄█▀ ██▄ ▀▄ ▄▄▄ ▀ ▄▄█
+█ ▄▄▄▄▄ █▀ ▀█▀█▀▀ █▄█ ▀▀▀██
+█ █   █ █▄  ▄▀▄▄█▄▄ ▄▄▀   █
+█ █▄▄▄█ █▀▀█ ▄ ▄▄▄▄ ▀█▀▀ ██
+█▄▄▄▄▄▄▄█▄▄▄█▄▄█████▄▄▄▄▄▄█
+
+[80D[2K› Metro waiting on [4mexp://127.0.0.1:8080[24m
+[80D[2K› Scan the QR code above with Expo Go (Android) or the Camera app (iOS)
+[80D[2K
+[80D[2K› Using [36mExpo Go[39m
+[80D[2K› Press [1ms[22m [2m│[22m switch to development build
+
+› Press [1ma[22m [2m│[22m open Android
+[2m› Press [1mw[22m[2m [2m│[22m[2m open web[22m
+
+› Press [1mj[22m [2m│[22m open debugger
+› Press [1mr[22m [2m│[22m reload app
+› Press [1mm[22m [2m│[22m toggle menu
+› Press [1mo[22m [2m│[22m open project code in your editor
+
+[80D[2K› Press [1m?[22m [2m│[22m show all commands
+[80D[2K
+[80D[2KLogs for your project will appear below.[2m Press Ctrl+C to exit.[22m
