@@ -9,6 +9,7 @@ import StarredMessages from './pages/StarredMessages';
 import SettingsPage from './pages/SettingsPage';
 import AdminPage from './pages/AdminPage';
 import AccountVerificationPage from './pages/AccountVerificationPage';
+import DownloadPage from './pages/DownloadPage';
 import { Toaster } from 'react-hot-toast';
 import { registerServiceWorker, subscribeToPush, listenForPushMessages } from './services/pushService';
 import './App.css';
@@ -83,6 +84,7 @@ function App() {
       />
       <Router>
         <Routes>
+          <Route path="/download" element={<DownloadPage />} />
           <Route path="/login" element={isAuthenticated ? <Navigate to="/" /> : <LoginPage />} />
           <Route path="/signup" element={isAuthenticated ? <Navigate to="/" /> : <SignupPage />} />
 

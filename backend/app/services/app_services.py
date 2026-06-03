@@ -28,7 +28,7 @@ class AuthService:
 
     @staticmethod
     def generate_verification_code():
-        return ''.join([str(i) for i in secrets.randbelow(10) for i in range(6)][:6])
+        return ''.join([str(secrets.randbelow(10)) for _ in range(6)])
 
     @staticmethod
     def send_verification_sms(phone_number):

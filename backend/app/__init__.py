@@ -50,6 +50,7 @@ def create_app(config_name='development'):
     from app.routes.contacts_validation import contacts_validation_bp
     from app.routes.admin import admin_bp
     from app.routes.push import push_bp
+    from app.routes.qr_login import qr_login_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(messages_bp)
@@ -70,6 +71,7 @@ def create_app(config_name='development'):
     app.register_blueprint(contacts_validation_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(push_bp)
+    app.register_blueprint(qr_login_bp)
 
     # ── Security headers ──────────────────────────────────────────────────
     from app.middleware.security import add_security_headers
@@ -106,11 +108,14 @@ def create_app(config_name='development'):
 
     @socketio.on('disconnect')
     def handle_disconnect():
-        for user_id, connections in app.active_connections.copy().items():
-            if id in connections:
-                connections.remove(id)
+        from flask import request as flask_request
+        sid = flask_request.sid
+        for user_id, connections in list(app.active_connections.items()):
+            if sid in connections:
+                connections.remove(sid)
                 if not connections:
                     del app.active_connections[user_id]
+                break
 
     @socketio.on('user_connect')
     def handle_user_connect(data):

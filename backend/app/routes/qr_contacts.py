@@ -12,8 +12,33 @@ import os
 
 qr_bp = Blueprint('qr', __name__, url_prefix='/api/qr')
 
-# Generate encryption key (store in env in production)
-ENCRYPTION_KEY = os.getenv('QR_ENCRYPTION_KEY', Fernet.generate_key())
+# Persist encryption key across restarts so old QR codes remain valid
+def _load_or_create_qr_key():
+    key_file = os.path.join(os.path.dirname(__file__), '..', '..', 'qr_key.json')
+    key_file = os.path.abspath(key_file)
+    env_key = os.getenv('QR_ENCRYPTION_KEY')
+    if env_key:
+        try:
+            return env_key.encode() if isinstance(env_key, str) else env_key
+        except Exception:
+            pass
+    if os.path.exists(key_file):
+        try:
+            import json as _json
+            with open(key_file) as f:
+                return _json.load(f)['key'].encode()
+        except Exception:
+            pass
+    new_key = Fernet.generate_key()
+    try:
+        import json as _json
+        with open(key_file, 'w') as f:
+            _json.dump({'key': new_key.decode()}, f)
+    except Exception:
+        pass
+    return new_key
+
+ENCRYPTION_KEY = _load_or_create_qr_key()
 cipher = Fernet(ENCRYPTION_KEY)
 
 @qr_bp.route('/generate', methods=['POST'])
