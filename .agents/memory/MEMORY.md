@@ -1,4 +1,0 @@
-- [VipChat app structure](vipchat-structure.md) — rebranded from Bitese; Expo SDK 51 + expo-router in mobile/; backend URL via EXPO_PUBLIC_API_URL; CameraView API for QR
-- [VipChat overhaul decisions](vipchat-overhaul.md) — full rebrand + WhatsApp-like mobile UI, hardened CSP/HSTS security headers, real call buttons wired to socket, powerful settings
-- [VipChat responsive pattern](vipchat-responsive.md) — all screens now use rf() scaling; constants MUST go after ALL imports
-- [VipChat push & offline](vipchat-push-offline.md) — Expo push via expo-notifications in notifications.js; backend stores tokens in PushSubscription; push_sender.py handles both VAPID+Expo in background thread
