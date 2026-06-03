@@ -52,6 +52,7 @@ def create_app(config_name='development'):
     from app.routes.push import push_bp
     from app.routes.qr_login import qr_login_bp
     from app.routes.verification import verification_bp
+    from app.routes.payments import payments_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(messages_bp)
@@ -74,6 +75,7 @@ def create_app(config_name='development'):
     app.register_blueprint(push_bp)
     app.register_blueprint(qr_login_bp)
     app.register_blueprint(verification_bp)
+    app.register_blueprint(payments_bp)
 
     # ── Security headers ──────────────────────────────────────────────────
     from app.middleware.security import add_security_headers
@@ -413,6 +415,18 @@ def create_app(config_name='development'):
             'ALTER TABLE users ADD COLUMN verification_tier VARCHAR(20) NULL',
             'ALTER TABLE users ADD COLUMN verified_at TIMESTAMP NULL',
             'ALTER TABLE users ADD COLUMN verification_payment_id VARCHAR(255) NULL',
+            # Payments table
+            '''CREATE TABLE IF NOT EXISTS payments (
+                id VARCHAR(36) PRIMARY KEY,
+                user_id VARCHAR(36) NOT NULL REFERENCES users(id),
+                provider VARCHAR(20) NOT NULL,
+                amount FLOAT NOT NULL,
+                currency VARCHAR(10) DEFAULT 'USD',
+                status VARCHAR(20) DEFAULT 'pending',
+                provider_payment_id VARCHAR(255),
+                tier VARCHAR(20) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )''',
         ]
         for sql in migrations:
             try:
