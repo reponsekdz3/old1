@@ -128,7 +128,7 @@ function NewChatModal({ onClose, onChatCreated }) {
                 </div>
                 <div className="flex-1 text-left">
                   <p className="font-medium">{contact.contact_name || contact.phone_number}</p>
-                  <p className="text-sm text-gray-500">{contact.contact_info?.bio || 'Hey there! I am using Bitese.'}</p>
+                  <p className="text-sm text-gray-500">{contact.contact_info?.bio || 'Hey there! I am using VipChat.'}</p>
                 </div>
               </button>
             ))

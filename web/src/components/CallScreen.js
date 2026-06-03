@@ -225,7 +225,7 @@ function CallScreen({
             {stateLabel}
           </motion.p>
           <p className="text-gray-500 text-sm mb-2">
-            Bitese {callType === 'video' ? 'Video' : 'Voice'} Call
+            VipChat {callType === 'video' ? 'Video' : 'Voice'} Call
           </p>
 
           {/* Encryption badge */}

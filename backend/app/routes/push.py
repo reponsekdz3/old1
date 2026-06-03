@@ -70,7 +70,7 @@ def test_push():
     try:
         user_id = get_jwt_identity()
         from app.utils.push_sender import push_to_user
-        push_to_user(user_id, 'Bitese 🔔', 'Push notifications are working!', url='/')
+        push_to_user(user_id, 'VipChat 🔔', 'Push notifications are working!', url='/')
         return jsonify({'message': 'Test notification sent'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500

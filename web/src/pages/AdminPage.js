@@ -390,7 +390,7 @@ function AdminPage() {
             </div>
             <div>
               <h1 className="text-white font-bold text-base">Admin Panel</h1>
-              <p className="text-white/50 text-xs">Bitese Management</p>
+              <p className="text-white/50 text-xs">VipChat Management</p>
             </div>
           </div>
         </div>

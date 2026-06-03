@@ -467,7 +467,7 @@ function WelcomeScreen({ onOpenMenu }) {
             </svg>
           </div>
         </div>
-        <h2 className="text-3xl font-light text-gray-700 mb-3">Bitese Web</h2>
+        <h2 className="text-3xl font-light text-gray-700 mb-3">VipChat Web</h2>
         <p className="text-gray-500 text-sm mb-2">Send and receive messages, make video and voice calls.</p>
         <p className="text-gray-400 text-xs mb-6">Your personal messages are end-to-end encrypted.</p>
         <div className="flex items-center justify-center gap-2 text-gray-400">

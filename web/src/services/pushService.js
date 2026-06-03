@@ -1,5 +1,5 @@
 /**
- * Bitese Web Push Notification Service
+ * VipChat Web Push Notification Service
  * Registers the service worker, subscribes to push, and posts subscriptions to the backend.
  */
 import api from './api';
@@ -92,7 +92,7 @@ export async function showLocalNotification(title, body, options = {}) {
       icon: '/logo192.png',
       badge: '/logo192.png',
       vibrate: [200, 100, 200],
-      tag: 'bitese-msg',
+      tag: 'vipchat-msg',
       renotify: true,
       ...options,
     });

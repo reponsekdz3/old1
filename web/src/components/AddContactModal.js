@@ -198,7 +198,7 @@ function PhoneInfoCard({ info, loading }) {
                 <p className="font-semibold text-gray-900 truncate">{info.userData.full_name}</p>
                 <FiCheckCircle size={14} className="text-green-500 shrink-0" />
               </div>
-              <p className="text-xs text-green-600 font-medium">On Bitese</p>
+              <p className="text-xs text-green-600 font-medium">On VipChat</p>
               {info.userData.bio && (
                 <p className="text-xs text-gray-500 truncate">{info.userData.bio}</p>
               )}
@@ -210,7 +210,7 @@ function PhoneInfoCard({ info, loading }) {
       {info.isValid && !info.userExists && (
         <div className="flex items-center gap-2 text-xs text-gray-500 bg-white rounded-lg p-2">
           <FiInfo size={12} />
-          <span>Not on Bitese yet. You can still save them as a contact.</span>
+          <span>Not on VipChat yet. You can still save them as a contact.</span>
         </div>
       )}
     </motion.div>
@@ -724,7 +724,7 @@ function AddContactModal({ onClose, onSuccess }) {
                     )}
                   </div>
                   <p className="text-xs text-gray-500 mt-1.5 ml-1">
-                    Search finds users registered on Bitese
+                    Search finds users registered on VipChat
                   </p>
                 </div>
 
@@ -785,7 +785,7 @@ function AddContactModal({ onClose, onSuccess }) {
                   </div>
                   <h4 className="font-bold text-gray-800 text-lg mb-2">QR Code Scanner</h4>
                   <p className="text-gray-500 text-sm mb-6 max-w-xs mx-auto">
-                    Scan someone's Bitese QR code to instantly add them — works without knowing their number
+                    Scan someone's VipChat QR code to instantly add them — works without knowing their number
                   </p>
 
                   <div className="space-y-3">

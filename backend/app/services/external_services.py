@@ -42,7 +42,7 @@ class AfricanTalkingService:
     def send_verification_code(self, phone_number: str, code: str) -> dict:
         """Send SMS verification code via African Talking"""
         phone_number = self._to_e164(phone_number)
-        message = f"Your Bitese verification code is: {code}. Valid for 10 minutes."
+        message = f"Your VipChat verification code is: {code}. Valid for 10 minutes."
         payload = {
             "username": self.username,
             "to": phone_number,
@@ -72,7 +72,7 @@ class QRCodeService:
     @staticmethod
     def generate_qr_code(user_id: str, user_phone: str) -> str:
         try:
-            qr_data = f"bitese://{user_id}/{user_phone}"
+            qr_data = f"vipchat://{user_id}/{user_phone}"
             qr = qrcode.QRCode(
                 version=1,
                 error_correction=qrcode.constants.ERROR_CORRECT_L,

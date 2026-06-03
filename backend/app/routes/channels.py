@@ -10,7 +10,7 @@ channels_bp = Blueprint('channels', __name__, url_prefix='/api/channels')
 
 def generate_invite_link():
     code = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(12))
-    return f"https://bitese.app/join/{code}"
+    return f"https://vipchat.app/join/{code}"
 
 @channels_bp.route('', methods=['POST'])
 @jwt_required()

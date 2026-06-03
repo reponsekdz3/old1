@@ -48,7 +48,7 @@ function MainNavigation({ socket, onChatSelect, onNewChat, onProfileClick, onLog
       {/* ── Header ── */}
       <div className="bg-[#008069] px-4 pt-safe-top pb-0 flex-shrink-0" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 40px)' }}>
         <div className="flex items-center justify-between mb-2">
-          <h1 className="text-[20px] font-bold text-white tracking-wide">Bitese</h1>
+          <h1 className="text-[20px] font-bold text-white tracking-wide">VipChat</h1>
           <div className="relative">
             <button
               onClick={() => setShowUserMenu(v => !v)}

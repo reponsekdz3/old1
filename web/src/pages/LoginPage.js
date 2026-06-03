@@ -201,7 +201,7 @@ export default function LoginPage() {
           {/* App header */}
           <div className="bg-[#075E54] px-4 pt-7 pb-2 flex-shrink-0">
             <div className="flex items-center justify-between mb-3">
-              <h1 className="text-white text-xl font-bold tracking-wide">Bitese</h1>
+              <h1 className="text-white text-xl font-bold tracking-wide">VipChat</h1>
               <div className="flex gap-0.5">
                 {[{label:'Chats',active:true},{label:'Status',active:false},{label:'Calls',active:false}].map(tab => (
                   <span key={tab.label} className={`text-xs px-2 py-1 ${tab.active ? 'text-white font-semibold border-b-2 border-[#25D366]' : 'text-white/40'}`}>
@@ -292,7 +292,7 @@ export default function LoginPage() {
               </svg>
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Bitese</h1>
+              <h1 className="text-xl font-bold text-gray-900">VipChat</h1>
               <p className="text-gray-400 text-xs">Your world, connected</p>
             </div>
           </div>

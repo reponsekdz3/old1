@@ -91,7 +91,7 @@ function ChatsTab({ socket, onChatSelect, onNewChat }) {
 
   const handleChatClick = (contact) => {
     if (!contact.contact_user_id) {
-      toast.error('This contact is not on Bitese yet');
+      toast.error('This contact is not on VipChat yet');
       return;
     }
     setActiveChat(contact.contact_user_id);
@@ -184,7 +184,7 @@ function ChatsTab({ socket, onChatSelect, onNewChat }) {
             const preview = getLastMsgPreview(contact.contact_user_id, lastMsg);
             const unread = unreadCounts[contact.contact_user_id] || 0;
             const isActive = activeChat === contact.contact_user_id;
-            const isOnBitese = !!contact.contact_user_id;
+            const isOnVipChat = !!contact.contact_user_id;
             const isOnline = contact.contact_info?.status === 'available';
 
             return (
@@ -228,7 +228,7 @@ function ChatsTab({ socket, onChatSelect, onNewChat }) {
                         ? typeof preview === 'string'
                           ? preview
                           : <><preview.icon size={13} className="flex-shrink-0 text-gray-400" />{preview.text}</>
-                        : <span className="text-gray-300 italic">{isOnBitese ? 'Tap to start chatting' : 'Not on Bitese'}</span>
+                        : <span className="text-gray-300 italic">{isOnVipChat ? 'Tap to start chatting' : 'Not on VipChat'}</span>
                       }
                     </p>
                     {unread > 0 && (

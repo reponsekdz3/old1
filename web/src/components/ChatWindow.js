@@ -835,7 +835,7 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
           <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
             <FiMessageSquare size={40} className="text-gray-400" />
           </div>
-          <h2 className="text-xl font-light text-gray-500 mb-2">Bitese Web</h2>
+          <h2 className="text-xl font-light text-gray-500 mb-2">VipChat Web</h2>
           <p className="text-gray-400 text-sm max-w-xs">Select a chat to start messaging</p>
         </div>
       </div>

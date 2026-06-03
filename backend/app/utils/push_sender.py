@@ -4,7 +4,7 @@ import logging
 from app.utils.vapid_keys import get_vapid_keys
 
 logger = logging.getLogger(__name__)
-VAPID_SUB = 'mailto:support@bitese.app'
+VAPID_SUB = 'mailto:support@vipchat.app'
 
 
 def push_to_user(user_id, title, body, icon='/logo192.png', url='/'):

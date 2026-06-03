@@ -104,7 +104,7 @@ function IncomingCall({ caller, callType, onAccept, onDecline }) {
               {caller?.full_name || 'Unknown'}
             </p>
             <p className="text-gray-400 text-sm text-center mb-6">
-              Bitese {callType === 'video' ? 'Video' : 'Voice'} Call
+              VipChat {callType === 'video' ? 'Video' : 'Voice'} Call
             </p>
 
             {/* Action Buttons */}

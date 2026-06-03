@@ -52,7 +52,7 @@ export default function QRScreen() {
         setAddDone(true);
       }
     } catch {
-      Alert.alert('Invalid QR', 'This QR code is not a valid Bitese code.', [
+      Alert.alert('Invalid QR', 'This QR code is not a valid VipChat code.', [
         { text: 'Scan Again', onPress: () => { setScanned(false); setScanning(true); } },
       ]);
     }
@@ -89,7 +89,7 @@ export default function QRScreen() {
     const url = qrData?.qr_code?.qr_image_url || qrData?.qr_image_url;
     if (!url) return;
     try {
-      await Share.share({ message: `Scan to add ${user?.full_name} on Bitese! ${url}`, url });
+      await Share.share({ message: `Scan to add ${user?.full_name} on VipChat! ${url}`, url });
     } catch {}
   };
 
@@ -208,9 +208,9 @@ export default function QRScreen() {
               <View style={styles.startScan}>
                 <View style={styles.scanPlaceholder}>
                   <Ionicons name="camera-outline" size={48} color={COLORS.gray} />
-                  <Text style={styles.scanPlaceholderText}>Point at a Bitese QR code</Text>
+                  <Text style={styles.scanPlaceholderText}>Point at a VipChat QR code</Text>
                 </View>
-                <Text style={styles.scanHint}>Scan any Bitese QR code to instantly add that person as a contact</Text>
+                <Text style={styles.scanHint}>Scan any VipChat QR code to instantly add that person as a contact</Text>
                 <TouchableOpacity style={styles.startScanBtn} onPress={startScanning}>
                   <Ionicons name="camera" size={20} color="#fff" />
                   <Text style={styles.startScanBtnText}>Start Camera</Text>

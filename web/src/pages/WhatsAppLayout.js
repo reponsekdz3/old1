@@ -103,13 +103,13 @@ function WhatsAppLayout() {
                 </div>
               </div>
               <h2 className="text-3xl font-light text-gray-800 mb-4">
-                Bitese Web
+                VipChat Web
               </h2>
               <p className="text-gray-600 mb-2">
                 Send and receive messages without keeping your phone online.
               </p>
               <p className="text-gray-500 text-sm">
-                Use Bitese on up to 4 linked devices and 1 phone at the same time.
+                Use VipChat on up to 4 linked devices and 1 phone at the same time.
               </p>
               
               <button

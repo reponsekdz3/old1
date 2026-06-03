@@ -256,13 +256,13 @@ export default function SettingsPage() {
           <ActionRow label="Help Center" sub="FAQ and support articles"
             icon={FiHelpCircle} iconBg="bg-purple-50" iconColor="text-purple-500"
             onClick={() => toast('Help center coming soon!')} />
-          <ActionRow label="About Bitese" sub="Version 1.0.0 · Privacy policy"
+          <ActionRow label="About VipChat" sub="Version 2.0.0 · Privacy policy"
             icon={FiInfo} iconBg="bg-gray-100" iconColor="text-gray-500"
-            onClick={() => toast('Bitese v1.0.0 – End-to-end encrypted messaging', { icon: 'ℹ️' })} />
+            onClick={() => toast('VipChat v2.0.0 – End-to-end encrypted messaging', { icon: 'ℹ️' })} />
         </div>
 
         <div className="mx-4 my-6 text-center">
-          <p className="text-xs text-gray-300">Bitese v1.0.0 · End-to-end encrypted</p>
+          <p className="text-xs text-gray-300">VipChat v2.0.0 · End-to-end encrypted</p>
           <p className="text-xs text-gray-300 mt-0.5">Your messages are protected with industry-standard encryption</p>
         </div>
       </div>

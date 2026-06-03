@@ -98,7 +98,7 @@ const CATEGORIES = [
   },
 ];
 
-const RECENT_KEY = 'bitese_recent_emojis';
+const RECENT_KEY = 'vipchat_recent_emojis';
 const MAX_RECENT = 30;
 
 function getRecent() {

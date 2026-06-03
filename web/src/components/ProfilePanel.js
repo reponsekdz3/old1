@@ -225,7 +225,7 @@ export default function ProfilePanel({ onClose }) {
                   <div className="relative">
                     <FiInfo className="absolute left-3 top-3 text-[#25D366]" size={15} />
                     <textarea value={form.bio} onChange={e => set('bio', e.target.value)}
-                      rows={2} maxLength={139} placeholder="Hey there! I am using Bitese."
+                      rows={2} maxLength={139} placeholder="Hey there! I am using VipChat."
                       className={`${inputCls(false)} pl-9 resize-none`} />
                   </div>
                   <p className="text-[10px] text-gray-400 text-right mt-0.5">{form.bio.length}/139</p>
@@ -313,7 +313,7 @@ export default function ProfilePanel({ onClose }) {
                 <div className="px-5 pt-4 space-y-2">
                   {[
                     { icon: FiUser,     label: 'Name',    value: user?.full_name },
-                    { icon: FiInfo,     label: 'Bio',     value: user?.bio || 'Hey there! I am using Bitese.' },
+                    { icon: FiInfo,     label: 'Bio',     value: user?.bio || 'Hey there! I am using VipChat.' },
                     { icon: FiPhone,    label: 'Phone',   value: user?.phone_number },
                     { icon: FiMail,     label: 'Email',   value: user?.email || <span className="text-gray-400 italic text-sm">Not set</span> },
                     { icon: FiCalendar, label: 'Age',     value: user?.age ? `${user.age} years old` : <span className="text-gray-400 italic text-sm">Not set</span> },
@@ -367,7 +367,7 @@ export default function ProfilePanel({ onClose }) {
                 </div>
 
                 <div className="px-5 py-5 text-center">
-                  <p className="text-xs text-gray-300">Bitese v1.0.0 · End-to-end encrypted</p>
+                  <p className="text-xs text-gray-300">VipChat v1.0.0 · End-to-end encrypted</p>
                 </div>
               </div>
             )}

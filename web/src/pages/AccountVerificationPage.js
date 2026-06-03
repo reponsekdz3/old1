@@ -103,7 +103,7 @@ function AccountVerificationPage() {
           <>
             <h1 className="text-2xl font-bold text-gray-900 text-center mb-2">Account Confirmation</h1>
             <p className="text-gray-500 text-center text-sm mb-6">
-              You've been using Bitese for <strong>{daysActive} days</strong>. To keep your account secure,
+              You've been using VipChat for <strong>{daysActive} days</strong>. To keep your account secure,
               please verify your phone number.
             </p>
 

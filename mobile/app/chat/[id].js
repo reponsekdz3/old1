@@ -110,6 +110,27 @@ export default function ChatScreen() {
     }
   }, [id, user?.id]);
 
+  const initiateCall = (callType) => {
+    const socket = getSocket();
+    if (!socket) {
+      Alert.alert('Not connected', 'Cannot make calls right now. Check your connection.');
+      return;
+    }
+    Alert.alert(
+      `${callType === 'video' ? 'Video' : 'Voice'} Call`,
+      `Call ${name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Call',
+          onPress: () => {
+            socket.emit('call_offer', { callee_id: id, call_type: callType });
+          },
+        },
+      ]
+    );
+  };
+
   const emitTyping = () => {
     const socket = getSocket();
     if (!socket) return;
@@ -274,10 +295,10 @@ export default function ChatScreen() {
             <Text style={styles.headerSub}>{isTyping ? 'typing...' : 'tap here for contact info'}</Text>
           </View>
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.iconBtn}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => initiateCall('video')}>
               <Ionicons name="videocam-outline" size={22} color="#fff" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => initiateCall('audio')}>
               <Ionicons name="call-outline" size={22} color="#fff" />
             </TouchableOpacity>
           </View>

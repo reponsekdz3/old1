@@ -114,7 +114,7 @@ export default function ProfileScreen() {
             style={[styles.input, styles.textArea]}
             value={bio}
             onChangeText={setBio}
-            placeholder="Hey there! I am using Bitese."
+            placeholder="Hey there! I am using VipChat."
             placeholderTextColor={COLORS.gray}
             multiline
             maxLength={139}

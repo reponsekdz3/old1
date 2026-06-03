@@ -368,7 +368,7 @@ def link_preview():
                     self._buf = []
 
         headers = {
-            'User-Agent': 'Mozilla/5.0 (compatible; BiteseBot/1.0; +https://bitese.app)',
+            'User-Agent': 'Mozilla/5.0 (compatible; VipChatBot/1.0; +https://vipchat.app)',
             'Accept': 'text/html,application/xhtml+xml',
         }
         resp = http_requests.get(url, timeout=6, headers=headers, allow_redirects=True)

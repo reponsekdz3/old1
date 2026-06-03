@@ -142,7 +142,7 @@ export default function SignupPage() {
       localStorage.setItem('access_token', data.access_token);
       localStorage.setItem('refresh_token', data.refresh_token);
       setUser(data.user);
-      toast.success(`Welcome to Bitese, ${data.user.full_name}! 🎉`);
+      toast.success(`Welcome to VipChat, ${data.user.full_name}! 🎉`);
       navigate('/');
     } catch (err) {
       const msg = err.response?.data?.error || 'Registration failed';
@@ -370,7 +370,7 @@ export default function SignupPage() {
               </svg>
             </div>
             <div>
-              <h1 className="text-white text-2xl font-bold tracking-tight">Bitese</h1>
+              <h1 className="text-white text-2xl font-bold tracking-tight">VipChat</h1>
               <p className="text-white/50 text-xs">Join millions of users</p>
             </div>
           </div>
@@ -416,7 +416,7 @@ export default function SignupPage() {
                 <path d="M12 2C6.48 2 2 6.48 2 12c0 1.54.36 3 .97 4.29L2 22l5.71-.97C9 21.64 10.46 22 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2z"/>
               </svg>
             </div>
-            <span className="text-xl font-bold text-gray-900">Bitese</span>
+            <span className="text-xl font-bold text-gray-900">VipChat</span>
           </div>
 
           {/* Step indicator */}

@@ -115,7 +115,7 @@ export default function QRScannerModal({ onClose, onSuccess }) {
     if (!url) return;
     const link = document.createElement('a');
     link.href = url;
-    link.download = `bitese-qr-${user?.full_name?.replace(/\s/g,'-') || 'code'}.png`;
+    link.download = `vipchat-qr-${user?.full_name?.replace(/\s/g,'-') || 'code'}.png`;
     link.click();
     toast.success('QR code downloaded');
   };
@@ -127,8 +127,8 @@ export default function QRScannerModal({ onClose, onSuccess }) {
       try {
         const res = await fetch(url);
         const blob = await res.blob();
-        const file = new File([blob], 'bitese-qr.png', { type: 'image/png' });
-        await navigator.share({ title: 'My Bitese QR Code', text: `Scan to add ${user?.full_name} on Bitese!`, files: [file] });
+        const file = new File([blob], 'vipchat-qr.png', { type: 'image/png' });
+        await navigator.share({ title: 'My VipChat QR Code', text: `Scan to add ${user?.full_name} on VipChat!`, files: [file] });
       } catch (e) { if (e.name !== 'AbortError') toast.error('Share failed'); }
     } else {
       await navigator.clipboard.writeText(url);
@@ -276,10 +276,10 @@ export default function QRScannerModal({ onClose, onSuccess }) {
                   <div className="text-center py-6 space-y-4">
                     <div className="w-40 h-40 mx-auto rounded-2xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center bg-gray-50">
                       <FiCamera size={36} className="text-gray-300 mb-2" />
-                      <p className="text-xs text-gray-400">Point at a Bitese QR</p>
+                      <p className="text-xs text-gray-400">Point at a VipChat QR</p>
                     </div>
                     <p className="text-sm text-gray-500 max-w-[200px] mx-auto">
-                      Scan any Bitese QR code to instantly add that person as a contact
+                      Scan any VipChat QR code to instantly add that person as a contact
                     </p>
                     <button onClick={startScanning}
                       className="px-8 py-3 bg-[#25D366] hover:bg-[#1fbd5a] text-white rounded-xl font-bold text-sm transition shadow-lg shadow-green-100 flex items-center gap-2 mx-auto">

@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Bitese",
-    "slug": "bitese",
-    "version": "1.0.0",
+    "name": "VipChat",
+    "slug": "vipchat",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -14,12 +14,12 @@
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.bitese.app",
+      "bundleIdentifier": "com.vipchat.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "Bitese needs camera access to scan QR codes and send photos.",
-        "NSMicrophoneUsageDescription": "Bitese needs microphone access to record voice messages.",
-        "NSPhotoLibraryUsageDescription": "Bitese needs photo library access to send images.",
-        "NSPhotoLibraryAddUsageDescription": "Bitese needs to save images to your photo library."
+        "NSCameraUsageDescription": "VipChat needs camera access to scan QR codes and send photos.",
+        "NSMicrophoneUsageDescription": "VipChat needs microphone access for voice messages and calls.",
+        "NSPhotoLibraryUsageDescription": "VipChat needs photo library access to send images.",
+        "NSPhotoLibraryAddUsageDescription": "VipChat needs to save images to your photo library."
       }
     },
     "android": {
@@ -27,14 +27,16 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#075E54"
       },
-      "package": "com.bitese.app",
+      "package": "com.vipchat.app",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
         "RECEIVE_BOOT_COMPLETED",
-        "VIBRATE"
+        "VIBRATE",
+        "USE_FULL_SCREEN_INTENT",
+        "POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -47,31 +49,32 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Bitese needs camera access to scan QR codes and send photos."
+          "cameraPermission": "VipChat needs camera access to scan QR codes and take photos."
         }
       ],
       [
         "expo-av",
         {
-          "microphonePermission": "Bitese needs microphone access to record voice messages."
+          "microphonePermission": "VipChat needs microphone access for voice messages and calls."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Bitese needs access to your photos to send images.",
-          "cameraPermission": "Bitese needs camera access to take photos."
+          "photosPermission": "VipChat needs access to your photos to send images.",
+          "cameraPermission": "VipChat needs camera access to take photos."
         }
       ],
       [
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
-          "color": "#25D366"
+          "color": "#25D366",
+          "sounds": ["./assets/notification.wav", "./assets/ringtone.wav"]
         }
       ]
     ],
-    "scheme": "bitese",
+    "scheme": "vipchat",
     "experiments": {
       "typedRoutes": false
     },
@@ -80,7 +83,7 @@
         "origin": false
       },
       "eas": {
-        "projectId": "bitese-mobile"
+        "projectId": "vipchat-mobile"
       }
     }
   }

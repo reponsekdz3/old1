@@ -24,7 +24,7 @@ class AfricanTalkingService:
                 'apiKey': self.api_key
             }
             
-            message = f"Your Bitese verification code is: {code}. Valid for 10 minutes."
+            message = f"Your VipChat verification code is: {code}. Valid for 10 minutes."
             
             payload = {
                 'username': self.username,

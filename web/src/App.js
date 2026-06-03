@@ -66,7 +66,7 @@ function App() {
       <div className="flex items-center justify-center h-screen bg-[#f0f2f5]">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-[#25D366] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600 font-medium">Loading Bitese...</p>
+          <p className="text-gray-600 font-medium">Loading VipChat...</p>
         </div>
       </div>
     );

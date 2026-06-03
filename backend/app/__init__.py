@@ -85,7 +85,7 @@ def create_app(config_name='development'):
     # ── Health check ──────────────────────────────────────────────────────
     @app.route('/api/health', methods=['GET'])
     def health():
-        return jsonify({'status': 'healthy', 'app': 'Bitese'}), 200
+        return jsonify({'status': 'healthy', 'app': 'VipChat'}), 200
 
     @app.errorhandler(404)
     def not_found(error):

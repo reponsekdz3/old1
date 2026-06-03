@@ -60,7 +60,7 @@ export default function LoginPage() {
               <Ionicons name="chatbubbles" size={30} color="#fff" />
             </View>
             <View>
-              <Text style={styles.appName}>Bitese</Text>
+              <Text style={styles.appName}>VipChat</Text>
               <Text style={styles.appTagline}>Your world, connected</Text>
             </View>
           </View>

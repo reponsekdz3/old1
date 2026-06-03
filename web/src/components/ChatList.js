@@ -17,7 +17,7 @@ function MainNavigation({ socket, onChatSelect, onNewChat, onProfileClick, onLog
     <div className="flex flex-col h-full bg-white">
       {/* Top Header */}
       <div className="bg-green-600 text-white p-4 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Bitese</h1>
+        <h1 className="text-2xl font-bold">VipChat</h1>
         <div className="flex items-center gap-2">
           <button
             onClick={onProfileClick}
