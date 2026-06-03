@@ -53,7 +53,7 @@ def create_app(config_name='development'):
         
         # Security
         from app.security.advanced_security import SecurityManager
-        app.security_manager = SecurityManager()
+        app.security_manager = SecurityManager(app)
         
         # Scalability
         from app.infrastructure.scalability import (
@@ -128,9 +128,11 @@ def create_app(config_name='development'):
     from app.routes.e2ee import e2ee_bp
     from app.routes.security_audit import security_audit_bp
     from app.routes.contacts_sync import contacts_sync_bp
+    from app.routes.sfu_routes import sfu_bp, register_sfu_socket_events
     app.register_blueprint(e2ee_bp)
     app.register_blueprint(security_audit_bp)
     app.register_blueprint(contacts_sync_bp)
+    app.register_blueprint(sfu_bp)
     
     # ── Enterprise Blueprints ──────────────────────────────────────────────
     try:
@@ -478,6 +480,9 @@ def create_app(config_name='development'):
             'poll_id': data.get('poll_id'),
             'user_id': data.get('user_id'),
         }, room=f"group_{group_id}")
+    
+    # Register SFU socket events
+    register_sfu_socket_events(socketio)
 
     # ── Database setup ────────────────────────────────────────────────────
     with app.app_context():

@@ -5,7 +5,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask_socketio import emit, join_room, leave_room
 from app.services.sfu_server import sfu_server
-from app.models.models import db, User, GroupMember, Group
+from app.models.models import db, User, Group, group_members
 import logging
 
 logger = logging.getLogger(__name__)
@@ -27,11 +27,8 @@ def create_sfu_room():
     
     # Verify group membership if group call
     if group_id:
-        member = GroupMember.query.filter_by(
-            group_id=group_id,
-            user_id=user_id
-        ).first()
-        if not member:
+        group = Group.query.filter_by(id=group_id).first()
+        if not group or user_id not in [m.id for m in group.members]:
             return jsonify({'error': 'Not a group member'}), 403
     
     room = sfu_server.create_room(room_id, user_id)

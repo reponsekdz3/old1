@@ -13,7 +13,7 @@ import { useAuthStore } from '../services/store';
 import { TokenStorage } from '../services/storage';
 import api from '../services/api';
 import e2eeManager from '../services/e2ee';
-import { syncPhoneContacts } from '../services/phoneContacts';
+import { autoSyncOnLogin } from '../services/phoneContacts';
 import { COLORS } from '../config';
 
 export default function LoginPage() {
@@ -55,7 +55,7 @@ export default function LoginPage() {
       );
       
       // Sync contacts in background
-      syncPhoneContacts({ force: true }).catch(err => 
+      autoSyncOnLogin().catch(err => 
         console.warn('[Login] Contact sync failed:', err)
       );
       

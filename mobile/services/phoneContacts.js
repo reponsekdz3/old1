@@ -2,18 +2,10 @@ import * as Contacts from 'expo-contacts';
 import { Cache } from './cache';
 import api from './api';
 
-/**
- * Normalize a phone number to E.164-ish format for matching.
- * Strips spaces, dashes, parentheses, dots.
- */
 function normalizePhone(phone) {
-  return phone.replace(/[\s\-().]/g, '');
+  return phone.replace(/[\s\-().+]/g, '');
 }
 
-/**
- * Request contacts permission and fetch all phone contacts from the device.
- * Returns { granted: bool, contacts: Contacts[] }
- */
 export async function fetchDeviceContacts() {
   const { status } = await Contacts.requestPermissionsAsync();
   if (status !== 'granted') {
@@ -30,10 +22,6 @@ export async function fetchDeviceContacts() {
   return { granted: true, contacts: data || [] };
 }
 
-/**
- * Extract all unique phone numbers from device contacts,
- * returning an array of { name, phoneNumber, rawContact }.
- */
 export function extractPhoneNumbers(deviceContacts) {
   const seen = new Set();
   const result = [];
@@ -52,13 +40,10 @@ export function extractPhoneNumbers(deviceContacts) {
 }
 
 /**
- * Full sync: fetch device contacts → send to backend → return
- * { granted, vipchatContacts, phoneOnlyContacts, lastSynced }
- *
- * Results are cached in AsyncStorage so they're available offline.
+ * Auto-sync phone contacts with backend
+ * Returns matched VipChat users and unregistered contacts
  */
 export async function syncPhoneContacts({ force = false } = {}) {
-  // Return cached result if recent (within 30 minutes) unless forced
   if (!force) {
     const cached = await Cache.getPhoneContacts();
     if (cached && Date.now() - (cached.lastSynced || 0) < 30 * 60 * 1000) {
@@ -76,7 +61,6 @@ export async function syncPhoneContacts({ force = false } = {}) {
     return { granted: true, vipchatContacts: [], phoneOnlyContacts: [], lastSynced: Date.now() };
   }
 
-  // Send all phone numbers to backend
   const phoneNumbers = entries.map(e => e.phoneNumber);
   let registered = [];
   let unregistered = [];
@@ -86,17 +70,14 @@ export async function syncPhoneContacts({ force = false } = {}) {
     registered = data.registered || [];
     unregistered = data.unregistered || [];
   } catch (err) {
-    console.warn('[phoneContacts] sync failed:', err.message);
-    // Use cached data if available
+    console.warn('[phoneContacts] Sync failed:', err.message);
     const cached = await Cache.getPhoneContacts();
     if (cached) return cached;
     return { granted: true, vipchatContacts: [], phoneOnlyContacts: entries, lastSynced: null };
   }
 
-  // Build vipchatContacts with device name overlay
   const registeredPhones = new Set(registered.map(r => normalizePhone(r.phone_number)));
   const vipchatContacts = registered.map(r => {
-    // Find the device contact name for this phone
     const match = entries.find(e => normalizePhone(e.phoneNumber) === normalizePhone(r.phone_number));
     return {
       ...r,
@@ -105,7 +86,6 @@ export async function syncPhoneContacts({ force = false } = {}) {
     };
   });
 
-  // Phone-only contacts: on device but not on VipChat
   const phoneOnlyContacts = entries
     .filter(e => !registeredPhones.has(e.normalizedPhone))
     .map(e => ({ name: e.name, phoneNumber: e.phoneNumber }));
@@ -119,4 +99,26 @@ export async function syncPhoneContacts({ force = false } = {}) {
 
   await Cache.setPhoneContacts(result);
   return result;
+}
+
+/**
+ * Get cached contacts (no network call)
+ */
+export async function getCachedContacts() {
+  const cached = await Cache.getPhoneContacts();
+  return cached || { granted: false, vipchatContacts: [], phoneOnlyContacts: [], lastSynced: null };
+}
+
+/**
+ * Auto-trigger sync on app launch/login
+ */
+export async function autoSyncOnLogin() {
+  try {
+    const result = await syncPhoneContacts({ force: true });
+    console.log('[ContactSync] Auto-sync completed:', result.vipchatContacts.length, 'VipChat users found');
+    return result;
+  } catch (err) {
+    console.warn('[ContactSync] Auto-sync failed:', err);
+    return null;
+  }
 }
