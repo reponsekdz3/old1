@@ -42,18 +42,23 @@ def create_app(config_name='development'):
     try:
         logger.info("Initializing enterprise services...")
         
-        # E2EE & Encryption
+        # Security Services
         from app.security.encryption import EncryptionService, KeyManager
         from app.services.e2ee_service import E2EEMessageService, GroupE2EEService
+        from app.security.advanced_security import SecurityManager
+        from app.security.csrf_protection import csrf_protection
+        from app.security.tls_security import tls_manager
+        from app.security.audit_logging import security_audit
         
         app.key_manager = KeyManager()
         app.enc_service = EncryptionService(app.key_manager)
         app.e2ee_service = E2EEMessageService(app.enc_service)
         app.group_e2ee_service = GroupE2EEService(app.enc_service)
-        
-        # Security
-        from app.security.advanced_security import SecurityManager
         app.security_manager = SecurityManager(app)
+        csrf_protection.init_app(app)
+        tls_manager.init_app(app)
+        app.security_audit = security_audit
+        security_audit.init_app(app)
         
         # Scalability
         from app.infrastructure.scalability import (

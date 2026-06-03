@@ -1,16 +1,47 @@
 import axios from 'axios';
 import { API_URL } from '../config';
 import { TokenStorage } from './storage';
+import secureStorage from './secureStorage';
+import apiSecurityManager, { setupAPISecurityInterceptors } from './apiSecurity';
 
 const api = axios.create({
   baseURL: API_URL,
   timeout: 15000,
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    'X-Client-Version': '1.0.0',
+    'X-Platform': 'mobile'
+  },
 });
 
+// Initialize security managers
+let securityInitialized = false;
+
+const initializeSecurity = async () => {
+  if (securityInitialized) return;
+  
+  try {
+    await secureStorage.initialize();
+    await apiSecurityManager.initialize();
+    setupAPISecurityInterceptors(api, apiSecurityManager);
+    securityInitialized = true;
+    console.log('[API] Security initialized');
+  } catch (err) {
+    console.warn('[API] Security initialization failed:', err);
+  }
+};
+
+// Initialize on module load
+initializeSecurity();
+
 api.interceptors.request.use(async (config) => {
+  // Get token from secure storage
   const token = await TokenStorage.getAccessToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  
+  // Add security timestamp
+  config.headers['X-Request-Time'] = new Date().toISOString();
+  
   return config;
 });
 

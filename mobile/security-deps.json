@@ -1,0 +1,22 @@
+{
+  "security-dependencies": {
+    "expo-secure-store": "~12.3.1",
+    "expo-crypto": "~12.4.1",
+    "expo-local-authentication": "~13.4.1",
+    "@react-native-async-storage/async-storage": "1.18.2",
+    "react-native-keychain": "^8.1.2"
+  },
+  "security-dev-dependencies": {
+    "jest": "^29.2.1",
+    "@testing-library/react-native": "^12.3.0"
+  },
+  "installation-instructions": {
+    "note": "Run the following commands to install security dependencies:",
+    "commands": [
+      "npm install expo-secure-store@~12.3.1",
+      "npm install expo-crypto@~12.4.1",
+      "npm install expo-local-authentication@~13.4.1",
+      "npm install react-native-keychain@^8.1.2"
+    ]
+  }
+}

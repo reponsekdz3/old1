@@ -76,9 +76,15 @@ export default function SignupPage() {
   });
   const [errors, setErrors] = useState({});
 
-  const set = (k, v) => {
-    setForm(p => ({ ...p, [k]: v }));
-    if (errors[k]) setErrors(p => ({ ...p, [k]: '' }));
+  const handleInputChange = (field, value) => {
+    setForm(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) {
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
   };
 
   const filteredCountries = ALL_COUNTRIES.filter(c =>
@@ -192,7 +198,7 @@ export default function SignupPage() {
         <label className="block text-sm font-semibold text-gray-700">Phone Number *</label>
         <PhoneInput
           value={form.phone_number}
-          onChange={v => set('phone_number', v)}
+          onChange={(v) => handleInputChange('phone_number', v)}
           error={!!errors.phone_number}
         />
         {errors.phone_number && (
@@ -204,14 +210,14 @@ export default function SignupPage() {
 
       <Field label="Full Name *" icon={FiUser} error={errors.full_name}>
         <input type="text" value={form.full_name}
-          onChange={e => set('full_name', e.target.value)}
+          onChange={(e) => handleInputChange('full_name', e.target.value)}
           placeholder="Your full name"
           className={inputCls(!!errors.full_name)} />
       </Field>
 
       <Field label="Email Address (optional)" icon={FiMail} error={errors.email}>
         <input type="email" value={form.email}
-          onChange={e => set('email', e.target.value)}
+          onChange={(e) => handleInputChange('email', e.target.value)}
           placeholder="you@example.com"
           className={inputCls(!!errors.email)} />
         <p className="text-xs text-gray-400 mt-1">Used for account recovery</p>
@@ -232,7 +238,7 @@ export default function SignupPage() {
 
       <Field label="Age" icon={FiCalendar} error={errors.age}>
         <input type="number" min="13" max="120" value={form.age}
-          onChange={e => set('age', e.target.value)}
+          onChange={(e) => handleInputChange('age', e.target.value)}
           placeholder="Your age (must be 13+)"
           className={inputCls(!!errors.age)} />
       </Field>
@@ -243,12 +249,17 @@ export default function SignupPage() {
           <FiGlobe className="absolute left-4 top-1/2 -translate-y-1/2 text-[#25D366] z-10" size={16} />
           <input type="text"
             value={form.country || countrySearch}
-            onChange={e => { setCountrySearch(e.target.value); set('country',''); setShowCountryDropdown(true); }}
+            onChange={(e) => {
+              const val = e.target.value;
+              setCountrySearch(val);
+              handleInputChange('country', '');
+              setShowCountryDropdown(true);
+            }}
             onFocus={() => setShowCountryDropdown(true)}
             placeholder="Search your country..."
             className={inputCls(false)} />
           {form.country && (
-            <button type="button" onClick={() => { set('country',''); setCountrySearch(''); setShowCountryDropdown(true); }}
+            <button type="button" onClick={() => { handleInputChange('country',''); setCountrySearch(''); setShowCountryDropdown(true); }}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">✕</button>
           )}
         </div>
@@ -260,7 +271,7 @@ export default function SignupPage() {
                 const pc = PHONE_COUNTRIES.find(p => p.name === c);
                 return (
                   <button key={c} type="button"
-                    onClick={() => { set('country',c); setCountrySearch(c); setShowCountryDropdown(false); }}
+                    onClick={() => { handleInputChange('country',c); setCountrySearch(c); setShowCountryDropdown(false); }}
                     className="w-full text-left px-4 py-2.5 text-sm hover:bg-green-50 hover:text-[#25D366] transition flex items-center gap-2">
                     {pc && <span className="text-base">{getFlag(pc.iso2)}</span>}
                     {c}
@@ -274,7 +285,7 @@ export default function SignupPage() {
 
       <Field label="City" icon={FiHome} error={errors.city}>
         <input type="text" value={form.city}
-          onChange={e => set('city', e.target.value)}
+          onChange={(e) => handleInputChange('city', e.target.value)}
           placeholder="Your city"
           className={inputCls(!!errors.city)} />
       </Field>
@@ -315,7 +326,7 @@ export default function SignupPage() {
 
       <Field label="Password *" icon={FiLock} error={errors.password}>
         <input type={showPassword ? 'text' : 'password'} value={form.password}
-          onChange={e => set('password', e.target.value)}
+          onChange={(e) => handleInputChange('password', e.target.value)}
           placeholder="Min. 8 characters" autoComplete="new-password"
           className={`${inputCls(!!errors.password)} pr-12`} />
         <button type="button" onClick={() => setShowPassword(v => !v)}
@@ -327,7 +338,7 @@ export default function SignupPage() {
 
       <Field label="Confirm Password *" icon={FiLock} error={errors.confirmPassword}>
         <input type={showConfirm ? 'text' : 'password'} value={form.confirmPassword}
-          onChange={e => set('confirmPassword', e.target.value)}
+          onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
           placeholder="Re-enter password" autoComplete="new-password"
           className={`${inputCls(!!errors.confirmPassword)} pr-12`} />
         <button type="button" onClick={() => setShowConfirm(v => !v)}
