@@ -1,0 +1,31 @@
+VERDICT: REJECTED
+The directory move is mostly correct, but the change set leaves a broken configuration reference in `.replit`, so the task is not fully complete.
+
+Critical findings:
+- ✅ `Start application` workflow was correctly updated to `cd web && HOST=0.0.0.0 PORT=5000 BROWSER=none npm start` (port 5000 preserved).
+- ✅ `start.sh` was updated to install/start from `web/`, matching the new structure.
+- ✅ Web app files were moved from `frontend/` to `web/` via renames (no source-level behavior changes).
+- ❌ `.replit` still contains `deployment.build = ["bash", "-c", "cd frontend && npm run build"]` (line 60). Since `frontend/` no longer exists, deployment builds will fail. This is a direct miss against “update all workflow commands VERDICT: REJECTED
+and configuration references accordingly.”
+
+Security:
+- No serious security violations observed in this diff.
+
+Next actions:
+1. Update `.replit` The directory move is mostly correct, but the change set leaves a broken configuration reference in `.replit`, so the task is not fully complete.
+deployment build command from `cd frontend && npm run build` to `cd web && np
+m run build`.
+2. Do a final repo-wide path audit for Critical findings:
+remaining `frontend/` references in runnable commands/configs (especially dep- ✅ `Start application` workflow was correctly updated to `cd web && HOST=0.0.0.0 PORT=5000 BROWSER=none npm start` (port 5000 preserved).
+loyment/CI scripts).
+3. Re-run Start application and a deploy- ✅ `start.sh` was updated to install/start from `web/`, matching the new structure.
+ment build smoke test to confirm both runtime and build wo- ✅ Web app files were moved from `frontend/` to `web/` via renames (no source-level behavior changes).
+rkflows succeed with `web/`.- ❌ `.replit` still contains `deployment.build = ["bash", "-c", "cd frontend && npm run build"]` (line 60). Since `frontend/` no longer exists, deployment builds will fail. This is a direct miss against “update all workflow commands and configuration references accordingly.”
+
+Security:
+- No serious security violations observed in this diff.
+
+Next actions:
+1. Update `.replit` deployment build command from `cd frontend && npm run build` to `cd web && npm run build`.
+2. Do a final repo-wide path audit for remaining `frontend/` references in runnable commands/configs (especially deployment/CI scripts).
+3. Re-run Start application and a deployment build smoke test to confirm both runtime and build workflows succeed with `web/`.

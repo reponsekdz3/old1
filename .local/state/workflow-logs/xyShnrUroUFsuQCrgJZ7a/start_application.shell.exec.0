@@ -1,0 +1,63 @@
+[1G[0K⠙[1G[0K
+> redorrange-frontend@1.0.0 start
+> react-scripts start
+
+[1G[0K⠙[1G[0K[36mAttempting to bind to HOST environment variable: [33m[1m0.0.0.0[22m[39m[36m[39m
+If this was unintentional, check that you haven't mistakenly set it in your shell.
+Learn more here: [33mhttps://cra.link/advanced-config[39m
+
+(node:217) [DEP_WEBPACK_DEV_SERVER_ON_AFTER_SETUP_MIDDLEWARE] DeprecationWarning: 'onAfterSetupMiddleware' option is deprecated. Please use the 'setupMiddlewares' option.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:217) [DEP_WEBPACK_DEV_SERVER_ON_BEFORE_SETUP_MIDDLEWARE] DeprecationWarning: 'onBeforeSetupMiddleware' option is deprecated. Please use the 'setupMiddlewares' option.
+[2J[3J[H[36mStarting the development server...[39m
+[36m[39m
+[2J[3J[H[32mCompiled successfully![39m
+
+You can now view [1mredorrange-frontend[22m in the browser.
+
+  [1mLocal:[22m            http://localhost:[1m5000[22m
+  [1mOn Your Network:[22m  http://172.24.0.2:[1m5000[22m
+
+Note that the development build is not optimized.
+To create a production build, use [36mnpm run build[39m.
+
+webpack compiled [1m[32msuccessfully[39m[22m
+[2J[3J[H[32mCompiled successfully![39m
+
+You can now view [1mredorrange-frontend[22m in the browser.
+
+  [1mLocal:[22m            http://localhost:[1m5000[22m
+  [1mOn Your Network:[22m  http://172.24.0.2:[1m5000[22m
+
+Note that the development build is not optimized.
+To create a production build, use [36mnpm run build[39m.
+
+webpack compiled [1m[32msuccessfully[39m[22m
+[2J[3J[H[31mFailed to compile.[39m
+[31m[39m
+Module not found: Error: Can't resolve '/home/runner/workspace/frontend/node_modules/@pmmmwh/react-refresh-webpack-plugin/client/ReactRefreshEntry.js' in '/home/runner/workspace/frontend'
+[1m[31mERROR[39m[22m in [1mModule [1m[31mnot found[39m[22m[1m: [1m[31mError[39m[22m[1m: Can't resolve '/home/runner/workspace/frontend/node_modules/@pmmmwh/react-refresh-webpack-plugin/client/ReactRefreshEntry.js' in '/home/runner/workspace/frontend'[39m[22m
+
+[1m[31mERROR[39m[22m in [1mModule [1m[31mnot found[39m[22m[1m: [1m[31mError[39m[22m[1m: Can't resolve '/home/runner/workspace/frontend/node_modules/webpack-dev-server/client/index.js?protocol=ws%3A&hostname=0.0.0.0&port=5000&pathname=%2Fws&logging=none&overlay=%7B%22errors%22%3Atrue%2C%22warnings%22%3Afalse%7D&reconnect=10&hot=true&live-reload=true' in '/home/runner/workspace/frontend'[39m[22m
+
+[1m[31mERROR[39m[22m in [1mModule [1m[31mnot found[39m[22m[1m: [1m[31mError[39m[22m[1m: Can't resolve '/home/runner/workspace/frontend/node_modules/webpack/hot/dev-server.js' in '/home/runner/workspace/frontend'[39m[22m
+
+[1m[31mERROR[39m[22m in [1m[32mmain[39m[22m
+[1mModule [1m[31mnot found[39m[22m[1m: [1m[31mError[39m[22m[1m: Can't resolve '/home/runner/workspace/frontend/src/index.js' in '/home/runner/workspace/frontend'[39m[22m
+
+[1m[31mERROR[39m[22m in [1m[1m[31mError[39m[22m[1m: Child compilation [1m[31mfailed[39m[22m[1m:
+Module [1m[31mnot found[39m[22m[1m: [1m[31mError[39m[22m[1m: Can't resolve '/home/runner/workspace/frontend/node_modules/html-webpack-plugin/lib/loader.js' in '/home/runner/workspace/frontend'
+ModuleNotFoundError: Module [1m[31mnot found[39m[22m[1m: [1m[31mError[39m[22m[1m: Can't resolve '/home/runner/workspace/frontend/node_modules/html-webpack-plugin/lib/loader.js' in '/home/runner/workspace/frontend'
+    at /home/runner/workspace/frontend/node_modules/webpack/lib/Compilation.js:2156:28
+    at /home/runner/workspace/frontend/node_modules/webpack/lib/NormalModuleFactory.js:1092:13
+    at eval (eval at create (/home/runner/workspace/frontend/node_modules/tapable/lib/HookCodeFactory.js:31:10), <anonymous>:10:1)
+    at /home/runner/workspace/frontend/node_modules/webpack/lib/NormalModuleFactory.js:476:22
+    at eval (eval at create (/home/runner/workspace/frontend/node_modules/tapable/lib/HookCodeFactory.js:31:10), <anonymous>:9:1)
+    at /home/runner/workspace/frontend/node_modules/webpack/lib/NormalModuleFactory.js:658:22
+    at /home/runner/workspace/frontend/node_modules/webpack/lib/NormalModuleFactory.js:199:10
+    at /home/runner/workspace/frontend/node_modules/webpack/lib/NormalModuleFactory.js:894:23
+    at /home/runner/workspace/frontend/node_modules/webpack/lib/NormalModuleFactory.js:1406:5
+    at /home/runner/workspace/frontend/node_modules/neo-async/async.js:2830:7[39m[22m
+
+[1m[31m1 ERROR in child compilations (Use 'stats.children: true' resp. '--stats-children' for more details)[39m[22m
+webpack compiled with [1m[31m6 errors[39m[22m

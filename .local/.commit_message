@@ -1,0 +1,44 @@
+Build complete Expo React Native mobile app in mobile/
+
+This implements a full WhatsApp-like mobile app that mirrors the web app's features, connecting to all existing Flask backend APIs.
+
+Files created:
+- mobile/package.json — Expo SDK 51 + expo-router, socket.io, zustand, axios, expo-camera, expo-av, expo-image-picker
+- mobile/app.json — iOS/Android/web config with all permissions declared
+- mobile/babel.config.js — includes react-native-reanimated/plugin
+- mobile/config.js — API_URL/SOCKET_URL from EXPO_PUBLIC_API_URL env var; color tokens
+- mobile/.env — API URL configuration template
+
+Services:
+- mobile/services/api.js — Axios with JWT Bearer token + refresh-token retry interceptor
+- mobile/services/store.js — Zustand stores for auth, chat, status, calls
+- mobile/services/socket.js — Socket.IO client with auto-reconnect
+- mobile/services/storage.js — AsyncStorage wrappers for token persistence
+
+Data:
+- mobile/data/countries.js — 190+ country dial codes with flag emoji helper
+
+Components (8):
+- Avatar, EmptyState, TypingIndicator, ChatListItem, PhoneInput (modal country picker),
+  MessageBubble (text/image/voice/location/contact/reactions), EmojiPicker, VoiceRecorder
+
+Screens (12):
+- _layout.js — GestureHandlerRootView + SafeAreaProvider + JWT auth check on boot
+- index.js — redirect based on auth state
+- login.js — PhoneInput + password with JWT login
+- signup.js — 3-step: phone → SMS verify → name/password
+- (tabs)/_layout.js — 3 tabs (Chats/Status/Calls) with Socket.IO init + settings header button
+- (tabs)/index.js — chat list with real-time updates, add contact modal, QR button
+- (tabs)/status.js — view/post WhatsApp-style status updates with background color picker
+- (tabs)/calls.js — call history with direction/type indicators
+- chat/[id].js — full chat: inverted FlatList, emoji picker, voice recorder, image upload, typing indicator
+- profile.js — avatar upload, bio, email, country/city editor
+- settings.js — privacy, notifications, storage toggles via PUT /api/settings
+- qr.js — generate QR (with CameraView scanner) using expo-camera SDK 51 API
+
+Assets:
+- mobile/assets/{icon,splash,adaptive-icon,favicon}.png — placeholder colored PNG files
+
+Workflow:
+- "Mobile App" workflow added (console type): cd mobile && npx expo start --port 8080
+- npm packages installed (1182 packages)
