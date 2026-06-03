@@ -287,7 +287,6 @@ export default function SettingsPage() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showVerifiedModal, setShowVerifiedModal] = useState(false);
 
   useEffect(() => { loadSettings(); }, []);
 
@@ -295,18 +294,30 @@ export default function SettingsPage() {
     const verifiedParam = searchParams.get('verified');
     if (verifiedParam === 'success') {
       setActiveTab('verification');
-      toast.success('Payment received! Your badge is being processed.', { duration: 5000 });
-      api.get('/payments/my-verification')
-        .then(({ data }) => {
+      toast.success('Payment received! Checking your badge status…', { duration: 4000 });
+      let attempts = 0;
+      const maxAttempts = 20;
+      const interval = setInterval(async () => {
+        attempts++;
+        try {
+          const { data } = await api.get('/payments/my-verification');
           if (data.badge_verified) {
-            setUser(prev => ({ ...prev, badge_verified: true, verification_tier: data.verification_tier }));
+            clearInterval(interval);
+            setUser({ ...user, badge_verified: true, verification_tier: data.verification_tier });
+            toast.success('Your verified badge is now active! ✅', { duration: 5000 });
+          } else if (attempts >= maxAttempts) {
+            clearInterval(interval);
+            toast('Badge activation is taking longer than expected. Refresh in a moment.', { icon: 'ℹ️', duration: 6000 });
           }
-        })
-        .catch(() => {});
+        } catch {
+          if (attempts >= maxAttempts) clearInterval(interval);
+        }
+      }, 3000);
+      return () => clearInterval(interval);
     } else if (verifiedParam === 'cancel') {
       toast('Payment cancelled. You can try again anytime.', { icon: 'ℹ️' });
     }
-  }, [searchParams, setUser]);
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadSettings = async () => {
     try {
@@ -501,14 +512,6 @@ export default function SettingsPage() {
         </AnimatePresence>
       </div>
 
-      <AnimatePresence>
-        {showVerifiedModal && (
-          <GetVerifiedModal
-            onClose={() => setShowVerifiedModal(false)}
-            onSuccess={() => setShowVerifiedModal(false)}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 }

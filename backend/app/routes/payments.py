@@ -56,9 +56,7 @@ def create_stripe_session():
         db.session.add(payment)
         db.session.commit()
 
-        base_url = data.get('base_url', '')
-        if not base_url:
-            base_url = request.host_url.rstrip('/')
+        base_url = request.host_url.rstrip('/')
 
         session = stripe_lib.checkout.Session.create(
             payment_method_types=['card'],
