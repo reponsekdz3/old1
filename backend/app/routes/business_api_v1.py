@@ -25,7 +25,8 @@ def api_key_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
         auth_header = request.headers.get('Authorization', '')
-        if not auth_header.startswith('Bearer vck_live_'):
+        # support both live and sandbox API keys
+        if not (auth_header.startswith('Bearer vck_live_') or auth_header.startswith('Bearer vck_sbx_')):
             return jsonify({'error': 'Missing or invalid API key', 'code': 'AUTH_REQUIRED'}), 401
 
         raw_key = auth_header[len('Bearer '):]
@@ -36,30 +37,34 @@ def api_key_required(f):
             return jsonify({'error': 'Invalid API key', 'code': 'AUTH_INVALID'}), 401
         if not client.is_active:
             return jsonify({'error': 'API client is suspended', 'code': 'CLIENT_SUSPENDED'}), 403
+        # sandbox keys bypass daily limits and do not consume quota
+        sandbox_mode = raw_key.startswith('vck_sbx_')
+        if not sandbox_mode:
+            limit = TIER_LIMITS.get(client.tier)
+            if limit is not None:
+                today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+                today_msgs = db.session.query(
+                    db.func.sum(ApiUsageLog.message_count)
+                ).filter(
+                    ApiUsageLog.client_id == client.id,
+                    ApiUsageLog.timestamp >= today_start,
+                ).scalar() or 0
+                if today_msgs >= limit:
+                    response = jsonify({
+                        'error': 'Daily rate limit exceeded',
+                        'code': 'RATE_LIMIT_EXCEEDED',
+                        'limit': limit,
+                        'used': today_msgs,
+                        'tier': client.tier,
+                    })
+                    response.headers['X-RateLimit-Limit'] = str(limit)
+                    response.headers['X-RateLimit-Remaining'] = '0'
+                    response.headers['X-RateLimit-Reset'] = str(int((today_start + timedelta(days=1)).timestamp()))
+                    return response, 429
 
-        limit = TIER_LIMITS.get(client.tier)
-        if limit is not None:
-            today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-            today_msgs = db.session.query(
-                db.func.sum(ApiUsageLog.message_count)
-            ).filter(
-                ApiUsageLog.client_id == client.id,
-                ApiUsageLog.timestamp >= today_start,
-            ).scalar() or 0
-            if today_msgs >= limit:
-                response = jsonify({
-                    'error': 'Daily rate limit exceeded',
-                    'code': 'RATE_LIMIT_EXCEEDED',
-                    'limit': limit,
-                    'used': today_msgs,
-                    'tier': client.tier,
-                })
-                response.headers['X-RateLimit-Limit'] = str(limit)
-                response.headers['X-RateLimit-Remaining'] = '0'
-                response.headers['X-RateLimit-Reset'] = str(int((today_start + timedelta(days=1)).timestamp()))
-                return response, 429
-
+        # expose client and sandbox flag to handlers
         g.api_client = client
+        g.sandbox = sandbox_mode
         g.api_start_time = time.time()
         return f(*args, **kwargs)
     return wrapper
@@ -73,7 +78,11 @@ def log_usage(endpoint: str, method: str, status_code: int, message_count: int =
         log.endpoint = endpoint
         log.method = method
         log.status_code = status_code
-        log.message_count = message_count
+        # do not count usage for sandbox keys
+        if g.get('sandbox', False):
+            log.message_count = 0
+        else:
+            log.message_count = message_count
         log.response_time_ms = elapsed
         log.ip_address = request.remote_addr
         

@@ -1,14 +1,129 @@
-"""
-Advanced API Documentation Generator
-Generates interactive API docs in multiple languages
-"""
+"""Advanced API Documentation Generator
+Generates interactive API docs in multiple languages with full code examples, playgrounds, and language-specific SDK documentation."""
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import json
+import hashlib
+import secrets
+from datetime import datetime
 
 api_docs_bp = Blueprint('api_docs', __name__, url_prefix='/api/docs')
+
+# Supported programming languages
+SUPPORTED_LANGUAGES = {
+    'curl': {
+        'name': 'cURL',
+        'color': '#000000',
+        'bg': '#FFFFFF',
+        'icon': 'terminal',
+        'extension': '.sh',
+        'install': '# No installation needed - cURL is pre-installed on most systems'
+    },
+    'python': {
+        'name': 'Python',
+        'color': '#3776AB',
+        'bg': '#FFF7EA',
+        'icon': 'code',
+        'extension': '.py',
+        'install': 'pip install vipchat requests',
+        'pip': 'vipchat',
+        'package_manager': 'pip'
+    },
+    'javascript': {
+        'name': 'JavaScript/Node.js',
+        'color': '#F7DF1E',
+        'bg': '#FFFEF0',
+        'icon': 'code',
+        'extension': '.js',
+        'install': 'npm install vipchat axios',
+        'npm': 'vipchat',
+        'package_manager': 'npm'
+    },
+    'typescript': {
+        'name': 'TypeScript',
+        'color': '#3178C6',
+        'bg': '#F0F6FF',
+        'icon': 'code',
+        'extension': '.ts',
+        'install': 'npm install vipchat axios && npm install -D @types/node',
+        'npm': 'vipchat',
+        'package_manager': 'npm'
+    },
+    'java': {
+        'name': 'Java',
+        'color': '#ED8B00',
+        'bg': '#FFF0E0',
+        'icon': 'code',
+        'extension': '.java',
+        'install': 'Maven: Add dependency to pom.xml or Gradle: implementation "app.vipchat:vipchat-java:2.0.0"',
+        'maven': 'app.vipchat:vipchat-java',
+        'gradle': 'implementation "app.vipchat:vipchat-java:2.0.0"',
+        'package_manager': 'maven'
+    },
+    'go': {
+        'name': 'Go',
+        'color': '#00ADD8',
+        'bg': '#E6F7FF',
+        'icon': 'code',
+        'extension': '.go',
+        'install': 'go get github.com/vipchat/vipchat-go',
+        'import': 'github.com/vipchat/vipchat-go',
+        'package_manager': 'go'
+    },
+    'php': {
+        'name': 'PHP',
+        'color': '#777BB4',
+        'bg': '#F5F5FF',
+        'icon': 'code',
+        'extension': '.php',
+        'install': 'composer require vipchat/vipchat-php',
+        'composer': 'vipchat/vipchat-php',
+        'package_manager': 'composer'
+    },
+    'ruby': {
+        'name': 'Ruby',
+        'color': '#CC342D',
+        'bg': '#FFE6E6',
+        'icon': 'code',
+        'extension': '.rb',
+        'install': 'gem install vipchat',
+        'gem': 'vipchat',
+        'package_manager': 'gem'
+    },
+    'csharp': {
+        'name': 'C#/.NET',
+        'color': '#512BD4',
+        'bg': '#F5EEFF',
+        'icon': 'code',
+        'extension': '.cs',
+        'install': 'dotnet add package VipChat',
+        'nuget': 'VipChat',
+        'package_manager': 'nuget'
+    },
+    'swift': {
+        'name': 'Swift',
+        'color': '#F05138',
+        'bg': '#FFF0EB',
+        'icon': 'code',
+        'extension': '.swift',
+        'install': 'Add to Package.swift dependencies or via Xcode SPM',
+        'swift_pkg': 'VipChat',
+        'package_manager': 'spm'
+    },
+    'kotlin': {
+        'name': 'Kotlin',
+        'color': '#7F52FF',
+        'bg': '#F3EEFF',
+        'icon': 'code',
+        'extension': '.kt',
+        'install': 'implementation "app.vipchat:vipchat-kotlin:2.0.0"',
+        'maven': 'app.vipchat:vipchat-kotlin',
+        'gradle': 'implementation "app.vipchat:vipchat-kotlin:2.0.0"',
+        'package_manager': 'gradle'
+    }
+}
 
 # Complete API Documentation
 API_DOCUMENTATION = {
