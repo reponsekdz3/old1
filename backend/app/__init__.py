@@ -7,6 +7,7 @@ from flask_limiter.util import get_remote_address
 from config import config
 from app.models.models import db
 import os
+import asyncio
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -35,7 +36,66 @@ def create_app(config_name='development'):
 
     app.active_connections = {}
 
-    # ── Enterprise Services Initialization ──────────────────────────────────
+    # ── Enterprise Infrastructure Initialization ───────────────────────────
+    try:
+        logger.info("Initializing enterprise infrastructure...")
+        
+        # Military-Grade Security
+        from app.security.military_grade_security import initialize_security_manager
+        initialize_security_manager(
+            redis_url=app.config.get('REDIS_URL'),
+            secret_key=app.config['SECRET_KEY']
+        )
+        logger.info("✓ Military-grade security initialized")
+        
+        # Distributed SFU Cluster
+        from app.services.distributed_sfu import initialize_sfu_cluster
+        server_id = os.environ.get('SERVER_ID', f"sfu-{os.urandom(4).hex()}")
+        region = os.environ.get('AWS_REGION', 'us-east-1')
+        asyncio.run(initialize_sfu_cluster(
+            redis_url=app.config.get('REDIS_URL'),
+            server_id=server_id,
+            region=region
+        ))
+        logger.info(f"✓ Distributed SFU cluster initialized (server: {server_id}, region: {region})")
+        
+        # Sharded Database
+        from app.infrastructure.sharded_database import initialize_sharded_db
+        shard_configs = [
+            {
+                'shard_id': i,
+                'master_url': os.environ.get(f'SHARD_{i}_MASTER_URL', app.config['SQLALCHEMY_DATABASE_URI']),
+                'replica_urls': [
+                    os.environ.get(f'SHARD_{i}_REPLICA_{j}_URL')
+                    for j in range(3)
+                    if os.environ.get(f'SHARD_{i}_REPLICA_{j}_URL')
+                ]
+            }
+            for i in range(app.config.get('SHARD_COUNT', 8))
+        ]
+        initialize_sharded_db(
+            shard_count=app.config.get('SHARD_COUNT', 8),
+            redis_url=app.config.get('REDIS_URL'),
+            shard_configs=shard_configs
+        )
+        logger.info(f"✓ Sharded database initialized with {len(shard_configs)} shards")
+        
+        # Janus Gateway (if URL provided)
+        janus_url = os.environ.get('JANUS_URL')
+        if janus_url:
+            from app.services.janus_gateway import initialize_janus_client
+            initialize_janus_client(
+                janus_url=janus_url,
+                admin_secret=os.environ.get('JANUS_ADMIN_SECRET')
+            )
+            logger.info(f"✓ Janus Gateway connected: {janus_url}")
+        
+        logger.info("✓ Enterprise infrastructure fully operational")
+    except Exception as e:
+        logger.error(f"⚠ Enterprise infrastructure initialization error: {e}")
+        # Continue anyway - fallback to basic mode
+    
+    # ── Original Enterprise Services Initialization ────────────────────────
     import logging
     logger = logging.getLogger(__name__)
     

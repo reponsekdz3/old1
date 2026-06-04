@@ -37,18 +37,33 @@ function DeliveryTicks({ status }) {
   return <Ionicons name="time-outline" size={10} color="rgba(255,255,255,0.5)" />;
 }
 
-export default function MessageBubble({ message, isOwn, onLongPress, onImagePress }) {
+export default function MessageBubble({ message, isOwn, onLongPress, onImagePress, onReply }) {
   const {
     content, media_url, media_type, status, created_at,
     latitude, longitude, location_name,
     contact_name, contact_phone,
-    reactions, is_deleted,
+    reactions, is_deleted, reply_to,
   } = message;
 
   const isFailed = status === 'failed';
   const isQueued = status === 'queued';
   const bg = isOwn ? (isFailed ? '#FFEBEE' : isQueued ? '#F5F5F5' : COLORS.lightGreen) : '#fff';
   const textColor = COLORS.dark;
+
+  const renderReplyPreview = () => {
+    if (!reply_to) return null;
+    return (
+      <View style={styles.replyContainer}>
+        <View style={styles.replyLine} />
+        <View style={styles.replyContent}>
+          <Text style={styles.replySender}>{reply_to.sender_name || 'Unknown'}</Text>
+          <Text style={styles.replyText} numberOfLines={1}>
+            {reply_to.content || (reply_to.media_type ? `📎 ${reply_to.media_type}` : 'Message')}
+          </Text>
+        </View>
+      </View>
+    );
+  };
 
   const renderContent = () => {
     if (is_deleted) {
@@ -131,11 +146,13 @@ export default function MessageBubble({ message, isOwn, onLongPress, onImagePres
 
   return (
     <TouchableOpacity
+      onPress={() => onReply?.(message)}
       onLongPress={onLongPress}
       activeOpacity={0.9}
       style={[styles.wrapper, isOwn ? styles.wrapperOwn : styles.wrapperOther]}
-    >
+    >      
       <View style={[styles.bubble, { backgroundColor: bg }, isOwn ? styles.bubbleOwn : styles.bubbleOther]}>
+        {renderReplyPreview()}
         {renderContent()}
         <View style={styles.footer}>
           <Text style={[styles.time, isOwn && styles.timeOwn]}>{formatTime(created_at)}</Text>
@@ -208,4 +225,9 @@ const styles = StyleSheet.create({
   reactionsOwn: { alignSelf: 'flex-end', marginRight: 8 },
   reactionsOther: { alignSelf: 'flex-start', marginLeft: 8 },
   reaction: { fontSize: 13 },
+  replyContainer: { flexDirection: 'row', marginBottom: 6, paddingBottom: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(0,0,0,0.1)' },
+  replyLine: { width: 3, backgroundColor: COLORS.accent, borderRadius: 1.5, marginRight: 8 },
+  replyContent: { flex: 1 },
+  replySender: { fontSize: 12, fontWeight: '700', color: COLORS.accent, marginBottom: 2 },
+  replyText: { fontSize: 13, color: COLORS.textGray },
 });

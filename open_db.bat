@@ -1,0 +1,3 @@
+@echo off
+echo Opening VipChat database...
+C:\sqlite\sqlite3.exe backend\instance\vipchat.db

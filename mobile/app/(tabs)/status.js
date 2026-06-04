@@ -2,11 +2,14 @@ import React, { useState, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   Modal, TextInput, ActivityIndicator, Alert, Image,
-  SafeAreaView, Dimensions,
+  SafeAreaView, Dimensions, Share, Platform,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as MediaLibrary from 'expo-media-library';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import Avatar from '../../components/Avatar';
 import EmptyState from '../../components/EmptyState';
 import { useAuthStore, useStatusStore } from '../../services/store';
@@ -20,6 +23,9 @@ const BG_COLORS = ['#075E54','#128C7E','#25D366','#3B82F6','#8B5CF6','#EC4899','
 
 function StatusViewer({ statusData, onClose }) {
   const [current, setCurrent] = useState(0);
+  const [downloading, setDownloading] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  
   if (!statusData) return null;
   const statuses = statusData.statuses || [];
   const s = statuses[current];
@@ -30,6 +36,93 @@ function StatusViewer({ statusData, onClose }) {
   };
 
   React.useEffect(() => { handleView(); }, [current]);
+
+  const downloadStatus = async () => {
+    if (!s.media_url) {
+      Alert.alert('No Media', 'This status has no media to download');
+      return;
+    }
+
+    setDownloading(true);
+    try {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Storage permission is needed to save media');
+        setDownloading(false);
+        return;
+      }
+
+      const fileUri = FileSystem.documentDirectory + `status_${s.id}_${Date.now()}.${s.media_type === 'video' ? 'mp4' : 'jpg'}`;
+      const downloadResult = await FileSystem.downloadAsync(s.media_url, fileUri);
+      
+      if (downloadResult.status === 200) {
+        const asset = await MediaLibrary.createAssetAsync(downloadResult.uri);
+        await MediaLibrary.createAlbumAsync('VipChat Status', asset, false);
+        Alert.alert('Success', 'Status saved to gallery in VipChat Status album');
+      } else {
+        throw new Error('Download failed');
+      }
+    } catch (err) {
+      Alert.alert('Error', 'Failed to download status: ' + err.message);
+    } finally {
+      setDownloading(false);
+      setShowMenu(false);
+    }
+  };
+
+  const shareStatus = async () => {
+    if (!s.media_url) {
+      if (s.content) {
+        Share.share({ message: s.content });
+      }
+      return;
+    }
+
+    setDownloading(true);
+    try {
+      const fileUri = FileSystem.cacheDirectory + `share_status_${s.id}.${s.media_type === 'video' ? 'mp4' : 'jpg'}`;
+      const downloadResult = await FileSystem.downloadAsync(s.media_url, fileUri);
+      
+      if (downloadResult.status === 200) {
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(downloadResult.uri, {
+            mimeType: s.media_type === 'video' ? 'video/mp4' : 'image/jpeg',
+            dialogTitle: 'Share Status',
+          });
+        } else {
+          Alert.alert('Error', 'Sharing is not available on this device');
+        }
+      }
+    } catch (err) {
+      Alert.alert('Error', 'Failed to share status: ' + err.message);
+    } finally {
+      setDownloading(false);
+      setShowMenu(false);
+    }
+  };
+
+  const forwardStatus = async () => {
+    Alert.alert('Forward Status', 'This will forward the status to your contacts', [
+      { text: 'Cancel', style: 'cancel' },
+      { 
+        text: 'Forward', 
+        onPress: async () => {
+          try {
+            await api.post('/status', {
+              content: s.content || '',
+              media_url: s.media_url || null,
+              media_type: s.media_type || 'text',
+              background_color: s.background_color || BG_COLORS[0],
+            });
+            Alert.alert('Success', 'Status forwarded to your status');
+          } catch (err) {
+            Alert.alert('Error', 'Failed to forward status');
+          }
+          setShowMenu(false);
+        }
+      },
+    ]);
+  };
 
   return (
     <Modal visible animationType="fade">
@@ -48,6 +141,30 @@ function StatusViewer({ statusData, onClose }) {
                 </View>
               </View>
               <View style={{ flex: 1 }} />
+              <TouchableOpacity onPress={() => setShowMenu(true)} style={sv.menuBtn}>
+                <Ionicons name="ellipsis-vertical" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+  return (
+    <Modal visible animationType="fade">
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <View style={{ flex: 1, backgroundColor: s.background_color || '#075E54', padding: 20 }}>
+          <SafeAreaView style={{ flex: 1 }}>
+            <View style={sv.header}>
+              <TouchableOpacity onPress={onClose}>
+                <Ionicons name="close" size={28} color="#fff" />
+              </TouchableOpacity>
+              <View style={sv.headerInfo}>
+                <Avatar uri={statusData.owner_avatar} name={statusData.owner_name} size={36} />
+                <View>
+                  <Text style={sv.ownerName}>{statusData.owner_name}</Text>
+                  <Text style={sv.statusTime}>{new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                </View>
+              </View>
+              <View style={{ flex: 1 }} />
+              <TouchableOpacity onPress={() => setShowMenu(true)} style={sv.menuBtn}>
+                <Ionicons name="ellipsis-vertical" size={24} color="#fff" />
+              </TouchableOpacity>
             </View>
             <View style={sv.progress}>
               {statuses.map((_, i) => (
@@ -67,6 +184,33 @@ function StatusViewer({ statusData, onClose }) {
             </View>
           </SafeAreaView>
         </View>
+        
+        {/* Action Menu */}
+        <Modal visible={showMenu} transparent animationType="slide">
+          <TouchableOpacity style={sv.overlay} onPress={() => setShowMenu(false)}>
+            <View style={sv.menuContainer}>
+              <TouchableOpacity style={sv.menuItem} onPress={downloadStatus} disabled={downloading}>
+                <Ionicons name="download" size={22} color={COLORS.primary} />
+                <Text style={sv.menuText}>Save to Gallery</Text>
+                {downloading && <ActivityIndicator size="small" color={COLORS.primary} />}
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={sv.menuItem} onPress={shareStatus} disabled={downloading}>
+                <Ionicons name="share" size={22} color={COLORS.primary} />
+                <Text style={sv.menuText}>Share</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={sv.menuItem} onPress={forwardStatus}>
+                <Ionicons name="arrow-forward" size={22} color={COLORS.primary} />
+                <Text style={sv.menuText}>Forward to My Status</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={[sv.menuItem, sv.cancelItem]} onPress={() => setShowMenu(false)}>
+                <Text style={[sv.menuText, { color: COLORS.danger }]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
       </View>
     </Modal>
   );
@@ -215,10 +359,16 @@ const sv = StyleSheet.create({
   headerInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   ownerName: { color: '#fff', fontWeight: '700', fontSize: 15 },
   statusTime: { color: 'rgba(255,255,255,0.7)', fontSize: 11 },
+  menuBtn: { padding: 4 },
   progress: { flexDirection: 'row', gap: 4, marginBottom: 16 },
   progressBar: { height: 3, backgroundColor: '#fff', borderRadius: 2 },
   content: { color: '#fff', fontSize: 22, fontWeight: '600', textAlign: 'center', lineHeight: 32 },
   navRow: { position: 'absolute', top: 80, left: 0, right: 0, bottom: 0, flexDirection: 'row' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  menuContainer: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
+  menuItem: { flexDirection: 'row', alignItems: 'center', gap: 15, paddingVertical: 15, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  menuText: { fontSize: 16, fontWeight: '600', color: COLORS.dark, flex: 1 },
+  cancelItem: { borderBottomWidth: 0, marginTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border },
 });
 
 const styles = StyleSheet.create({

@@ -1,0 +1,458 @@
+---
+# VipChat - Kubernetes Deployment for 2 Billion+ Users
+# Multi-region, auto-scaling, fault-tolerant architecture
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vipchat-production
+
+---
+# ConfigMap - Application Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vipchat-config
+  namespace: vipchat-production
+data:
+  SHARD_COUNT: "256"
+  REDIS_URL: "redis://redis-cluster:6379/0"
+  JANUS_URL: "http://janus-gateway:8088/janus"
+  AWS_REGION: "us-east-1"
+
+---
+# Secret - Sensitive Configuration
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vipchat-secrets
+  namespace: vipchat-production
+type: Opaque
+stringData:
+  DATABASE_URL: "postgresql://vipchat:changeme@postgres-service:5432/vipchat"
+  SECRET_KEY: "change-me-in-production"
+  JWT_SECRET_KEY: "change-me-jwt-secret"
+  JANUS_ADMIN_SECRET: "janusoverlord"
+
+---
+# Deployment - Application Servers (Horizontal Pod Autoscaler)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vipchat-app
+  namespace: vipchat-production
+spec:
+  replicas: 20  # Initial replicas (will auto-scale)
+  selector:
+    matchLabels:
+      app: vipchat-app
+  template:
+    metadata:
+      labels:
+        app: vipchat-app
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - vipchat-app
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: vipchat-app
+        image: vipchat/backend:production
+        ports:
+        - containerPort: 8000
+          name: http
+        envFrom:
+        - configMapRef:
+            name: vipchat-config
+        - secretRef:
+            name: vipchat-secrets
+        env:
+        - name: SERVER_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          requests:
+            cpu: "1"
+            memory: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+
+---
+# HorizontalPodAutoscaler - Application Servers
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vipchat-app-hpa
+  namespace: vipchat-production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vipchat-app
+  minReplicas: 20
+  maxReplicas: 1000  # Can scale to 1000 pods
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50  # Scale up 50% at a time
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10  # Scale down 10% at a time
+        periodSeconds: 60
+
+---
+# Service - Application Load Balancer
+apiVersion: v1
+kind: Service
+metadata:
+  name: vipchat-app-service
+  namespace: vipchat-production
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+spec:
+  type: LoadBalancer
+  selector:
+    app: vipchat-app
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8000
+  sessionAffinity: ClientIP
+
+---
+# StatefulSet - Janus Gateway (WebRTC SFU)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: janus-gateway
+  namespace: vipchat-production
+spec:
+  serviceName: janus-gateway
+  replicas: 10
+  selector:
+    matchLabels:
+      app: janus-gateway
+  template:
+    metadata:
+      labels:
+        app: janus-gateway
+    spec:
+      containers:
+      - name: janus
+        image: canyan/janus-gateway:latest
+        ports:
+        - containerPort: 8088
+          name: http
+        - containerPort: 8188
+          name: ws
+        - containerPort: 10000
+          protocol: UDP
+          name: rtp-start
+        - containerPort: 10200
+          protocol: UDP
+          name: rtp-end
+        env:
+        - name: JANUS_NAT_1_1_MAPPING
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: JANUS_ADMIN_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: vipchat-secrets
+              key: JANUS_ADMIN_SECRET
+        resources:
+          requests:
+            cpu: "4"
+            memory: "8Gi"
+          limits:
+            cpu: "8"
+            memory: "16Gi"
+        volumeMounts:
+        - name: recordings
+          mountPath: /var/janus/recordings
+  volumeClaimTemplates:
+  - metadata:
+      name: recordings
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 500Gi
+
+---
+# Service - Janus Gateway
+apiVersion: v1
+kind: Service
+metadata:
+  name: janus-gateway
+  namespace: vipchat-production
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: janus-gateway
+  ports:
+  - name: http
+    port: 8088
+    targetPort: 8088
+  - name: ws
+    port: 8188
+    targetPort: 8188
+
+---
+# StatefulSet - PostgreSQL Cluster (Master)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-master
+  namespace: vipchat-production
+spec:
+  serviceName: postgres-master
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+      role: master
+  template:
+    metadata:
+      labels:
+        app: postgres
+        role: master
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: "vipchat"
+        - name: POSTGRES_USER
+          value: "vipchat"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: vipchat-secrets
+              key: DATABASE_URL
+        - name: POSTGRES_MAX_CONNECTIONS
+          value: "1000"
+        - name: POSTGRES_SHARED_BUFFERS
+          value: "8GB"
+        resources:
+          requests:
+            cpu: "4"
+            memory: "16Gi"
+          limits:
+            cpu: "8"
+            memory: "32Gi"
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: fast-ssd
+      resources:
+        requests:
+          storage: 2Ti
+
+---
+# Service - PostgreSQL
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: vipchat-production
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+    role: master
+  ports:
+  - port: 5432
+    targetPort: 5432
+
+---
+# StatefulSet - Redis Cluster
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-cluster
+  namespace: vipchat-production
+spec:
+  serviceName: redis-cluster
+  replicas: 6
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        command: 
+        - redis-server
+        - --cluster-enabled
+        - "yes"
+        - --cluster-config-file
+        - /data/nodes.conf
+        - --cluster-node-timeout
+        - "5000"
+        - --appendonly
+        - "yes"
+        - --maxmemory
+        - "8gb"
+        - --maxmemory-policy
+        - allkeys-lru
+        ports:
+        - containerPort: 6379
+          name: client
+        - containerPort: 16379
+          name: gossip
+        resources:
+          requests:
+            cpu: "2"
+            memory: "8Gi"
+          limits:
+            cpu: "4"
+            memory: "16Gi"
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+  volumeClaimTemplates:
+  - metadata:
+      name: redis-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: fast-ssd
+      resources:
+        requests:
+          storage: 100Gi
+
+---
+# Service - Redis Cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cluster
+  namespace: vipchat-production
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: redis
+  ports:
+  - name: client
+    port: 6379
+    targetPort: 6379
+  - name: gossip
+    port: 16379
+    targetPort: 16379
+
+---
+# Ingress - HTTPS/TLS Termination
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vipchat-ingress
+  namespace: vipchat-production
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/websocket-services: "vipchat-app-service"
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+spec:
+  tls:
+  - hosts:
+    - api.vipchat.com
+    - app.vipchat.com
+    secretName: vipchat-tls
+  rules:
+  - host: api.vipchat.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: vipchat-app-service
+            port:
+              number: 80
+
+---
+# PodDisruptionBudget - Ensure High Availability
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vipchat-app-pdb
+  namespace: vipchat-production
+spec:
+  minAvailable: 10
+  selector:
+    matchLabels:
+      app: vipchat-app
+
+---
+# StorageClass - Fast SSD for Database
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: fast-ssd
+provisioner: kubernetes.io/aws-ebs
+parameters:
+  type: gp3
+  iops: "16000"
+  throughput: "1000"
+  encrypted: "true"
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

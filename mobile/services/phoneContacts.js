@@ -122,3 +122,5 @@ export async function autoSyncOnLogin() {
     return null;
   }
 }
+
+export const autoSyncOnLogin = () => syncPhoneContacts({ force: true });

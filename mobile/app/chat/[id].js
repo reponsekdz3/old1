@@ -35,6 +35,7 @@ export default function ChatScreen() {
   const [showVoice, setShowVoice] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [replyingTo, setReplyingTo] = useState(null);
 
   const flatListRef = useRef(null);
   const inputRef = useRef(null);
@@ -163,15 +164,29 @@ export default function ChatScreen() {
       content: content || null,
       media_url: mediaUrl || null,
       media_type: mediaType || null,
+      reply_to: replyingTo ? {
+        id: replyingTo.id,
+        content: replyingTo.content,
+        sender_name: replyingTo.sender_id === user?.id ? 'You' : name,
+        media_type: replyingTo.media_type,
+      } : null,
       status: 'sending',
       created_at: new Date().toISOString(),
     };
     addMessage(id, tempMsg);
     setText('');
+    setReplyingTo(null);
 
     // If offline, queue the message
     if (!isOnline) {
-      await Cache.addToOfflineQueue({ chatId: id, content, mediaUrl, mediaType, tempId });
+      await Cache.addToOfflineQueue({ 
+        chatId: id, 
+        content, 
+        mediaUrl, 
+        mediaType, 
+        tempId,
+        reply_to_id: replyingTo?.id 
+      });
       updateMessage(id, tempId, { status: 'queued' });
       setSending(false);
       return;
@@ -182,6 +197,7 @@ export default function ChatScreen() {
         content: content || undefined,
         media_url: mediaUrl || undefined,
         media_type: mediaType || undefined,
+        reply_to_id: replyingTo?.id || undefined,
       });
       updateMessage(id, tempId, { ...data, id: data.id || tempId });
       await Cache.appendMessage(id, { ...data });
@@ -317,6 +333,7 @@ export default function ChatScreen() {
         isOwn={isOwn}
         onLongPress={() => handleLongPress(item)}
         onImagePress={(uri) => setSelectedImage(uri)}
+        onReply={(msg) => setReplyingTo(msg)}
       />
     );
   };
@@ -385,6 +402,20 @@ export default function ChatScreen() {
           )}
 
           <SafeAreaView edges={['bottom']} style={styles.inputArea}>
+            {replyingTo && (
+              <View style={styles.replyPreview}>
+                <View style={styles.replyBar} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.replyName}>{replyingTo.sender_id === user?.id ? 'You' : name}</Text>
+                  <Text style={styles.replyText} numberOfLines={1}>
+                    {replyingTo.content || (replyingTo.media_type ? `📷 ${replyingTo.media_type}` : 'Message')}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setReplyingTo(null)} style={styles.replyClose}>
+                  <Ionicons name="close" size={18} color={COLORS.textGray} />
+                </TouchableOpacity>
+              </View>
+            )}
             <View style={styles.inputRow}>
               <TouchableOpacity style={styles.emojiBtn} onPress={() => { setShowEmoji(v => !v); setShowVoice(false); }}>
                 <Ionicons name={showEmoji ? 'keyboard' : 'happy-outline'} size={24} color={COLORS.textGray} />
@@ -469,6 +500,15 @@ const styles = StyleSheet.create({
   loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   messageList: { paddingVertical: _rf(8), paddingHorizontal: _rf(4) },
   inputArea: { backgroundColor: '#F0F2F5' },
+  replyPreview: {
+    flexDirection: 'row', alignItems: 'center', gap: _rf(8),
+    backgroundColor: '#fff', paddingVertical: _rf(8), paddingHorizontal: _rf(12),
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border,
+  },
+  replyBar: { width: 3, height: _rf(40), backgroundColor: COLORS.accent, borderRadius: 2 },
+  replyName: { fontSize: _rf(13), fontWeight: '700', color: COLORS.accent },
+  replyText: { fontSize: _rf(13), color: COLORS.textGray, marginTop: 2 },
+  replyClose: { padding: _rf(4) },
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end', gap: _rf(4),
     paddingHorizontal: _rf(8), paddingVertical: _rf(8),
