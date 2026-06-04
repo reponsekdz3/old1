@@ -1,289 +1,593 @@
-import React, { useState, useCallback } from 'react';
+/**
+ * Mobile Calls Screen - Phone-like Call History
+ * Features: Grouped calls, filters, quick actions, responsive design
+ * Security: Secure call initiation, validated inputs
+ */
+
+import React, { useState, useMemo, useCallback } from 'react';
 import {
-  View, Text, FlatList, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert, Modal, SafeAreaView, TextInput, Dimensions,
+  View, Text, FlatList, TouchableOpacity, TextInput,
+  Image, StyleSheet, RefreshControl, Alert
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Avatar from '../../components/Avatar';
-import EmptyState from '../../components/EmptyState';
-import { useCallStore } from '../../services/store';
-import { getSocket } from '../../services/socket';
-import api from '../../services/api';
-import { COLORS } from '../../config';
+import { formatDistanceToNow, isToday, isYesterday, parseISO } from 'date-fns';
+import { useFocusEffect } from '@react-navigation/native';
+import api from '../services/api';
+import { useAuthStore } from '../services/store';
+import callHistoryManager from '../services/callHistory';
 
-const { width: SW } = Dimensions.get('window');
-const rf = (n) => n * (SW / 390);
-
-function formatCallTime(ts) {
-  if (!ts) return '';
-  const d = new Date(ts);
-  const now = new Date();
-  const diff = now - d;
-  if (diff < 86400000 && d.getDate() === now.getDate()) {
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-  if (diff < 7 * 86400000) return d.toLocaleDateString([], { weekday: 'short' });
-  return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
-}
-
-function formatDuration(secs) {
-  if (!secs) return null;
-  const m = Math.floor(secs / 60);
-  const s = secs % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
-}
-
-function CallDirectionIcon({ type, direction, isMissed }) {
-  const color = isMissed ? COLORS.danger : COLORS.accent;
-  let arrowIcon = 'arrow-up-outline';
-  if (direction === 'incoming') arrowIcon = 'arrow-down-outline';
-  if (isMissed) arrowIcon = 'close-outline';
-
-  return (
-    <View style={[cs.callTypeBadge, { backgroundColor: color + '15' }]}>
-      <Ionicons name={type === 'video' ? 'videocam' : 'call'} size={15} color={color} />
-    </View>
-  );
-}
-
-function initiateCall(contact, callType, socket) {
-  if (!socket) {
-    Alert.alert('Not connected', 'Cannot make calls right now');
-    return;
-  }
-  Alert.alert(
-    `Start ${callType === 'video' ? 'Video' : 'Voice'} Call`,
-    `Call ${contact.name || 'this contact'}?`,
-    [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Call',
-        onPress: () => {
-          socket.emit('call_offer', {
-            callee_id: contact.id,
-            call_type: callType,
-          });
-        },
-      },
-    ]
-  );
-}
-
-export default function CallsTab() {
-  const { callHistory, setCallHistory } = useCallStore();
+export default function CallsScreen({ navigation, route }) {
+  const { user } = useAuthStore();
+  const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [newCallModal, setNewCallModal] = useState(false);
-  const [contacts, setContacts] = useState([]);
-  const [search, setSearch] = useState('');
-  const [loadingContacts, setLoadingContacts] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [stats, setStats] = useState({ total: 0, missed: 0, incoming: 0, outgoing: 0 });
 
-  const socket = getSocket();
-
+  // Load call history
   const loadCalls = useCallback(async () => {
     try {
       const { data } = await api.get('/calls/history');
-      setCallHistory(data.calls || []);
-    } catch (e) {
-      console.warn('Failed to load calls:', e.message);
+      const callsList = data.calls || [];
+      
+      // Process and categorize calls
+      const processed = callsList.map(call => ({
+        ...call,
+        direction: getCallDirection(call),
+        timestamp: new Date(call.created_at).getTime(),
+      }));
+      
+      setCalls(processed);
+      
+      // Calculate stats
+      setStats({
+        total: processed.length,
+        missed: processed.filter(c => c.direction === 'missed').length,
+        incoming: processed.filter(c => c.direction === 'incoming').length,
+        outgoing: processed.filter(c => c.direction === 'outgoing').length,
+      });
+    } catch (err) {
+      console.error('Failed to load calls:', err);
+      setCalls([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { loadCalls(); }, [loadCalls]));
-
-  const loadContactsForCall = async () => {
-    setLoadingContacts(true);
-    try {
-      const { data } = await api.get('/contacts');
-      setContacts(data.contacts || []);
-    } catch {}
-    finally { setLoadingContacts(false); }
+  // Get call direction
+  const getCallDirection = (call) => {
+    if (call.caller_id === user?.id) return 'outgoing';
+    if (call.status === 'missed' || call.status === 'rejected') return 'missed';
+    return 'incoming';
   };
 
-  const openNewCall = () => {
-    setNewCallModal(true);
-    loadContactsForCall();
+  // Refresh on focus
+  useFocusEffect(
+    useCallback(() => {
+      loadCalls();
+    }, [loadCalls])
+  );
+
+  // Filter and group calls
+  const groupedCalls = useMemo(() => {
+    let filtered = calls;
+    
+    // Apply filter
+    if (activeFilter === 'missed') {
+      filtered = calls.filter(c => c.direction === 'missed');
+    } else if (activeFilter === 'incoming') {
+      filtered = calls.filter(c => c.direction === 'incoming');
+    } else if (activeFilter === 'outgoing') {
+      filtered = calls.filter(c => c.direction === 'outgoing');
+    }
+    
+    // Apply search
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(c => 
+        c.caller_name?.toLowerCase().includes(q) ||
+        c.receiver_name?.toLowerCase().includes(q)
+      );
+    }
+    
+    // Group by date
+    const now = Date.now();
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    
+    return [
+      {
+        title: 'Today',
+        data: filtered.filter(c => now - c.timestamp < oneDayMs),
+      },
+      {
+        title: 'Yesterday',
+        data: filtered.filter(c => now - c.timestamp >= oneDayMs && now - c.timestamp < oneDayMs * 2),
+      },
+      {
+        title: 'This Week',
+        data: filtered.filter(c => now - c.timestamp >= oneDayMs * 2 && now - c.timestamp < oneDayMs * 7),
+      },
+      {
+        title: 'Older',
+        data: filtered.filter(c => now - c.timestamp >= oneDayMs * 7),
+      },
+    ].filter(g => g.data.length > 0);
+  }, [calls, activeFilter, searchQuery]);
+
+  // Format duration
+  const formatDuration = (seconds) => {
+    if (!seconds) return '';
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
   };
 
-  const filteredContacts = contacts.filter(c => {
-    const name = (c.contact_name || c.full_name || '').toLowerCase();
-    const phone = (c.phone_number || '').toLowerCase();
-    return name.includes(search.toLowerCase()) || phone.includes(search.toLowerCase());
-  });
+  // Handle call action
+  const handleCall = (contact, callType) => {
+    navigation.navigate('CallScreen', {
+      contact,
+      callType,
+      isInitiator: true,
+    });
+  };
 
-  const renderCall = ({ item }) => {
-    const name = item.caller_name || item.callee_name || 'Unknown';
-    const avatar = item.caller_avatar || item.callee_avatar;
-    const duration = formatDuration(item.duration);
-    const isMissed = item.status === 'missed' || item.status === 'rejected';
-    const direction = isMissed ? 'missed' : item.direction || 'outgoing';
-
+  // Render call item
+  const renderCallItem = ({ item: call }) => {
+    const isCurrentUserCaller = call.caller_id === user?.id;
+    const name = isCurrentUserCaller 
+      ? (call.receiver_name || 'Unknown') 
+      : (call.caller_name || 'Unknown');
+    const avatarInitial = name?.[0]?.toUpperCase() || '?';
+    const targetUserId = isCurrentUserCaller ? call.receiver_id : call.caller_id;
+    const isMissed = call.direction === 'missed';
+    const isVideo = call.call_type === 'video';
+    
+    // Icon and color based on direction
+    let iconName = 'call';
+    let iconColor = '#25D366';
+    
+    if (isMissed) {
+      iconName = 'call-outline';
+      iconColor = '#EF4444';
+    } else if (call.direction === 'incoming') {
+      iconName = 'call-incoming';
+      iconColor = '#3B82F6';
+    } else if (call.direction === 'outgoing') {
+      iconName = 'call-outgoing';
+      iconColor = '#25D366';
+    }
+    
     return (
-      <View style={cs.row}>
-        <Avatar uri={avatar} name={name} size={50} />
-        <View style={{ flex: 1 }}>
-          <Text style={[cs.name, isMissed && { color: COLORS.danger }]}>{name}</Text>
-          <View style={cs.detailRow}>
+      <TouchableOpacity
+        style={styles.callItem}
+        onPress={() => navigation.navigate('Chat', { 
+          userId: targetUserId,
+          userName: name,
+        })}
+        onLongPress={() => {
+          Alert.alert(
+            'Call Options',
+            `Call ${name}`,
+            [
+              { text: 'Voice Call', onPress: () => handleCall({ id: targetUserId, full_name: name }, 'audio') },
+              { text: 'Video Call', onPress: () => handleCall({ id: targetUserId, full_name: name }, 'video') },
+              { text: 'Cancel', style: 'cancel' },
+            ]
+          );
+        }}
+      >
+        {/* Avatar */}
+        <View style={styles.avatarContainer}>
+          <View style={[styles.avatar, isMissed && styles.avatarMissed]}>
+            <Text style={styles.avatarText}>{avatarInitial}</Text>
+          </View>
+          
+          {/* Call type badge */}
+          <View style={[styles.callTypeBadge, isMissed && styles.callTypeBadgeMissed]}>
             <Ionicons
-              name={direction === 'incoming' ? 'arrow-down-outline' : isMissed ? 'close-outline' : 'arrow-up-outline'}
-              size={12}
-              color={isMissed ? COLORS.danger : COLORS.textGray}
+              name={isVideo ? 'videocam' : 'call'}
+              size={10}
+              color={isMissed ? '#EF4444' : '#25D366'}
             />
-            <Text style={[cs.detail, isMissed && { color: COLORS.danger }]}>
-              {item.call_type === 'video' ? 'Video' : 'Voice'} call
-              {duration ? ` · ${duration}` : isMissed ? ' · Missed' : ''}
+          </View>
+        </View>
+
+        {/* Info */}
+        <View style={styles.callInfo}>
+          <Text style={[styles.callName, isMissed && styles.callNameMissed]} numberOfLines={1}>
+            {name}
+          </Text>
+          <View style={styles.callMeta}>
+            <Ionicons
+              name={
+                call.direction === 'missed' ? 'arrow-down' :
+                call.direction === 'incoming' ? 'arrow-down' : 'arrow-up'
+              }
+              size={12}
+              color={isMissed ? '#EF4444' : '#6B7280'}
+            />
+            <Text style={[styles.callType, isMissed && styles.callTypeMissed]}>
+              {call.direction?.charAt(0).toUpperCase() + call.direction?.slice(1)}
+              {isVideo ? ' video' : ' voice'}
+              {call.duration > 0 && ` · ${formatDuration(call.duration)}`}
             </Text>
           </View>
-          <Text style={cs.time}>{formatCallTime(item.created_at)}</Text>
         </View>
-        <View style={cs.rightActions}>
-          <CallDirectionIcon type={item.call_type} direction={direction} isMissed={isMissed} />
-          <View style={cs.callBackBtns}>
-            <TouchableOpacity
-              style={cs.callBackBtn}
-              onPress={() => initiateCall({ id: item.caller_id || item.callee_id, name }, 'audio', socket)}
-            >
-              <Ionicons name="call" size={18} color={COLORS.accent} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[cs.callBackBtn, { marginLeft: 4 }]}
-              onPress={() => initiateCall({ id: item.caller_id || item.callee_id, name }, 'video', socket)}
-            >
-              <Ionicons name="videocam" size={18} color="#007AFF" />
-            </TouchableOpacity>
-          </View>
+
+        {/* Time & Actions */}
+        <View style={styles.callActions}>
+          <Text style={styles.callTime}>
+            {formatDistanceToNow(call.timestamp, { addSuffix: true })}
+          </Text>
         </View>
-      </View>
+
+        {/* Quick call buttons */}
+        <View style={styles.quickActions}>
+          <TouchableOpacity
+            style={styles.quickCallBtn}
+            onPress={() => handleCall({ id: targetUserId, full_name: name }, 'audio')}
+          >
+            <Ionicons name="call" size={18} color="#25D366" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickCallBtn}
+            onPress={() => handleCall({ id: targetUserId, full_name: name }, 'video')}
+          >
+            <Ionicons name="videocam" size={18} color="#3B82F6" />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
     );
   };
 
-  return (
-    <View style={cs.container}>
-      {loading ? (
-        <View style={cs.loadingBox}><ActivityIndicator size="large" color={COLORS.accent} /></View>
-      ) : (
-        <FlatList
-          data={callHistory}
-          keyExtractor={(item, i) => item.id || String(i)}
-          renderItem={renderCall}
-          ListEmptyComponent={
-            <EmptyState
-              icon="📞"
-              title="No calls yet"
-              subtitle="Start a voice or video call with your contacts"
-            />
-          }
-          contentContainerStyle={callHistory.length === 0 ? { flex: 1 } : { paddingBottom: 80 }}
-          ItemSeparatorComponent={() => <View style={cs.separator} />}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
-
-      {/* New Call FAB */}
-      <TouchableOpacity style={cs.fab} onPress={openNewCall} activeOpacity={0.85}>
-        <Ionicons name="call" size={24} color="#fff" />
-      </TouchableOpacity>
-
-      {/* New Call Modal */}
-      <Modal visible={newCallModal} animationType="slide" presentationStyle="pageSheet">
-        <SafeAreaView style={cs.modal}>
-          <View style={cs.modalHeader}>
-            <Text style={cs.modalTitle}>New Call</Text>
-            <TouchableOpacity onPress={() => { setNewCallModal(false); setSearch(''); }}>
-              <Ionicons name="close" size={24} color={COLORS.dark} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={cs.searchBar}>
-            <Ionicons name="search" size={16} color={COLORS.gray} />
-            <TextInput
-              style={cs.searchInput}
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Search contacts..."
-              placeholderTextColor={COLORS.gray}
-              autoFocus
-            />
-          </View>
-
-          {loadingContacts ? (
-            <View style={cs.loadingBox}><ActivityIndicator color={COLORS.accent} /></View>
-          ) : (
-            <FlatList
-              data={filteredContacts}
-              keyExtractor={c => c.id || c.contact_user_id}
-              renderItem={({ item }) => {
-                const name = item.contact_name || item.full_name || 'Unknown';
-                const cId = item.contact_user_id || item.id;
-                return (
-                  <View style={cs.contactRow}>
-                    <Avatar uri={item.avatar_url} name={name} size={46} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={cs.contactName}>{name}</Text>
-                      <Text style={cs.contactPhone}>{item.phone_number}</Text>
-                    </View>
-                    <TouchableOpacity
-                      style={[cs.callBtn, { backgroundColor: '#E8F5E9' }]}
-                      onPress={() => { setNewCallModal(false); initiateCall({ id: cId, name }, 'audio', socket); }}
-                    >
-                      <Ionicons name="call" size={20} color={COLORS.accent} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[cs.callBtn, { backgroundColor: '#E3F2FD', marginLeft: 6 }]}
-                      onPress={() => { setNewCallModal(false); initiateCall({ id: cId, name }, 'video', socket); }}
-                    >
-                      <Ionicons name="videocam" size={20} color="#007AFF" />
-                    </TouchableOpacity>
-                  </View>
-                );
-              }}
-              ListEmptyComponent={
-                <Text style={{ textAlign: 'center', color: COLORS.gray, marginTop: 40, fontSize: 14 }}>
-                  {search ? 'No contacts found' : 'No contacts yet'}
-                </Text>
-              }
-              contentContainerStyle={{ paddingBottom: 20 }}
-            />
-          )}
-        </SafeAreaView>
-      </Modal>
+  // Render section header
+  const renderSectionHeader = ({ section }) => (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>{section.title}</Text>
     </View>
+  );
+
+  // Render empty state
+  const renderEmpty = () => (
+    <View style={styles.emptyContainer}>
+      <View style={styles.emptyIcon}>
+        <Ionicons name="call-outline" size={48} color="#D1D5DB" />
+      </View>
+      <Text style={styles.emptyTitle}>
+        {activeFilter === 'missed' ? 'No missed calls' :
+         activeFilter === 'incoming' ? 'No incoming calls' :
+         activeFilter === 'outgoing' ? 'No outgoing calls' : 'No calls yet'}
+      </Text>
+      <Text style={styles.emptySubtitle}>Your call history will appear here</Text>
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Calls</Text>
+        <TouchableOpacity
+          style={styles.newCallBtn}
+          onPress={() => navigation.navigate('NewCall')}
+        >
+          <Ionicons name="call" size={22} color="#25D366" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Filter tabs */}
+      <View style={styles.filterContainer}>
+        {[
+          { key: 'all', label: 'All', count: stats.total },
+          { key: 'missed', label: 'Missed', count: stats.missed },
+          { key: 'incoming', label: 'Incoming', count: stats.incoming },
+          { key: 'outgoing', label: 'Outgoing', count: stats.outgoing },
+        ].map(tab => (
+          <TouchableOpacity
+            key={tab.key}
+            style={[styles.filterTab, activeFilter === tab.key && styles.filterTabActive]}
+            onPress={() => setActiveFilter(tab.key)}
+          >
+            <Text style={[styles.filterText, activeFilter === tab.key && styles.filterTextActive]}>
+              {tab.label}
+            </Text>
+            {tab.count > 0 && (
+              <View style={[styles.filterBadge, activeFilter === tab.key && styles.filterBadgeActive]}>
+                <Text style={[styles.filterBadgeText, activeFilter === tab.key && styles.filterBadgeTextActive]}>
+                  {tab.count}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Search */}
+      <View style={styles.searchContainer}>
+        <Ionicons name="search" size={16} color="#9CA3AF" style={styles.searchIcon} />
+        <TextInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search calls..."
+          style={styles.searchInput}
+          placeholderTextColor="#9CA3AF"
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Call list */}
+      <FlatList
+        data={groupedCalls}
+        renderItem={({ item: section }) => (
+          <View>
+            {renderSectionHeader({ section })}
+            {section.data.map(call => renderCallItem({ item: call }))}
+          </View>
+        )}
+        keyExtractor={(item, index) => item.id || index.toString()}
+        contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              loadCalls();
+            }}
+            colors={['#25D366']}
+            tintColor="#25D366"
+          />
+        }
+        ListEmptyComponent={renderEmpty}
+      />
+
+      {/* Stats footer */}
+      {stats.total > 0 && (
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            {stats.total} calls · {formatDuration(calls.reduce((sum, c) => sum + (c.duration || 0), 0))} total
+          </Text>
+        </View>
+      )}
+    </SafeAreaView>
   );
 }
 
-const cs = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-
-  row: { flexDirection: 'row', alignItems: 'center', gap: rf(12), paddingHorizontal: rf(16), paddingVertical: rf(12) },
-  name: { fontSize: rf(16), fontWeight: '600', color: COLORS.dark },
-  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: rf(3) },
-  detail: { fontSize: rf(13), color: COLORS.textGray },
-  time: { fontSize: rf(11.5), color: COLORS.gray, marginTop: 2 },
-  rightActions: { alignItems: 'center', gap: rf(6) },
-  callTypeBadge: { width: rf(34), height: rf(34), borderRadius: rf(17), alignItems: 'center', justifyContent: 'center' },
-  callBackBtns: { flexDirection: 'row' },
-  callBackBtn: { width: rf(34), height: rf(34), borderRadius: rf(17), backgroundColor: '#E8F5E9', alignItems: 'center', justifyContent: 'center' },
-  separator: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginLeft: rf(78) },
-
-  fab: {
-    position: 'absolute', bottom: rf(20), right: rf(20),
-    width: rf(58), height: rf(58), borderRadius: rf(29),
-    backgroundColor: COLORS.accent, alignItems: 'center', justifyContent: 'center',
-    elevation: 8, shadowColor: COLORS.accent, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
   },
-
-  modal: { flex: 1, backgroundColor: '#fff' },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: rf(18), paddingVertical: rf(16), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
-  modalTitle: { fontSize: rf(19), fontWeight: '800', color: COLORS.dark },
-
-  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: rf(12), marginVertical: rf(10), backgroundColor: COLORS.lightGray, borderRadius: 22, paddingHorizontal: rf(14), paddingVertical: rf(10) },
-  searchInput: { flex: 1, fontSize: 15, color: COLORS.dark },
-
-  contactRow: { flexDirection: 'row', alignItems: 'center', gap: rf(12), paddingHorizontal: rf(16), paddingVertical: rf(12) },
-  contactName: { fontSize: rf(15.5), fontWeight: '600', color: COLORS.dark },
-  contactPhone: { fontSize: rf(13), color: COLORS.textGray, marginTop: 1 },
-  callBtn: { width: rf(42), height: rf(42), borderRadius: rf(21), alignItems: 'center', justifyContent: 'center' },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  newCallBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F0FDF4',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  filterTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    gap: 6,
+  },
+  filterTabActive: {
+    backgroundColor: '#25D366',
+  },
+  filterText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+  filterTextActive: {
+    color: '#FFFFFF',
+  },
+  filterBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: '#D1D5DB',
+  },
+  filterBadgeActive: {
+    backgroundColor: '#16A34A',
+  },
+  filterBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  filterBadgeTextActive: {
+    color: '#FFFFFF',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 20,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#111827',
+  },
+  listContent: {
+    flexGrow: 1,
+  },
+  sectionHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#F9FAFB',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  callItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  avatarContainer: {
+    position: 'relative',
+    marginRight: 12,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#25D366',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarMissed: {
+    backgroundColor: '#FEE2E2',
+  },
+  avatarText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  callTypeBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#F0FDF4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  callTypeBadgeMissed: {
+    backgroundColor: '#FEE2E2',
+  },
+  callInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  callName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  callNameMissed: {
+    color: '#EF4444',
+  },
+  callMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  callType: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  callTypeMissed: {
+    color: '#EF4444',
+  },
+  callActions: {
+    alignItems: 'flex-end',
+    marginRight: 8,
+  },
+  callTime: {
+    fontSize: 11,
+    color: '#9CA3AF',
+  },
+  quickActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  quickCallBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 64,
+  },
+  emptyIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#9CA3AF',
+  },
+  footer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    backgroundColor: '#F9FAFB',
+  },
+  footerText: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
 });

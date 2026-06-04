@@ -6,6 +6,8 @@ import {
   FiMinimize2,
 } from 'react-icons/fi';
 import { useCallStore } from '../services/store';
+import advancedRinging from '../services/advancedRinging';
+import callHistoryManager from '../services/callHistory';
 
 function formatDuration(seconds) {
   const h = Math.floor(seconds / 3600);
@@ -66,6 +68,32 @@ function CallScreen({
   }, [callState, isVideoCall]);
 
   const avatarInitial = remote?.full_name?.[0]?.toUpperCase() || '?';
+
+  // Play ringtone for outgoing calls
+  useEffect(() => {
+    if (callState === 'outgoing' || callState === 'ringing') {
+      advancedRinging.playOutgoingRingtone();
+    } else if (callState === 'active') {
+      advancedRinging.playConnectedTone();
+    } else if (callState === 'ended') {
+      advancedRinging.playEndedTone();
+      // Record call in history
+      callHistoryManager.addCall({
+        caller_id: caller?.id,
+        caller_name: caller?.full_name,
+        receiver_id: callee?.id,
+        receiver_name: callee?.full_name,
+        call_type: callType,
+        direction: caller?.id ? 'incoming' : 'outgoing',
+        status: 'completed',
+        duration: callDuration,
+      });
+    }
+    
+    return () => {
+      advancedRinging.stopAll();
+    };
+  }, [callState, callDuration]);
 
   const stateLabel = {
     outgoing: 'Calling...',
