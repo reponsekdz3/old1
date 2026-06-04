@@ -361,15 +361,30 @@ class Call(db.Model):
     
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     caller_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
-    receiver_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
+    receiver_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=True)
+    group_id = db.Column(db.String(36), db.ForeignKey('groups.id'), nullable=True)
     call_type = db.Column(db.String(20), nullable=False)  # voice, video
+    call_mode = db.Column(db.String(20), default='peer')  # peer, group
     status = db.Column(db.String(20), default='initiated')  # initiated, ringing, answered, ended, missed
     duration = db.Column(db.Integer, default=0)  # in seconds
+    room_id = db.Column(db.String(255), nullable=True)  # For SFU room tracking
+    recording = db.Column(db.Boolean, default=False)
+    recording_url = db.Column(db.String(500), nullable=True)
+    max_participants = db.Column(db.Integer, default=50)
     started_at = db.Column(db.DateTime, default=datetime.utcnow)
     ended_at = db.Column(db.DateTime, nullable=True)
     
     caller = db.relationship('User', foreign_keys=[caller_id])
     receiver = db.relationship('User', foreign_keys=[receiver_id])
+    group = db.relationship('Group', foreign_keys=[group_id])
+    participants = db.relationship('CallParticipant', backref='call', cascade='all, delete-orphan', lazy='joined')
+    
+    __table_args__ = (
+        db.Index('ix_calls_caller_id', 'caller_id'),
+        db.Index('ix_calls_group_id', 'group_id'),
+        db.Index('ix_calls_status', 'status'),
+        db.Index('ix_calls_created_at', 'started_at'),
+    )
     
     def to_dict(self):
         return {
@@ -380,12 +395,75 @@ class Call(db.Model):
             'receiver_id': self.receiver_id,
             'receiver_name': self.receiver.full_name if self.receiver else None,
             'receiver_avatar': self.receiver.avatar_url if self.receiver else None,
+            'group_id': self.group_id,
+            'group_name': self.group.name if self.group else None,
             'call_type': self.call_type,
+            'call_mode': self.call_mode,
             'status': self.status,
             'duration': self.duration,
+            'room_id': self.room_id,
+            'recording': self.recording,
+            'recording_url': self.recording_url,
+            'max_participants': self.max_participants,
+            'participants_count': len(self.participants),
             'started_at': self.started_at.isoformat(),
             'created_at': self.started_at.isoformat(),
             'ended_at': self.ended_at.isoformat() if self.ended_at else None
+        }
+
+
+class CallParticipant(db.Model):
+    __tablename__ = 'call_participants'
+    
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    call_id = db.Column(db.String(36), db.ForeignKey('calls.id'), nullable=False)
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
+    role = db.Column(db.String(20), default='participant')  # host, participant, viewer
+    status = db.Column(db.String(20), default='invited')  # invited, joined, left, declined
+    audio_enabled = db.Column(db.Boolean, default=True)
+    video_enabled = db.Column(db.Boolean, default=True)
+    screen_share = db.Column(db.Boolean, default=False)
+    video_quality = db.Column(db.String(20), default='medium')  # low, medium, high
+    bandwidth_limit = db.Column(db.Integer, default=2500)  # kbps
+    socket_id = db.Column(db.String(255), nullable=True)
+    joined_at = db.Column(db.DateTime, nullable=True)
+    left_at = db.Column(db.DateTime, nullable=True)
+    duration = db.Column(db.Integer, default=0)  # seconds spent in call
+    is_muted = db.Column(db.Boolean, default=False)
+    is_video_muted = db.Column(db.Boolean, default=False)
+    invited_at = db.Column(db.DateTime, default=datetime.utcnow)
+    responded_at = db.Column(db.DateTime, nullable=True)
+    
+    user = db.relationship('User', backref='call_participations')
+    
+    __table_args__ = (
+        db.Index('ix_call_participants_call_id', 'call_id'),
+        db.Index('ix_call_participants_user_id', 'user_id'),
+        db.Index('ix_call_participants_role', 'role'),
+        db.Index('ix_call_participants_status', 'status'),
+    )
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'call_id': self.call_id,
+            'user_id': self.user_id,
+            'user_name': self.user.full_name,
+            'user_avatar': self.user.avatar_url,
+            'role': self.role,
+            'status': self.status,
+            'audio_enabled': self.audio_enabled,
+            'video_enabled': self.video_enabled,
+            'screen_share': self.screen_share,
+            'video_quality': self.video_quality,
+            'bandwidth_limit': self.bandwidth_limit,
+            'is_muted': self.is_muted,
+            'is_video_muted': self.is_video_muted,
+            'joined_at': self.joined_at.isoformat() if self.joined_at else None,
+            'left_at': self.left_at.isoformat() if self.left_at else None,
+            'duration': self.duration,
+            'invited_at': self.invited_at.isoformat(),
+            'responded_at': self.responded_at.isoformat() if self.responded_at else None
         }
 
 class Poll(db.Model):

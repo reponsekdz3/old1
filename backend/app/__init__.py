@@ -194,10 +194,12 @@ def create_app(config_name='development'):
     from app.routes.security_audit import security_audit_bp
     from app.routes.contacts_sync import contacts_sync_bp
     from app.routes.sfu_routes import sfu_bp, register_sfu_socket_events
+    from app.routes.call_management import call_mgmt_bp
     app.register_blueprint(e2ee_bp)
     app.register_blueprint(security_audit_bp)
     app.register_blueprint(contacts_sync_bp)
     app.register_blueprint(sfu_bp)
+    app.register_blueprint(call_mgmt_bp)
     
     # ── Enterprise Blueprints ──────────────────────────────────────────────
     try:

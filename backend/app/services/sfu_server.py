@@ -18,8 +18,12 @@ class SFUParticipant:
     audio_enabled: bool = True
     video_enabled: bool = True
     screen_share: bool = False
-    joined_at: datetime = field(default_factory=datetime.utcnow)
+    role: str = 'participant'  # host, participant, viewer
+    video_quality: str = 'medium'  # low, medium, high
     bandwidth_limit: int = 2500  # kbps
+    is_muted: bool = False
+    is_video_muted: bool = False
+    joined_at: datetime = field(default_factory=datetime.utcnow)
     
 @dataclass
 class SFURoom:
@@ -30,6 +34,8 @@ class SFURoom:
     max_participants: int = 50
     recording: bool = False
     e2ee_enabled: bool = True
+    invited_users: Dict[int, datetime] = field(default_factory=dict)  # Track invitations
+    call_id: str = None  # Link to database Call record
     
 class SFUMediaServer:
     def __init__(self):
@@ -98,10 +104,67 @@ class SFUMediaServer:
                 'username': p.username,
                 'audio_enabled': p.audio_enabled,
                 'video_enabled': p.video_enabled,
-                'screen_share': p.screen_share
+                'screen_share': p.screen_share,
+                'role': p.role,
+                'video_quality': p.video_quality,
+                'bandwidth_limit': p.bandwidth_limit,
+                'is_muted': p.is_muted,
+                'is_video_muted': p.is_video_muted,
+                'joined_at': p.joined_at.isoformat()
             }
             for p in room.participants.values()
         ]
+    
+    def get_participant(self, room_id: str, user_id: int) -> SFUParticipant:
+        """Get specific participant in a room"""
+        room = self.rooms.get(room_id)
+        if not room:
+            return None
+        return room.participants.get(user_id)
+    
+    def invite_participant(self, room_id: str, user_id: int) -> bool:
+        """Invite user to room"""
+        room = self.rooms.get(room_id)
+        if not room:
+            return False
+        room.invited_users[user_id] = datetime.utcnow()
+        logger.info(f"[SFU] User {user_id} invited to room {room_id}")
+        return True
+    
+    def get_room_invitations(self, room_id: str) -> dict:
+        """Get all pending invitations for a room"""
+        room = self.rooms.get(room_id)
+        if not room:
+            return {}
+        return {uid: inv_time.isoformat() for uid, inv_time in room.invited_users.items()}
+    
+    def is_host(self, room_id: str, user_id: int) -> bool:
+        """Check if user is host of room"""
+        room = self.rooms.get(room_id)
+        if not room:
+            return False
+        participant = room.participants.get(user_id)
+        return participant and participant.role == 'host'
+    
+    def promote_to_host(self, room_id: str, user_id: int) -> bool:
+        """Promote participant to host"""
+        room = self.rooms.get(room_id)
+        if not room or user_id not in room.participants:
+            return False
+        room.participants[user_id].role = 'host'
+        logger.info(f"[SFU] User {user_id} promoted to host in room {room_id}")
+        return True
+    
+    def remove_participant(self, room_id: str, user_id: int) -> bool:
+        """Force remove participant from room"""
+        room = self.rooms.get(room_id)
+        if not room or user_id not in room.participants:
+            return False
+        room.participants.pop(user_id, None)
+        if user_id in self.user_to_room:
+            del self.user_to_room[user_id]
+        logger.info(f"[SFU] User {user_id} removed from room {room_id}")
+        return True
     
     def update_media_state(self, user_id: int, audio: bool = None, video: bool = None, screen: bool = None):
         """Update participant media state"""
@@ -122,6 +185,76 @@ class SFUMediaServer:
             participant.screen_share = screen
         
         return True
+    
+    def mute_participant(self, room_id: str, user_id: int, mute_audio: bool = False, mute_video: bool = False) -> bool:
+        """Mute/unmute participant"""
+        room = self.rooms.get(room_id)
+        if not room or user_id not in room.participants:
+            return False
+        
+        participant = room.participants[user_id]
+        if mute_audio:
+            participant.is_muted = True
+        if mute_video:
+            participant.is_video_muted = True
+        
+        logger.info(f"[SFU] User {user_id} muted in room {room_id} (audio={mute_audio}, video={mute_video})")
+        return True
+    
+    def unmute_participant(self, room_id: str, user_id: int, unmute_audio: bool = False, unmute_video: bool = False) -> bool:
+        """Unmute participant"""
+        room = self.rooms.get(room_id)
+        if not room or user_id not in room.participants:
+            return False
+        
+        participant = room.participants[user_id]
+        if unmute_audio:
+            participant.is_muted = False
+        if unmute_video:
+            participant.is_video_muted = False
+        
+        return True
+    
+    def update_video_quality(self, room_id: str, user_id: int, quality: str) -> bool:
+        """Update participant video quality and bandwidth limit"""
+        room = self.rooms.get(room_id)
+        if not room or user_id not in room.participants:
+            return False
+        
+        quality_settings = {
+            'low': {'bandwidth': 500, 'resolution': '320x240'},
+            'medium': {'bandwidth': 2500, 'resolution': '640x480'},
+            'high': {'bandwidth': 5000, 'resolution': '1280x720'},
+        }
+        
+        if quality not in quality_settings:
+            return False
+        
+        participant = room.participants[user_id]
+        participant.video_quality = quality
+        participant.bandwidth_limit = quality_settings[quality]['bandwidth']
+        
+        logger.info(f"[SFU] User {user_id} quality updated to {quality} in room {room_id}")
+        return True
+    
+    def get_room_state(self, room_id: str) -> dict:
+        """Get complete room state"""
+        room = self.rooms.get(room_id)
+        if not room:
+            return None
+        
+        return {
+            'room_id': room.room_id,
+            'call_id': room.call_id,
+            'host_user_id': room.host_user_id,
+            'participants_count': len(room.participants),
+            'max_participants': room.max_participants,
+            'recording': room.recording,
+            'e2ee_enabled': room.e2ee_enabled,
+            'created_at': room.created_at.isoformat(),
+            'participants': self.get_room_participants(room_id),
+            'invitations': self.get_room_invitations(room_id)
+        }
     
     def get_user_room(self, user_id: int) -> str:
         """Get room ID for user"""

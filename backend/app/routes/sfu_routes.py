@@ -216,3 +216,192 @@ def register_sfu_socket_events(socketio):
                     }, room=room_id)
                     logger.info(f"[SFU] User {user_id} disconnected from room {room_id}")
                     return
+    
+    @socketio.on('sfu_invite_participant')
+    def handle_invite_participant(data):
+        """Invite a participant to join the call"""
+        room_id = data.get('room_id')
+        target_user_id = data.get('target_user_id')
+        sender_user_id = data.get('sender_user_id')
+        
+        if not all([room_id, target_user_id, sender_user_id]):
+            emit('sfu_error', {'error': 'Missing required fields'})
+            return
+        
+        # Verify sender is in room
+        sender_room = sfu_server.get_user_room(sender_user_id)
+        if sender_room != room_id:
+            emit('sfu_error', {'error': 'Sender not in room'})
+            return
+        
+        # Verify sender is host
+        if not sfu_server.is_host(room_id, sender_user_id):
+            emit('sfu_error', {'error': 'Only host can invite participants'})
+            logger.warning(f"[SFU] Non-host {sender_user_id} attempted to invite in room {room_id}")
+            return
+        
+        # Add invitation to room
+        sfu_server.invite_participant(room_id, target_user_id)
+        
+        # Broadcast invitation to all in room
+        emit('sfu_participant_invited', {
+            'target_user_id': target_user_id,
+            'invited_by': sender_user_id,
+            'room_id': room_id
+        }, room=room_id)
+        
+        logger.info(f"[SFU] User {target_user_id} invited to room {room_id} by {sender_user_id}")
+    
+    @socketio.on('sfu_promote_to_host')
+    def handle_promote_to_host(data):
+        """Promote a participant to host"""
+        room_id = data.get('room_id')
+        target_user_id = data.get('target_user_id')
+        sender_user_id = data.get('sender_user_id')
+        
+        if not all([room_id, target_user_id, sender_user_id]):
+            emit('sfu_error', {'error': 'Missing required fields'})
+            return
+        
+        # Verify sender is host
+        if not sfu_server.is_host(room_id, sender_user_id):
+            emit('sfu_error', {'error': 'Only host can promote participants'})
+            logger.warning(f"[SFU] Non-host {sender_user_id} attempted to promote in room {room_id}")
+            return
+        
+        # Promote participant
+        success = sfu_server.promote_to_host(room_id, target_user_id)
+        
+        if success:
+            # Broadcast promotion to all in room
+            emit('sfu_participant_promoted', {
+                'promoted_user_id': target_user_id,
+                'promoted_by': sender_user_id,
+                'room_id': room_id
+            }, room=room_id)
+            
+            logger.info(f"[SFU] User {target_user_id} promoted to host in room {room_id}")
+        else:
+            emit('sfu_error', {'error': 'Failed to promote participant'})
+    
+    @socketio.on('sfu_remove_participant')
+    def handle_remove_participant(data):
+        """Remove a participant from the call"""
+        room_id = data.get('room_id')
+        target_user_id = data.get('target_user_id')
+        sender_user_id = data.get('sender_user_id')
+        
+        if not all([room_id, target_user_id, sender_user_id]):
+            emit('sfu_error', {'error': 'Missing required fields'})
+            return
+        
+        # Verify sender is host
+        if not sfu_server.is_host(room_id, sender_user_id):
+            emit('sfu_error', {'error': 'Only host can remove participants'})
+            logger.warning(f"[SFU] Non-host {sender_user_id} attempted to remove participant in room {room_id}")
+            return
+        
+        # Remove participant
+        success = sfu_server.remove_participant(room_id, target_user_id)
+        
+        if success:
+            # Broadcast removal to all in room
+            emit('sfu_participant_removed', {
+                'removed_user_id': target_user_id,
+                'removed_by': sender_user_id,
+                'room_id': room_id
+            }, room=room_id)
+            
+            logger.info(f"[SFU] User {target_user_id} removed from room {room_id} by {sender_user_id}")
+        else:
+            emit('sfu_error', {'error': 'Failed to remove participant'})
+    
+    @socketio.on('sfu_mute_participant')
+    def handle_mute_participant(data):
+        """Mute a participant's audio or video"""
+        room_id = data.get('room_id')
+        target_user_id = data.get('target_user_id')
+        sender_user_id = data.get('sender_user_id')
+        mute_audio = data.get('mute_audio', False)
+        mute_video = data.get('mute_video', False)
+        
+        if not all([room_id, target_user_id, sender_user_id]):
+            emit('sfu_error', {'error': 'Missing required fields'})
+            return
+        
+        # Allow muting self or host can mute others
+        is_host = sfu_server.is_host(room_id, sender_user_id)
+        if target_user_id != sender_user_id and not is_host:
+            emit('sfu_error', {'error': 'Only host can mute other participants'})
+            logger.warning(f"[SFU] User {sender_user_id} attempted to mute {target_user_id} without authority in room {room_id}")
+            return
+        
+        # Mute participant
+        if mute_audio or mute_video:
+            sfu_server.mute_participant(room_id, target_user_id, mute_audio, mute_video)
+        else:
+            sfu_server.unmute_participant(room_id, target_user_id, not mute_audio, not mute_video)
+        
+        # Broadcast mute state to all in room
+        emit('sfu_participant_muted', {
+            'user_id': target_user_id,
+            'mute_audio': mute_audio,
+            'mute_video': mute_video,
+            'room_id': room_id
+        }, room=room_id)
+        
+        logger.info(f"[SFU] User {target_user_id} muted in room {room_id} (audio={mute_audio}, video={mute_video})")
+    
+    @socketio.on('sfu_update_quality')
+    def handle_update_quality(data):
+        """Update participant's video quality"""
+        room_id = data.get('room_id')
+        target_user_id = data.get('target_user_id')
+        sender_user_id = data.get('sender_user_id')
+        quality = data.get('quality')
+        
+        if not all([room_id, target_user_id, sender_user_id, quality]):
+            emit('sfu_error', {'error': 'Missing required fields'})
+            return
+        
+        if quality not in ['low', 'medium', 'high']:
+            emit('sfu_error', {'error': 'Quality must be low, medium, or high'})
+            return
+        
+        # Allow updating own quality or host can update others
+        is_host = sfu_server.is_host(room_id, sender_user_id)
+        if target_user_id != sender_user_id and not is_host:
+            emit('sfu_error', {'error': 'Only host can update quality for other participants'})
+            logger.warning(f"[SFU] User {sender_user_id} attempted to update quality for {target_user_id} in room {room_id}")
+            return
+        
+        # Update quality
+        success = sfu_server.update_video_quality(room_id, target_user_id, quality)
+        
+        if success:
+            # Broadcast quality update to all in room
+            emit('sfu_participant_quality_updated', {
+                'user_id': target_user_id,
+                'quality': quality,
+                'room_id': room_id
+            }, room=room_id)
+            
+            logger.info(f"[SFU] Quality updated for user {target_user_id} to {quality} in room {room_id}")
+        else:
+            emit('sfu_error', {'error': 'Failed to update quality'})
+    
+    @socketio.on('sfu_get_room_state')
+    def handle_get_room_state(data):
+        """Get complete room state"""
+        room_id = data.get('room_id')
+        
+        if not room_id:
+            emit('sfu_error', {'error': 'room_id required'})
+            return
+        
+        state = sfu_server.get_room_state(room_id)
+        
+        if state:
+            emit('sfu_room_state', state)
+        else:
+            emit('sfu_error', {'error': 'Room not found'})
