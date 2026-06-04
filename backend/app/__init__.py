@@ -610,6 +610,10 @@ def create_app(config_name='development'):
     from app.routes.test_api import test_api_bp
     app.register_blueprint(test_api_bp)
 
+    # API Documentation Blueprint
+    from app.routes.api_docs import docs_bp
+    app.register_blueprint(docs_bp)
+
     # ── Database setup ────────────────────────────────────────────────────
     with app.app_context():
         from app.models import e2ee_models as _e2ee_models  # noqa: F401 — ensure E2EE tables created

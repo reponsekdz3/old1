@@ -870,4 +870,587 @@ def get_api_docs():
             'pro': '1000/hour',
             'enterprise': '10000/hour',
         },
+    })RODUCTION_PLANS.items():
+        plans.append({
+            'id': plan_id,
+            'name': plan['name'],
+            'price': plan['price'],
+            'features': plan['features'],
+            'rate_limit': plan['rate_limit'],
+            'max_contacts': plan['max_contacts'],
+            'max_groups': plan['max_groups'],
+            'max_upload_size': plan['max_upload_size'],
+            'call_duration_limit': plan['call_duration_limit'],
+        })
+    
+    return jsonify({
+        'success': True,
+        'plans': plans,
+        'sandbox': {
+            'name': 'Sandbox',
+            'price': 0,
+            'features': SANDBOX_CONFIG['features'],
+            'rate_limit': SANDBOX_CONFIG['rate_limit'],
+        }
+    })
+
+
+@test_api_bp.route('/subscription/upgrade', methods=['POST'])
+@jwt_required()
+def upgrade_subscription():
+    """Upgrade subscription to a paid plan"""
+    user_id = get_jwt_identity()
+    data = request.get_json() or {}
+    
+    plan_id = data.get('plan', 'free')
+    
+    if plan_id not in PRODUCTION_PLANS:
+        return jsonify({'error': 'Invalid plan'}), 400
+    
+    # In production, this would integrate with payment processor
+    # For demo, we'll simulate the upgrade
+    
+    # Find user's production API key
+    user_key = None
+    for key_hash, key_data in _API_KEYS.items():
+        if key_data['user_id'] == user_id and key_data['type'] == 'production':
+            user_key = key_hash
+            break
+    
+    if not user_key:
+        return jsonify({'error': 'No production API key found. Create one first.'}), 400
+    
+    # Update subscription
+    _API_SUBSCRIPTIONS[user_key] = {
+        'plan': plan_id,
+        'status': 'active',
+        'upgraded_at': datetime.utcnow().isoformat(),
+        'expires_at': (datetime.utcnow() + timedelta(days=30)).isoformat(),
+    }
+    
+    plan = PRODUCTION_PLANS[plan_id]
+    
+    return jsonify({
+        'success': True,
+        'message': f'Upgraded to {plan["name"]} plan',
+        'subscription': {
+            'plan': plan_id,
+            'name': plan['name'],
+            'price': plan['price'],
+            'features': plan['features'],
+            'rate_limit': plan['rate_limit'],
+            'expires_at': _API_SUBSCRIPTIONS[user_key]['expires_at'],
+        }
+    })
+
+
+@test_api_bp.route('/subscription/current', methods=['GET'])
+@jwt_required()
+def get_current_subscription():
+    """Get current subscription status"""
+    user_id = get_jwt_identity()
+    
+    # Find user's keys
+    user_keys = [k for k in _API_KEYS.values() if k['user_id'] == user_id]
+    
+    subscriptions = []
+    for key in user_keys:
+        sub = _API_SUBSCRIPTIONS.get(key['key_hash'])
+        if sub:
+            plan = PRODUCTION_PLANS.get(sub.get('plan', 'free'), PRODUCTION_PLANS['free'])
+            subscriptions.append({
+                'key_id': key['id'],
+                'key_name': key['name'],
+                'type': key['type'],
+                'plan': sub.get('plan', 'free'),
+                'status': sub.get('status', 'active'),
+                'expires_at': sub.get('expires_at'),
+                'features': plan['features'],
+            })
+    
+    return jsonify({
+        'success': True,
+        'subscriptions': subscriptions,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# API TESTING ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@test_api_bp.route('/test/connection', methods=['GET', 'POST'])
+def test_connection():
+    """Test API connection and get server info"""
+    start_time = time.time()
+    
+    # Get API key from header
+    api_key = request.headers.get('X-API-Key')
+    subscription = get_subscription(api_key)
+    
+    duration = int((time.time() - start_time) * 1000)
+    log_request(api_key, '/test/connection', request.method, 200, duration)
+    
+    return jsonify({
+        'success': True,
+        'message': 'API connection successful',
+        'server': {
+            'name': 'VipChat API',
+            'version': '2.0.0',
+            'mode': subscription['mode'] if subscription else 'unknown',
+            'timestamp': datetime.utcnow().isoformat(),
+        },
+        'subscription': subscription,
+        'response_time_ms': duration,
+    })
+
+
+@test_api_bp.route('/test/auth', methods=['POST'])
+def test_auth():
+    """Test authentication endpoints"""
+    start_time = time.time()
+    
+    api_key = request.headers.get('X-API-Key')
+    data = request.get_json() or {}
+    
+    action = data.get('action', 'login')
+    
+    # Check rate limit
+    allowed, message = check_rate_limit(api_key)
+    if not allowed:
+        return jsonify({'error': message}), 429
+    
+    duration = int((time.time() - start_time) * 1000)
+    log_request(api_key, '/test/auth', 'POST', 200, duration)
+    
+    if action == 'login':
+        # Simulate login
+        return jsonify({
+            'success': True,
+            'action': 'login',
+            'result': {
+                'access_token': f"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.{secrets.token_urlsafe(32)}",
+                'refresh_token': f"refresh_{secrets.token_urlsafe(32)}",
+                'expires_in': 3600,
+                'token_type': 'Bearer',
+            },
+            'sandbox_notice': 'This is a sandbox response. Use real credentials in production.',
+        })
+    
+    elif action == 'signup':
+        return jsonify({
+            'success': True,
+            'action': 'signup',
+            'result': {
+                'user_id': str(uuid.uuid4()),
+                'access_token': f"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.{secrets.token_urlsafe(32)}",
+                'message': 'User created successfully',
+            },
+        })
+    
+    return jsonify({'error': 'Invalid action'}), 400
+
+
+@test_api_bp.route('/test/messages', methods=['POST'])
+def test_messages():
+    """Test messaging endpoints"""
+    start_time = time.time()
+    
+    api_key = request.headers.get('X-API-Key')
+    data = request.get_json() or {}
+    
+    action = data.get('action', 'send')
+    
+    allowed, message = check_rate_limit(api_key)
+    if not allowed:
+        return jsonify({'error': message}), 429
+    
+    duration = int((time.time() - start_time) * 1000)
+    log_request(api_key, '/test/messages', 'POST', 200, duration)
+    
+    if action == 'send':
+        return jsonify({
+            'success': True,
+            'action': 'send_message',
+            'result': {
+                'message_id': str(uuid.uuid4()),
+                'status': 'sent',
+                'timestamp': datetime.utcnow().isoformat(),
+                'recipient_status': 'delivered',
+            },
+        })
+    
+    elif action == 'list':
+        # Return test messages
+        messages = [
+            {
+                'id': str(uuid.uuid4()),
+                'sender_id': str(uuid.uuid4()),
+                'content': 'Hello from sandbox!',
+                'created_at': (datetime.utcnow() - timedelta(minutes=i*5)).isoformat(),
+                'status': 'delivered',
+            }
+            for i in range(5)
+        ]
+        
+        return jsonify({
+            'success': True,
+            'action': 'list_messages',
+            'result': {
+                'messages': messages,
+                'total': 5,
+                'page': 1,
+                'per_page': 20,
+            },
+        })
+    
+    return jsonify({'error': 'Invalid action'}), 400
+
+
+@test_api_bp.route('/test/calls', methods=['POST'])
+def test_calls():
+    """Test call endpoints"""
+    start_time = time.time()
+    
+    api_key = request.headers.get('X-API-Key')
+    data = request.get_json() or {}
+    
+    action = data.get('action', 'initiate')
+    
+    allowed, message = check_rate_limit(api_key)
+    if not allowed:
+        return jsonify({'error': message}), 429
+    
+    duration = int((time.time() - start_time) * 1000)
+    log_request(api_key, '/test/calls', 'POST', 200, duration)
+    
+    if action == 'initiate':
+        return jsonify({
+            'success': True,
+            'action': 'initiate_call',
+            'result': {
+                'call_id': str(uuid.uuid4()),
+                'status': 'ringing',
+                'room_id': f"room_{secrets.token_urlsafe(16)}",
+                'ice_servers': [
+                    {'urls': 'stun:stun.l.google.com:19302'},
+                ],
+            },
+        })
+    
+    elif action == 'history':
+        calls = [
+            {
+                'id': str(uuid.uuid4()),
+                'caller_id': str(uuid.uuid4()),
+                'caller_name': 'Test User',
+                'call_type': 'audio',
+                'direction': 'incoming',
+                'status': 'completed',
+                'duration': 120,
+                'created_at': (datetime.utcnow() - timedelta(hours=i)).isoformat(),
+            }
+            for i in range(3)
+        ]
+        
+        return jsonify({
+            'success': True,
+            'action': 'call_history',
+            'result': {
+                'calls': calls,
+                'total': 3,
+            },
+        })
+    
+    return jsonify({'error': 'Invalid action'}), 400
+
+
+@test_api_bp.route('/test/contacts', methods=['GET', 'POST'])
+def test_contacts():
+    """Test contacts endpoints"""
+    start_time = time.time()
+    
+    api_key = request.headers.get('X-API-Key')
+    
+    allowed, message = check_rate_limit(api_key)
+    if not allowed:
+        return jsonify({'error': message}), 429
+    
+    duration = int((time.time() - start_time) * 1000)
+    log_request(api_key, '/test/contacts', request.method, 200, duration)
+    
+    if request.method == 'GET':
+        contacts = [
+            {
+                'id': str(uuid.uuid4()),
+                'full_name': f'Test Contact {i}',
+                'phone': f'+1555000{i:04d}',
+                'avatar_url': None,
+                'status': 'online' if i % 2 == 0 else 'offline',
+            }
+            for i in range(10)
+        ]
+        
+        return jsonify({
+            'success': True,
+            'action': 'list_contacts',
+            'result': {
+                'contacts': contacts,
+                'total': 10,
+            },
+        })
+    
+    elif request.method == 'POST':
+        return jsonify({
+            'success': True,
+            'action': 'add_contact',
+            'result': {
+                'contact_id': str(uuid.uuid4()),
+                'status': 'added',
+            },
+        })
+
+
+@test_api_bp.route('/test/groups', methods=['GET', 'POST'])
+def test_groups():
+    """Test group endpoints"""
+    start_time = time.time()
+    
+    api_key = request.headers.get('X-API-Key')
+    
+    allowed, message = check_rate_limit(api_key)
+    if not allowed:
+        return jsonify({'error': message}), 429
+    
+    duration = int((time.time() - start_time) * 1000)
+    log_request(api_key, '/test/groups', request.method, 200, duration)
+    
+    if request.method == 'GET':
+        groups = [
+            {
+                'id': str(uuid.uuid4()),
+                'name': f'Test Group {i}',
+                'member_count': 5 + i,
+                'is_admin': True,
+                'last_message': 'Test message',
+                'updated_at': datetime.utcnow().isoformat(),
+            }
+            for i in range(3)
+        ]
+        
+        return jsonify({
+            'success': True,
+            'action': 'list_groups',
+            'result': {
+                'groups': groups,
+                'total': 3,
+            },
+        })
+    
+    elif request.method == 'POST':
+        return jsonify({
+            'success': True,
+            'action': 'create_group',
+            'result': {
+                'group_id': str(uuid.uuid4()),
+                'name': 'New Test Group',
+                'admin_id': str(uuid.uuid4()),
+                'member_count': 1,
+            },
+        })
+
+
+@test_api_bp.route('/test/upload', methods=['POST'])
+def test_upload():
+    """Test file upload"""
+    start_time = time.time()
+    
+    api_key = request.headers.get('X-API-Key')
+    
+    allowed, message = check_rate_limit(api_key)
+    if not allowed:
+        return jsonify({'error': message}), 429
+    
+    # Check file size
+    subscription = get_subscription(api_key)
+    max_size = SANDBOX_CONFIG['max_upload_size']
+    if subscription:
+        plan = PRODUCTION_PLANS.get(subscription.get('plan', 'free'), PRODUCTION_PLANS['free'])
+        max_size = plan['max_upload_size']
+    
+    duration = int((time.time() - start_time) * 1000)
+    log_request(api_key, '/test/upload', 'POST', 200, duration)
+    
+    # Simulate upload response
+    return jsonify({
+        'success': True,
+        'action': 'upload_file',
+        'result': {
+            'file_id': str(uuid.uuid4()),
+            'url': f'/uploads/test_{secrets.token_urlsafe(16)}',
+            'size': 1024,
+            'type': 'image/jpeg',
+            'expires_at': (datetime.utcnow() + timedelta(days=30)).isoformat(),
+        },
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ANALYTICS & USAGE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@test_api_bp.route('/usage', methods=['GET'])
+@jwt_required()
+def get_usage():
+    """Get API usage statistics"""
+    user_id = get_jwt_identity()
+    api_key = request.headers.get('X-API-Key')
+    
+    # Get user's keys
+    user_keys = [k['key_hash'] for k in _API_KEYS.values() if k['user_id'] == user_id]
+    
+    # Calculate usage
+    current_hour = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+    
+    usage_data = {}
+    for key_hash in user_keys:
+        for hour_offset in range(24):
+            hour = current_hour - timedelta(hours=hour_offset)
+            usage_key = f"{key_hash}_{hour.isoformat()}"
+            usage_data[hour.isoformat()] = _API_USAGE.get(usage_key, 0)
+    
+    # Get subscription
+    subscription = get_subscription(api_key)
+    
+    return jsonify({
+        'success': True,
+        'usage': usage_data,
+        'subscription': subscription,
+    })
+
+
+@test_api_bp.route('/logs', methods=['GET'])
+@jwt_required()
+def get_request_logs():
+    """Get request logs"""
+    user_id = get_jwt_identity()
+    
+    # Filter logs for user's keys
+    user_key_hashes = [k['key_hash'] for k in _API_KEYS.values() if k['user_id'] == user_id]
+    
+    user_logs = [
+        log for log in _REQUEST_LOGS
+        if log.get('api_key_hash') in user_key_hashes
+    ][-100:]  # Last 100 logs
+    
+    return jsonify({
+        'success': True,
+        'logs': user_logs,
+        'total': len(user_logs),
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WEBHOOK MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@test_api_bp.route('/webhooks', methods=['GET', 'POST'])
+@jwt_required()
+def manage_webhooks():
+    """Manage webhooks"""
+    user_id = get_jwt_identity()
+    
+    if request.method == 'GET':
+        # Return test webhooks
+        return jsonify({
+            'success': True,
+            'webhooks': [
+                {
+                    'id': str(uuid.uuid4()),
+                    'url': 'https://example.com/webhook',
+                    'events': ['message.received', 'call.ended'],
+                    'is_active': True,
+                }
+            ],
+        })
+    
+    elif request.method == 'POST':
+        data = request.get_json() or {}
+        return jsonify({
+            'success': True,
+            'webhook': {
+                'id': str(uuid.uuid4()),
+                'url': data.get('url'),
+                'events': data.get('events', []),
+                'is_active': True,
+                'created_at': datetime.utcnow().isoformat(),
+            },
+        })
+
+
+@test_api_bp.route('/webhooks/<webhook_id>/test', methods=['POST'])
+@jwt_required()
+def test_webhook(webhook_id):
+    """Test a webhook"""
+    return jsonify({
+        'success': True,
+        'message': 'Test webhook triggered',
+        'payload': {
+            'event': 'test.event',
+            'timestamp': datetime.utcnow().isoformat(),
+            'data': {'test': True},
+        },
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FULL API DOCUMENTATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@test_api_bp.route('/docs', methods=['GET'])
+def get_api_docs():
+    """Get full API documentation"""
+    return jsonify({
+        'name': 'VipChat API',
+        'version': '2.0.0',
+        'description': 'Advanced messaging and calling platform API',
+        'sandbox_mode': True,
+        'endpoints': {
+            'authentication': {
+                'POST /api/test/auth': {
+                    'description': 'Test authentication (login/signup)',
+                    'body': {'action': 'login|signup', 'phone': '', 'password': ''},
+                },
+            },
+            'messages': {
+                'POST /api/test/messages': {
+                    'description': 'Test messaging operations',
+                    'body': {'action': 'send|list', 'receiver_id': '', 'content': ''},
+                },
+            },
+            'calls': {
+                'POST /api/test/calls': {
+                    'description': 'Test call operations',
+                    'body': {'action': 'initiate|history', 'callee_id': '', 'call_type': 'audio|video'},
+                },
+            },
+            'contacts': {
+                'GET /api/test/contacts': 'List contacts',
+                'POST /api/test/contacts': 'Add contact',
+            },
+            'groups': {
+                'GET /api/test/groups': 'List groups',
+                'POST /api/test/groups': 'Create group',
+            },
+        },
+        'authentication': {
+            'header': 'X-API-Key',
+            'sandbox_key_prefix': 'vipchat_test_',
+            'production_key_prefix': 'vipchat_sk_',
+        },
+        'rate_limits': {
+            'sandbox': '1000/hour',
+            'free': '100/hour',
+            'pro': '1000/hour',
+            'enterprise': '10000/hour',
+        },
     })
