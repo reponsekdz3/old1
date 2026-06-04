@@ -122,19 +122,58 @@ def migrate_encryption_keys():
         print(f"✗ Error checking encryption: {e}")
 
 
-def create_sharding_config():
-    """Create sharding configuration."""
-    print("[*] Initializing sharding configuration...")
-    try:
-        with app.app_context():
-            shard_count = int(os.environ.get('SHARD_COUNT', 256))
-            strategy = os.environ.get('SHARDING_STRATEGY', 'consistent_hash')
-            
-            print(f"✓ Sharding enabled:")
-            print(f"  - Shards: {shard_count}")
-            print(f"  - Strategy: {strategy}")
-    except Exception as e:
-        print(f"✗ Error initializing sharding: {e}")
+def create_call_management_tables():
+    """Create call participant management tables."""
+    with app.app_context():
+        print("[*] Creating call management tables...")
+        try:
+            from app.models.models import Call, CallParticipant
+            db.create_all()
+            print("✓ Call management tables created successfully")
+        except Exception as e:
+            print(f"✗ Error creating call management tables: {e}")
+
+
+def create_call_indices():
+    """Create indices for call management."""
+    with app.app_context():
+        print("[*] Creating call management indices...")
+        try:
+            db.session.execute('''
+                CREATE INDEX IF NOT EXISTS idx_call_participants_call
+                ON call_participants(call_id);
+            ''')
+            db.session.execute('''
+                CREATE INDEX IF NOT EXISTS idx_call_participants_user
+                ON call_participants(user_id);
+            ''')
+            db.session.execute('''
+                CREATE INDEX IF NOT EXISTS idx_call_participants_role
+                ON call_participants(role);
+            ''')
+            db.session.execute('''
+                CREATE INDEX IF NOT EXISTS idx_call_participants_status
+                ON call_participants(status);
+            ''')
+            db.session.execute('''
+                CREATE INDEX IF NOT EXISTS idx_calls_caller
+                ON calls(caller_id);
+            ''')
+            db.session.execute('''
+                CREATE INDEX IF NOT EXISTS idx_calls_group
+                ON calls(group_id);
+            ''')
+            db.session.execute('''
+                CREATE INDEX IF NOT EXISTS idx_calls_status
+                ON calls(status);
+            ''')
+            db.session.commit()
+            print("✓ Call management indices created successfully")
+        except Exception as e:
+            print(f"✗ Error creating call indices: {e}")
+
+
+
 
 
 def main():
@@ -153,6 +192,8 @@ def main():
     setup_redis_indices()
     migrate_encryption_keys()
     create_sharding_config()
+    create_call_management_tables()
+    create_call_indices()
     
     print("\n" + "="*70)
     print("✓ MIGRATION COMPLETE")

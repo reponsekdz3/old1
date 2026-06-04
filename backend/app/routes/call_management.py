@@ -9,8 +9,18 @@ from app.services.sfu_server import sfu_server
 from datetime import datetime
 import uuid
 import logging
+from flask_socketio import SocketIO
+from functools import wraps
 
 logger = logging.getLogger(__name__)
+
+# Global socketio instance for emitting events
+_socketio = None
+
+def set_socketio(socketio):
+    """Set the SocketIO instance for broadcasting events"""
+    global _socketio
+    _socketio = socketio
 
 call_mgmt_bp = Blueprint('call_management', __name__, url_prefix='/api/calls')
 
@@ -41,6 +51,18 @@ def _get_call_or_404(call_id: str) -> Call:
     if not call:
         return None
     return call
+
+
+def _validate_call_state(call: Call, allowed_states: list) -> bool:
+    """Validate call is in an allowed state"""
+    return call.status in allowed_states
+
+
+def _broadcast_to_call(call_id: str, event: str, data: dict):
+    """Broadcast event to all participants in a call"""
+    if _socketio:
+        _socketio.emit(event, data, room=f"call_{call_id}")
+        logger.debug(f"[CALL_MGMT] Broadcast {event} to call {call_id}")
 
 
 @call_mgmt_bp.route('/<call_id>/participants', methods=['GET'])
@@ -145,13 +167,33 @@ def add_participant(call_id: str):
     
     db.session.add(participant)
     
-    # Add to SFU room if active
+    # Add to SFU room if active and link to call
     if call.room_id and call.room_id in sfu_server.rooms:
         sfu_server.invite_participant(call.room_id, int(new_participant_id))
+        sfu_server.link_call_to_room(call.room_id, call_id)
     
     try:
         db.session.commit()
         logger.info(f"[CALL_MGMT] Added participant {new_participant_id} to call {call_id} with role {role}")
+        
+        # Broadcast to all participants
+        _broadcast_to_call(call_id, 'participant_added', {
+            'call_id': call_id,
+            'participant': participant.to_dict(),
+            'added_by': user_id
+        })
+        
+        # Send direct notification to invited user
+        if _socketio:
+            _socketio.emit('call_invitation', {
+                'call_id': call_id,
+                'call_type': call.call_type,
+                'call_mode': call.call_mode,
+                'host_id': call.caller_id,
+                'host_name': call.caller.full_name if call.caller else None,
+                'role': role,
+                'room_id': call.room_id
+            }, room=f"user_{new_participant_id}")
         
         return jsonify({
             'message': 'Participant added successfully',
@@ -214,9 +256,29 @@ def remove_participant(call_id: str):
         participant_data = participant.to_dict()
         participant.left_at = datetime.utcnow()
         participant.status = 'left'
+        
+        # Calculate duration if they joined
+        if participant.joined_at:
+            participant.duration = int((participant.left_at - participant.joined_at).total_seconds())
+        
         db.session.commit()
         
         logger.info(f"[CALL_MGMT] Removed participant {participant_id} from call {call_id}")
+        
+        # Broadcast removal to all participants
+        _broadcast_to_call(call_id, 'participant_removed', {
+            'call_id': call_id,
+            'user_id': participant_id,
+            'removed_by': user_id
+        })
+        
+        # Notify removed user
+        if _socketio:
+            _socketio.emit('removed_from_call', {
+                'call_id': call_id,
+                'removed_by': user_id,
+                'reason': 'removed_by_host'
+            }, room=f"user_{participant_id}")
         
         return jsonify({
             'message': 'Participant removed successfully',
@@ -286,6 +348,14 @@ def promote_participant(call_id: str):
         db.session.commit()
         
         logger.info(f"[CALL_MGMT] Promoted participant {target_user_id} from {old_role} to host in call {call_id}")
+        
+        # Broadcast promotion to all participants
+        _broadcast_to_call(call_id, 'participant_promoted', {
+            'call_id': call_id,
+            'user_id': target_user_id,
+            'promoted_by': user_id,
+            'new_role': 'host'
+        })
         
         return jsonify({
             'message': 'Participant promoted to host',
@@ -371,6 +441,15 @@ def mute_participant(call_id: str):
         
         logger.info(f"[CALL_MGMT] Updated mute state for {target_user_id} in call {call_id} (audio={mute_audio}, video={mute_video})")
         
+        # Broadcast mute state to all participants
+        _broadcast_to_call(call_id, 'participant_mute_changed', {
+            'call_id': call_id,
+            'user_id': target_user_id,
+            'is_muted': mute_audio,
+            'is_video_muted': mute_video,
+            'changed_by': user_id
+        })
+        
         return jsonify({
             'message': 'Participant mute state updated',
             'participant': participant.to_dict()
@@ -451,6 +530,15 @@ def update_video_quality(call_id: str):
         db.session.commit()
         
         logger.info(f"[CALL_MGMT] Updated quality for {target_user_id} to {quality} in call {call_id} (bandwidth={settings['bandwidth']} kbps)")
+        
+        # Broadcast quality update to all participants
+        _broadcast_to_call(call_id, 'participant_quality_changed', {
+            'call_id': call_id,
+            'user_id': target_user_id,
+            'quality': quality,
+            'bandwidth_limit': settings['bandwidth'],
+            'resolution': settings['resolution']
+        })
         
         return jsonify({
             'message': 'Video quality updated',
@@ -585,10 +673,146 @@ def update_participant_media(call_id: str):
         
         logger.info(f"[CALL_MGMT] Updated media state for user {user_id} in call {call_id}")
         
+        # Broadcast media state to all participants
+        _broadcast_to_call(call_id, 'participant_media_changed', {
+            'call_id': call_id,
+            'user_id': user_id,
+            'audio_enabled': participant.audio_enabled,
+            'video_enabled': participant.video_enabled,
+            'screen_share': participant.screen_share
+        })
+        
         return jsonify({
             'message': 'Media state updated',
             'participant': participant.to_dict()
         }), 200
+
+
+@call_mgmt_bp.route('/<call_id>/convert-to-group', methods=['POST'])
+@jwt_required()
+def convert_peer_to_group_call(call_id: str):
+    """
+    Convert a 1-to-1 call to a group call by adding a new participant
+    
+    This allows adding participants during an ongoing voice/video call
+    Required: Caller must be one of the participants in the call
+    Payload: {
+        "new_participant_id": "user_id_to_add",
+        "role": "participant|viewer"  # optional
+    }
+    Response: Updated call with new participant
+    """
+    user_id = _get_current_user()
+    data = request.get_json()
+    
+    if not data or 'new_participant_id' not in data:
+        return jsonify({'error': 'new_participant_id is required'}), 400
+    
+    new_participant_id = data.get('new_participant_id')
+    role = data.get('role', 'participant')
+    
+    call = _get_call_or_404(call_id)
+    if not call:
+        return jsonify({'error': 'Call not found'}), 404
+    
+    # Verify user is a participant in the call
+    if not _is_participant_in_call(call_id, user_id):
+        logger.warning(f"[CALL_MGMT] User {user_id} attempted to add participant to unauthorized call {call_id}")
+        return jsonify({'error': 'Not authorized to modify this call'}), 403
+    
+    # Verify call is active
+    if call.status not in ['answered', 'ringing']:
+        return jsonify({'error': f'Cannot add participants to a call in {call.status} status'}), 409
+    
+    # Check if this is a peer call being converted to group
+    if call.call_mode == 'peer':
+        # Convert to group call
+        call.call_mode = 'group'
+        logger.info(f"[CALL_MGMT] Converting peer call {call_id} to group call")
+        
+        # Create SFU room if doesn't exist
+        if not call.room_id:
+            room_id = f"call_{call_id}_{uuid.uuid4().hex[:8]}"
+            call.room_id = room_id
+            sfu_server.create_room(room_id, int(call.caller_id), call.max_participants)
+            sfu_server.link_call_to_room(room_id, call_id)
+            
+            # Add existing participants to SFU room
+            existing_participants = CallParticipant.query.filter_by(call_id=call_id).all()
+            for p in existing_participants:
+                if p.user_id and p.status == 'joined':
+                    sfu_server.join_room(room_id, int(p.user_id), p.socket_id or '', p.user.full_name if p.user else 'User')
+    
+    # Verify new participant exists and is not already in call
+    new_user = User.query.filter_by(id=new_participant_id).first()
+    if not new_user:
+        return jsonify({'error': 'Target user not found'}), 404
+    
+    existing = CallParticipant.query.filter_by(
+        call_id=call_id,
+        user_id=new_participant_id
+    ).first()
+    
+    if existing:
+        logger.info(f"[CALL_MGMT] User {new_participant_id} already in call {call_id}")
+        return jsonify({'error': 'Participant already in call'}), 409
+    
+    # Check participant limit
+    current_count = CallParticipant.query.filter_by(call_id=call_id).count()
+    if current_count >= call.max_participants:
+        logger.warning(f"[CALL_MGMT] Call {call_id} is at maximum capacity ({call.max_participants})")
+        return jsonify({'error': f'Call has reached maximum participants ({call.max_participants})'}), 409
+    
+    # Create new call participant
+    participant = CallParticipant(
+        id=str(uuid.uuid4()),
+        call_id=call_id,
+        user_id=new_participant_id,
+        role=role,
+        status='invited'
+    )
+    
+    db.session.add(participant)
+    
+    # Add to SFU room
+    if call.room_id and call.room_id in sfu_server.rooms:
+        sfu_server.invite_participant(call.room_id, int(new_participant_id))
+    
+    try:
+        db.session.commit()
+        logger.info(f"[CALL_MGMT] Added participant {new_participant_id} to call {call_id} (converted to group)")
+        
+        # Broadcast to all participants
+        _broadcast_to_call(call_id, 'call_converted_to_group', {
+            'call_id': call_id,
+            'call_mode': 'group',
+            'room_id': call.room_id,
+            'new_participant': participant.to_dict(),
+            'added_by': user_id
+        })
+        
+        # Send direct notification to invited user
+        if _socketio:
+            _socketio.emit('call_invitation', {
+                'call_id': call_id,
+                'call_type': call.call_type,
+                'call_mode': 'group',
+                'host_id': call.caller_id,
+                'host_name': call.caller.full_name if call.caller else None,
+                'role': role,
+                'room_id': call.room_id
+            }, room=f"user_{new_participant_id}")
+        
+        return jsonify({
+            'message': 'Participant added successfully - call converted to group',
+            'call': call.to_dict(),
+            'participant': participant.to_dict()
+        }), 201
+    
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"[CALL_MGMT] Error adding participant: {str(e)}")
+        return jsonify({'error': 'Failed to add participant'}), 500
     
     except Exception as e:
         db.session.rollback()

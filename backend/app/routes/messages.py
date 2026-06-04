@@ -428,3 +428,69 @@ def unread_count():
         return jsonify({'unread': count}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@messages_bp.route('/sync/<chat_with>', methods=['GET'])
+@jwt_required()
+def sync_messages(chat_with):
+    """Delta sync endpoint: returns only new/edited/deleted messages since a timestamp.
+
+    Query params:
+      - since: ISO8601 timestamp (required)
+    """
+    try:
+        user_id = get_jwt_identity()
+        since = request.args.get('since')
+        if not since:
+            return jsonify({'error': 'since parameter required'}), 400
+
+        from datetime import datetime
+        try:
+            since_dt = datetime.fromisoformat(since)
+        except Exception:
+            return jsonify({'error': 'invalid since timestamp'}), 400
+
+        # New messages
+        new_q = Message.query.filter(
+            db.or_(
+                db.and_(Message.sender_id == user_id, Message.receiver_id == chat_with),
+                db.and_(Message.sender_id == chat_with, Message.receiver_id == user_id),
+            ),
+            Message.created_at > since_dt,
+            Message.is_deleted_everyone == False,
+        ).order_by(Message.created_at.asc())
+
+        new_messages = [m.to_dict() for m in new_q.all()]
+
+        # Edited messages (updated after since but created before)
+        edited_q = Message.query.filter(
+            db.or_(
+                db.and_(Message.sender_id == user_id, Message.receiver_id == chat_with),
+                db.and_(Message.sender_id == chat_with, Message.receiver_id == user_id),
+            ),
+            Message.updated_at > since_dt,
+            Message.created_at <= since_dt,
+        ).order_by(Message.updated_at.asc())
+
+        edited_messages = [m.to_dict() for m in edited_q.all()]
+
+        # Deleted for everyone messages since 'since' (we notify clients to remove them)
+        deleted_q = Message.query.filter(
+            db.or_(
+                db.and_(Message.sender_id == user_id, Message.receiver_id == chat_with),
+                db.and_(Message.sender_id == chat_with, Message.receiver_id == user_id),
+            ),
+            Message.is_deleted_everyone == True,
+            Message.updated_at > since_dt,
+        )
+
+        deleted_ids = [m.id for m in deleted_q.all()]
+
+        return jsonify({
+            'new_messages': new_messages,
+            'edited_messages': edited_messages,
+            'deleted_message_ids': deleted_ids,
+            'server_time': datetime.utcnow().isoformat()
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

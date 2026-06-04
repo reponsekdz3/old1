@@ -1,4 +1,6 @@
 from flask import Flask, jsonify, send_from_directory
+import gzip
+import io
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_socketio import SocketIO, emit, join_room, leave_room
@@ -194,7 +196,7 @@ def create_app(config_name='development'):
     from app.routes.security_audit import security_audit_bp
     from app.routes.contacts_sync import contacts_sync_bp
     from app.routes.sfu_routes import sfu_bp, register_sfu_socket_events
-    from app.routes.call_management import call_mgmt_bp
+    from app.routes.call_management import call_mgmt_bp, set_socketio
     app.register_blueprint(e2ee_bp)
     app.register_blueprint(security_audit_bp)
     app.register_blueprint(contacts_sync_bp)
@@ -293,6 +295,19 @@ def create_app(config_name='development'):
         user_id = data.get('user_id')
         receiver_id = data.get('receiver_id')
         if receiver_id:
+            try:
+                # Throttle typing events per sender->receiver to reduce bandwidth
+                key = f"typing:{user_id}:{receiver_id}"
+                if hasattr(app, 'cache_manager') and app.cache_manager:
+                    existing = app.cache_manager.get(key)
+                    if existing:
+                        return
+                    # Set short TTL so repeated typing within window is suppressed
+                    app.cache_manager.set(key, {'ts': datetime.utcnow().isoformat()}, cache_type='default', ex=3)
+            except Exception:
+                # Best-effort; don't break typing flow
+                pass
+
             emit('typing_indicator', {'user_id': user_id}, room=f"user_{receiver_id}")
 
     @socketio.on('stop_typing')
@@ -300,7 +315,43 @@ def create_app(config_name='development'):
         user_id = data.get('user_id')
         receiver_id = data.get('receiver_id')
         if receiver_id:
+            try:
+                key = f"typing:{user_id}:{receiver_id}"
+                if hasattr(app, 'cache_manager') and app.cache_manager:
+                    app.cache_manager.delete(key)
+            except Exception:
+                pass
+
             emit('stop_typing_indicator', {'user_id': user_id}, room=f"user_{receiver_id}")
+
+    # Enable lightweight gzip compression for JSON/text responses to save bandwidth
+    @app.after_request
+    def compress_response(response):
+        try:
+            accept_enc = request.headers.get('Accept-Encoding', '')
+            if 'gzip' not in accept_enc.lower():
+                return response
+
+            content_type = response.headers.get('Content-Type', '')
+            if not (content_type.startswith('application/json') or content_type.startswith('text/')):
+                return response
+
+            # Do not compress very small responses
+            data = response.get_data()
+            if not data or len(data) < 500:
+                return response
+
+            gzip_buffer = io.BytesIO()
+            with gzip.GzipFile(mode='wb', fileobj=gzip_buffer, compresslevel=5) as gz:
+                gz.write(data)
+
+            response.set_data(gzip_buffer.getvalue())
+            response.headers['Content-Encoding'] = 'gzip'
+            response.headers['Vary'] = 'Accept-Encoding'
+            response.headers['Content-Length'] = len(response.get_data())
+            return response
+        except Exception:
+            return response
 
     @socketio.on('message')
     def handle_message(data):
@@ -550,6 +601,10 @@ def create_app(config_name='development'):
     
     # Register SFU socket events
     register_sfu_socket_events(socketio)
+    
+    # Set socketio instance for call management broadcasting
+    from app.routes.call_management import set_socketio
+    set_socketio(socketio)
 
     # ── Database setup ────────────────────────────────────────────────────
     with app.app_context():
@@ -621,6 +676,31 @@ def create_app(config_name='development'):
                 response_time_ms INTEGER,
                 ip_address VARCHAR(45)
             )''',
+            # Call participants table for advanced call management
+            '''CREATE TABLE IF NOT EXISTS call_participants (
+                id VARCHAR(36) PRIMARY KEY,
+                call_id VARCHAR(36) NOT NULL REFERENCES calls(id),
+                user_id VARCHAR(36) NOT NULL REFERENCES users(id),
+                role VARCHAR(20) DEFAULT 'participant',
+                status VARCHAR(20) DEFAULT 'invited',
+                audio_enabled BOOLEAN DEFAULT 1,
+                video_enabled BOOLEAN DEFAULT 1,
+                screen_share BOOLEAN DEFAULT 0,
+                video_quality VARCHAR(20) DEFAULT 'medium',
+                bandwidth_limit INTEGER DEFAULT 2500,
+                socket_id VARCHAR(255),
+                joined_at TIMESTAMP NULL,
+                left_at TIMESTAMP NULL,
+                duration INTEGER DEFAULT 0,
+                is_muted BOOLEAN DEFAULT 0,
+                is_video_muted BOOLEAN DEFAULT 0,
+                invited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                responded_at TIMESTAMP NULL
+            )''',
+            'CREATE INDEX IF NOT EXISTS ix_call_participants_call_id ON call_participants(call_id)',
+            'CREATE INDEX IF NOT EXISTS ix_call_participants_user_id ON call_participants(user_id)',
+            'CREATE INDEX IF NOT EXISTS ix_call_participants_role ON call_participants(role)',
+            'CREATE INDEX IF NOT EXISTS ix_call_participants_status ON call_participants(status)',
         ]
         for sql in migrations:
             try:

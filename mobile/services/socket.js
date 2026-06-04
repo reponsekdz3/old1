@@ -11,6 +11,10 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const messageQueue = [];
 const eventListeners = new Map();
+// Typing throttle to reduce frequent small events
+const TYPING_THROTTLE_MS = 4000; // send typing at most once per 4s
+let lastTypingSentAt = 0;
+let stopTypingTimer = null;
 
 export const initializeSocket = async (userId) => {
   if (socket && socket.connected) return socket;
@@ -216,6 +220,27 @@ async function processMessageQueue() {
 
 export const emitWithQueue = (event, data) => {
   return new Promise((resolve, reject) => {
+    // Special-case typing events: throttle to reduce bandwidth
+    if (event === 'typing' || event === 'stop_typing') {
+      const now = Date.now();
+
+      if (event === 'typing') {
+        if (now - lastTypingSentAt < TYPING_THROTTLE_MS) {
+          // schedule a stop_typing after a short idle to avoid floods
+          clearTimeout(stopTypingTimer);
+          stopTypingTimer = setTimeout(() => {
+            emitWithQueue('stop_typing', data).catch(() => {});
+          }, 3000);
+          resolve();
+          return;
+        }
+        lastTypingSentAt = now;
+      } else if (event === 'stop_typing') {
+        // allow immediate stop_typing without counting against throttle
+      }
+
+    }
+
     if (socket && socket.connected) {
       try {
         socket.emit(event, data);

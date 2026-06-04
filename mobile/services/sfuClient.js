@@ -1,5 +1,6 @@
 import { io } from 'socket.io-client';
 import { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, mediaDevices } from 'react-native-webrtc';
+import NetInfo from '@react-native-community/netinfo';
 import { SOCKET_URL } from '../config';
 
 const ICE_SERVERS = [
@@ -121,14 +122,32 @@ class SFUClient {
 
     // Get local media stream
     try {
-      this.localStream = await mediaDevices.getUserMedia({
+      // Adapt media constraints based on current network conditions to save data
+      const state = await NetInfo.fetch();
+      const connectionType = state.type || 'unknown';
+
+      const getVideoConstraints = () => {
+        if (!videoEnabled) return false;
+
+        // Conservative defaults for low-data connections
+        if (connectionType === 'cellular') {
+          return { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 15 } };
+        }
+
+        if (connectionType === 'wifi' || connectionType === 'ethernet') {
+          return { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24 } };
+        }
+
+        // Fallback minimal settings
+        return { width: { ideal: 480 }, height: { ideal: 360 }, frameRate: { ideal: 15 } };
+      };
+
+      const constraints = {
         audio: audioEnabled,
-        video: videoEnabled ? {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30 }
-        } : false
-      });
+        video: getVideoConstraints()
+      };
+
+      this.localStream = await mediaDevices.getUserMedia(constraints);
 
       if (this.onLocalStream) {
         this.onLocalStream(this.localStream);
@@ -144,6 +163,27 @@ class SFUClient {
       user_id: this.userId,
       username: this.username
     });
+  }
+
+  // Optionally reduce sender bitrate/encodings for low-data connections
+  async _adjustSenderEncodings(pc) {
+    try {
+      const state = await NetInfo.fetch();
+      if (state.type === 'cellular') {
+        const senders = pc.getSenders ? pc.getSenders() : [];
+        for (const sender of senders) {
+          if (!sender || !sender.getParameters) continue;
+          const params = sender.getParameters();
+          if (!params.encodings) params.encodings = [{}];
+          // Cap bitrate low for cellular
+          params.encodings = params.encodings.map(enc => ({ ...(enc || {}), maxBitrate: 150_000 }));
+          await sender.setParameters(params).catch(() => {});
+        }
+      }
+    } catch (err) {
+      // Non-fatal
+      console.warn('[SFU] adjustSenderEncodings failed:', err);
+    }
   }
 
   async _createPeerConnection(peerId, isInitiator) {
