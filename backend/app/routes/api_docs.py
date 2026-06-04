@@ -1,938 +1,834 @@
-"""Advanced API Documentation Generator
-Generates interactive API docs in multiple languages with full code examples, playgrounds, and language-specific SDK documentation."""
+"""
+API Documentation System
+Features: Multilingual docs, interactive examples, purchase links, version control
+"""
 
-from flask import Blueprint, jsonify, request, send_file
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from typing import Dict, List, Any, Optional
-import json
-import hashlib
-import secrets
+from flask import Blueprint, jsonify, request
 from datetime import datetime
+import uuid
 
-api_docs_bp = Blueprint('api_docs', __name__, url_prefix='/api/docs')
+docs_bp = Blueprint('docs', __name__, url_prefix='/api/docs')
 
-# Supported programming languages
-SUPPORTED_LANGUAGES = {
-    'curl': {
-        'name': 'cURL',
-        'color': '#000000',
-        'bg': '#FFFFFF',
-        'icon': 'terminal',
-        'extension': '.sh',
-        'install': '# No installation needed - cURL is pre-installed on most systems'
-    },
-    'python': {
-        'name': 'Python',
-        'color': '#3776AB',
-        'bg': '#FFF7EA',
-        'icon': 'code',
-        'extension': '.py',
-        'install': 'pip install vipchat requests',
-        'pip': 'vipchat',
-        'package_manager': 'pip'
-    },
-    'javascript': {
-        'name': 'JavaScript/Node.js',
-        'color': '#F7DF1E',
-        'bg': '#FFFEF0',
-        'icon': 'code',
-        'extension': '.js',
-        'install': 'npm install vipchat axios',
-        'npm': 'vipchat',
-        'package_manager': 'npm'
-    },
-    'typescript': {
-        'name': 'TypeScript',
-        'color': '#3178C6',
-        'bg': '#F0F6FF',
-        'icon': 'code',
-        'extension': '.ts',
-        'install': 'npm install vipchat axios && npm install -D @types/node',
-        'npm': 'vipchat',
-        'package_manager': 'npm'
-    },
-    'java': {
-        'name': 'Java',
-        'color': '#ED8B00',
-        'bg': '#FFF0E0',
-        'icon': 'code',
-        'extension': '.java',
-        'install': 'Maven: Add dependency to pom.xml or Gradle: implementation "app.vipchat:vipchat-java:2.0.0"',
-        'maven': 'app.vipchat:vipchat-java',
-        'gradle': 'implementation "app.vipchat:vipchat-java:2.0.0"',
-        'package_manager': 'maven'
-    },
-    'go': {
-        'name': 'Go',
-        'color': '#00ADD8',
-        'bg': '#E6F7FF',
-        'icon': 'code',
-        'extension': '.go',
-        'install': 'go get github.com/vipchat/vipchat-go',
-        'import': 'github.com/vipchat/vipchat-go',
-        'package_manager': 'go'
-    },
-    'php': {
-        'name': 'PHP',
-        'color': '#777BB4',
-        'bg': '#F5F5FF',
-        'icon': 'code',
-        'extension': '.php',
-        'install': 'composer require vipchat/vipchat-php',
-        'composer': 'vipchat/vipchat-php',
-        'package_manager': 'composer'
-    },
-    'ruby': {
-        'name': 'Ruby',
-        'color': '#CC342D',
-        'bg': '#FFE6E6',
-        'icon': 'code',
-        'extension': '.rb',
-        'install': 'gem install vipchat',
-        'gem': 'vipchat',
-        'package_manager': 'gem'
-    },
-    'csharp': {
-        'name': 'C#/.NET',
-        'color': '#512BD4',
-        'bg': '#F5EEFF',
-        'icon': 'code',
-        'extension': '.cs',
-        'install': 'dotnet add package VipChat',
-        'nuget': 'VipChat',
-        'package_manager': 'nuget'
-    },
-    'swift': {
-        'name': 'Swift',
-        'color': '#F05138',
-        'bg': '#FFF0EB',
-        'icon': 'code',
-        'extension': '.swift',
-        'install': 'Add to Package.swift dependencies or via Xcode SPM',
-        'swift_pkg': 'VipChat',
-        'package_manager': 'spm'
-    },
-    'kotlin': {
-        'name': 'Kotlin',
-        'color': '#7F52FF',
-        'bg': '#F3EEFF',
-        'icon': 'code',
-        'extension': '.kt',
-        'install': 'implementation "app.vipchat:vipchat-kotlin:2.0.0"',
-        'maven': 'app.vipchat:vipchat-kotlin',
-        'gradle': 'implementation "app.vipchat:vipchat-kotlin:2.0.0"',
-        'package_manager': 'gradle'
-    }
-}
-
-# Complete API Documentation
-API_DOCUMENTATION = {
-    "meta": {
-        "version": "2.0.0",
-        "title": "VipChat Business API",
-        "description": "Enterprise-grade messaging API for businesses. Send messages, manage contacts, create chatbots, and integrate VipChat into your applications.",
-        "base_url": "https://api.vipchat.app",
-        "contact": {
-            "name": "VipChat API Support",
-            "email": "api-support@vipchat.app",
-            "url": "https://vipchat.app/api-platform"
+# Multilingual documentation content
+DOCS_CONTENT = {
+    'en': {
+        'meta': {
+            'title': 'VipChat API Documentation',
+            'description': 'Complete API reference for VipChat messaging platform',
+            'version': '2.0.0',
+            'base_url': 'https://api.vipchat.com',
         },
-        "license": {
-            "name": "Apache 2.0",
-            "url": "https://www.apache.org/licenses/LICENSE-2.0"
-        }
-    },
-    
-    "authentication": {
-        "type": "bearer",
-        "description": "All API requests must include a valid API key in the Authorization header.",
-        "header_format": "Authorization: Bearer vck_live_your_api_key",
-        "security_schemes": {
-            "bearer_auth": {
-                "type": "http",
-                "scheme": "bearer",
-                "bearer_format": "API Key"
-            },
-            "api_key": {
-                "type": "apiKey",
-                "in": "header",
-                "name": "X-API-Key"
-            },
-            "hmac_signature": {
-                "type": "apiKey",
-                "in": "header",
-                "name": "X-Signature",
-                "description": "HMAC-SHA256 signature for enterprise accounts"
-            }
-        }
-    },
-    
-    "rate_limits": {
-        "tiers": {
-            "starter": {"daily_messages": 100, "per_second": 10, "price_usd": 0},
-            "pro": {"daily_messages": 10000, "per_second": 50, "price_usd": 29},
-            "enterprise": {"daily_messages": "unlimited", "per_second": 500, "price_usd": 99}
-        },
-        "headers": {
-            "X-RateLimit-Limit": "Your daily message limit",
-            "X-RateLimit-Remaining": "Messages remaining today",
-            "X-RateLimit-Reset": "Unix timestamp when limit resets"
-        }
-    },
-    
-    "endpoints": [
-        # ========== MESSAGING ==========
-        {
-            "group": "Messaging",
-            "endpoints": [
+        'getting_started': {
+            'title': 'Getting Started',
+            'description': 'Learn how to authenticate and make your first API call',
+            'steps': [
                 {
-                    "method": "POST",
-                    "path": "/v1/messages/send",
-                    "summary": "Send a message to a VipChat user",
-                    "description": "Send a text, image, video, or document message to any VipChat user by their phone number.",
-                    "tags": ["Messages"],
-                    "authentication": True,
-                    "request_body": {
-                        "content_type": "application/json",
-                        "schema": {
-                            "type": "object",
-                            "required": ["to"],
-                            "properties": {
-                                "to": {
-                                    "type": "string",
-                                    "description": "Recipient phone number in E.164 format",
-                                    "example": "+1234567890",
-                                    "pattern": "^\\+[1-9]\\d{1,14}$"
-                                },
-                                "message": {
-                                    "type": "string",
-                                    "description": "Text message content (max 4096 characters)",
-                                    "example": "Hello from VipChat API!",
-                                    "max_length": 4096
-                                },
-                                "media_url": {
-                                    "type": "string",
-                                    "format": "uri",
-                                    "description": "URL to media file (image, video, document)",
-                                    "example": "https://example.com/image.jpg"
-                                },
-                                "media_type": {
-                                    "type": "string",
-                                    "enum": ["image", "video", "document", "audio"],
-                                    "description": "Type of media being sent"
-                                },
-                                "reply_to": {
-                                    "type": "string",
-                                    "description": "Message ID to reply to",
-                                    "example": "msg_abc123"
-                                },
-                                "priority": {
-                                    "type": "string",
-                                    "enum": ["normal", "high"],
-                                    "default": "normal",
-                                    "description": "Message delivery priority"
-                                },
-                                "metadata": {
-                                    "type": "object",
-                                    "description": "Custom metadata for tracking (max 1KB)",
-                                    "example": {"campaign_id": "summer2024"}
-                                }
-                            }
-                        }
-                    },
-                    "responses": {
-                        "200": {
-                            "description": "Message sent successfully",
-                            "schema": {
-                                "success": True,
-                                "message_id": "msg_abc123xyz",
-                                "to": "+1234567890",
-                                "status": "sent",
-                                "timestamp": "2026-06-03T12:00:00Z",
-                                "delivery_estimate": "2026-06-03T12:00:05Z"
+                    'title': 'Create an API Key',
+                    'description': 'Sign up and create your first API key from the dashboard',
+                    'link': '/dashboard/api-keys'
+                },
+                {
+                    'title': 'Choose Your Plan',
+                    'description': 'Select a plan that fits your needs',
+                    'link': '/pricing'
+                },
+                {
+                    'title': 'Make Your First Request',
+                    'description': 'Use your API key to authenticate requests',
+                    'code_example': {
+                        'bash': 'curl -X GET "https://api.vipchat.com/api/test/connection" \\\n  -H "X-API-Key: your_api_key"',
+                        'javascript': `const response = await fetch('https://api.vipchat.com/api/test/connection', {
+  headers: { 'X-API-Key': 'your_api_key' }
+});
+const data = await response.json();`,
+                        'python': `import requests
+
+response = requests.get(
+    'https://api.vipchat.com/api/test/connection',
+    headers={'X-API-Key': 'your_api_key'}
+)
+print(response.json())`,
+                    }
+                }
+            ]
+        },
+        'authentication': {
+            'title': 'Authentication',
+            'description': 'All API requests require authentication via API key',
+            'header': 'X-API-Key',
+            'example': 'Authorization: Bearer your_api_key',
+            'types': [
+                {
+                    'name': 'API Key Authentication',
+                    'description': 'Include your API key in the X-API-Key header',
+                    'code': 'curl -H "X-API-Key: vipchat_test_xxxxxxxx" https://api.vipchat.com/api/test/connection'
+                },
+                {
+                    'name': 'JWT Token',
+                    'description': 'For user-specific operations, use JWT tokens',
+                    'code': 'curl -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9..." https://api.vipchat.com/api/auth/user'
+                }
+            ]
+        },
+        'endpoints': {
+            'title': 'API Endpoints',
+            'description': 'Complete list of available API endpoints',
+            'categories': [
+                {
+                    'name': 'Authentication',
+                    'icon': 'shield',
+                    'endpoints': [
+                        {
+                            'method': 'POST',
+                            'path': '/api/auth/login',
+                            'description': 'Login with phone and password',
+                            'body': {
+                                'phone': '+1234567890',
+                                'password': 'your_password'
+                            },
+                            'response': {
+                                'access_token': 'eyJ...',
+                                'refresh_token': 'ref_...',
+                                'user': {'id': '123', 'full_name': 'John'}
                             }
                         },
-                        "400": {"description": "Invalid request - missing required fields"},
-                        "401": {"description": "Invalid or missing API key"},
-                        "404": {"description": "Recipient not found on VipChat"},
-                        "429": {"description": "Rate limit exceeded"}
-                    },
-                    "examples": {
-                        "curl": '''curl -X POST https://api.vipchat.app/v1/messages/send \\
-  -H "Authorization: Bearer vck_live_your_api_key" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "to": "+1234567890",
-    "message": "Hello from VipChat API!"
-  }' ''',
-                        "python": '''import requests
-
-response = requests.post(
-    "https://api.vipchat.app/v1/messages/send",
-    headers={
-        "Authorization": "Bearer vck_live_your_api_key",
-        "Content-Type": "application/json"
-    },
-    json={
-        "to": "+1234567890",
-        "message": "Hello from VipChat API!"
-    }
-)
-print(response.json())''',
-                        "javascript": '''const response = await fetch('https://api.vipchat.app/v1/messages/send', {
-  method: 'POST',
-  headers: {
-    'Authorization': 'Bearer vck_live_your_api_key',
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({
-    to: '+1234567890',
-    message: 'Hello from VipChat API!'
-  })
-});
-const data = await response.json();
-console.log(data);''',
-                        "java": '''import java.net.http.*;
-import java.net.URI;
-
-HttpClient client = HttpClient.newHttpClient();
-String body = """
-  {"to":"+1234567890","message":"Hello from VipChat API!"}
-  """;
-HttpRequest request = HttpRequest.newBuilder()
-    .uri(URI.create("https://api.vipchat.app/v1/messages/send"))
-    .header("Authorization", "Bearer vck_live_your_api_key")
-    .header("Content-Type", "application/json")
-    .POST(HttpRequest.BodyPublishers.ofString(body))
-    .build();
-HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-System.out.println(response.body());''',
-                        "go": '''package main
-
-import (
-    "bytes"
-    "encoding/json"
-    "net/http"
-)
-
-func main() {
-    payload := map[string]string{
-        "to":      "+1234567890",
-        "message": "Hello from VipChat API!",
-    }
-    body, _ := json.Marshal(payload)
-    
-    req, _ := http.NewRequest("POST", "https://api.vipchat.app/v1/messages/send", bytes.NewBuffer(body))
-    req.Header.Set("Authorization", "Bearer vck_live_your_api_key")
-    req.Header.Set("Content-Type", "application/json")
-    
-    client := &http.Client{}
-    resp, _ := client.Do(req)
-    defer resp.Body.Close()
-}''',
-                        "php": '''<?php
-$ch = curl_init('https://api.vipchat.app/v1/messages/send');
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    'Authorization: Bearer vck_live_your_api_key',
-    'Content-Type: application/json'
-]);
-curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
-    'to' => '+1234567890',
-    'message' => 'Hello from VipChat API!'
-]));
-$response = curl_exec($ch);
-curl_close($ch);
-echo $response;
-?>''',
-                        "ruby": '''require 'net/http'
-require 'json'
-
-uri = URI('https://api.vipchat.app/v1/messages/send')
-http = Net::HTTP.new(uri.host, uri.port)
-http.use_ssl = true
-
-request = Net::HTTP::Post.new(uri.path)
-request['Authorization'] = 'Bearer vck_live_your_api_key'
-request['Content-Type'] = 'application/json'
-request.body = { to: '+1234567890', message: 'Hello from VipChat API!' }.to_json
-
-response = http.request(request)
-puts response.body''',
-                        "csharp": '''using System.Net.Http;
-using System.Text;
-using System.Text.Json;
-
-var client = new HttpClient();
-client.DefaultRequestHeaders.Add("Authorization", "Bearer vck_live_your_api_key");
-
-var payload = new { to = "+1234567890", message = "Hello from VipChat API!" };
-var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-var response = await client.PostAsync("https://api.vipchat.app/v1/messages/send", content);
-var result = await response.Content.ReadAsStringAsync();
-Console.WriteLine(result);'''
-                    }
-                },
-                {
-                    "method": "GET",
-                    "path": "/v1/messages",
-                    "summary": "List sent messages",
-                    "description": "Retrieve a paginated list of messages sent through the API.",
-                    "tags": ["Messages"],
-                    "authentication": True,
-                    "parameters": [
-                        {"name": "limit", "in": "query", "type": "integer", "default": 50, "max": 200, "description": "Number of messages to return"},
-                        {"name": "offset", "in": "query", "type": "integer", "default": 0, "description": "Pagination offset"},
-                        {"name": "status", "in": "query", "type": "string", "enum": ["sent", "delivered", "read", "failed"], "description": "Filter by status"},
-                        {"name": "start_date", "in": "query", "type": "string", "format": "date", "description": "Filter from date (ISO 8601)"},
-                        {"name": "end_date", "in": "query", "type": "string", "format": "date", "description": "Filter to date (ISO 8601)"}
-                    ],
-                    "responses": {
-                        "200": {
-                            "description": "List of messages",
-                            "schema": {
-                                "messages": [],
-                                "count": 0,
-                                "offset": 0,
-                                "has_more": True
-                            }
-                        }
-                    },
-                    "examples": {
-                        "curl": "curl -X GET 'https://api.vipchat.app/v1/messages?limit=50' -H 'Authorization: Bearer vck_live_your_api_key'"
-                    }
-                },
-                {
-                    "method": "GET",
-                    "path": "/v1/messages/{message_id}",
-                    "summary": "Get message details",
-                    "description": "Retrieve details of a specific message by ID.",
-                    "tags": ["Messages"],
-                    "authentication": True,
-                    "parameters": [
-                        {"name": "message_id", "in": "path", "required": True, "type": "string", "description": "Message ID"}
-                    ],
-                    "responses": {
-                        "200": {
-                            "description": "Message details",
-                            "schema": {
-                                "id": "msg_abc123",
-                                "to": "+1234567890",
-                                "status": "delivered",
-                                "delivered_at": "2026-06-03T12:00:05Z",
-                                "read_at": "2026-06-03T12:01:00Z"
-                            }
-                        }
-                    }
-                },
-                {
-                    "method": "POST",
-                    "path": "/v1/broadcasts/send",
-                    "summary": "Send broadcast message",
-                    "description": "Send the same message to multiple recipients (up to 1000).",
-                    "tags": ["Messages", "Broadcast"],
-                    "authentication": True,
-                    "request_body": {
-                        "content_type": "application/json",
-                        "schema": {
-                            "type": "object",
-                            "required": ["to", "message"],
-                            "properties": {
-                                "to": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "max_items": 1000,
-                                    "description": "List of recipient phone numbers",
-                                    "example": ["+1234567890", "+0987654321"]
-                                },
-                                "message": {"type": "string"},
-                                "media_url": {"type": "string"},
-                                "template_id": {
-                                    "type": "string",
-                                    "description": "Use a pre-approved template"
-                                }
-                            }
-                        }
-                    },
-                    "responses": {
-                        "200": {
-                            "description": "Broadcast sent",
-                            "schema": {
-                                "success": True,
-                                "sent": 98,
-                                "failed": 2,
-                                "failed_phones": ["+9990000000"],
-                                "total_messages": 100
-                            }
-                        }
-                    }
-                }
-            ]
-        },
-        
-        # ========== CONTACTS ==========
-        {
-            "group": "Contacts",
-            "endpoints": [
-                {
-                    "method": "POST",
-                    "path": "/v1/contacts/import",
-                    "summary": "Import and validate contacts",
-                    "description": "Import contacts by phone number and check which are registered on VipChat.",
-                    "tags": ["Contacts"],
-                    "authentication": True,
-                    "request_body": {
-                        "schema": {
-                            "type": "object",
-                            "required": ["contacts"],
-                            "properties": {
-                                "contacts": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "phone": {"type": "string"},
-                                            "name": {"type": "string"},
-                                            "email": {"type": "string"}
-                                        }
-                                    },
-                                    "max_items": 500
-                                }
-                            }
-                        }
-                    },
-                    "responses": {
-                        "200": {
-                            "description": "Contacts processed",
-                            "schema": {
-                                "imported": 10,
-                                "not_found": 5,
-                                "contacts": [
-                                    {"phone": "+1234567890", "user_id": "user_123", "name": "John Doe", "is_vipchat_user": True}
-                                ],
-                                "missing": ["+9990000000"]
-                            }
-                        }
-                    },
-                    "examples": {
-                        "curl": '''curl -X POST https://api.vipchat.app/v1/contacts/import \\
-  -H "Authorization: Bearer vck_live_your_api_key" \\
-  -H "Content-Type: application/json" \\
-  -d '{"contacts":[{"phone":"+1234567890","name":"John Doe"}]}' '''
-                    }
-                },
-                {
-                    "method": "GET",
-                    "path": "/v1/contacts",
-                    "summary": "List contacts",
-                    "description": "Retrieve all contacts associated with your API account.",
-                    "tags": ["Contacts"],
-                    "authentication": True,
-                    "parameters": [
-                        {"name": "search", "in": "query", "type": "string", "description": "Search by name or phone"},
-                        {"name": "limit", "in": "query", "type": "integer", "default": 100}
-                    ],
-                    "responses": {
-                        "200": {
-                            "description": "List of contacts",
-                            "schema": {
-                                "contacts": [],
-                                "count": 0
-                            }
-                        }
-                    }
-                }
-            ]
-        },
-        
-        # ========== GROUPS ==========
-        {
-            "group": "Groups",
-            "endpoints": [
-                {
-                    "method": "POST",
-                    "path": "/v1/groups/create",
-                    "summary": "Create a group",
-                    "description": "Create a new group and optionally add members.",
-                    "tags": ["Groups"],
-                    "authentication": True,
-                    "request_body": {
-                        "schema": {
-                            "type": "object",
-                            "required": ["name"],
-                            "properties": {
-                                "name": {"type": "string", "max_length": 100, "description": "Group name"},
-                                "description": {"type": "string", "max_length": 500},
-                                "member_phones": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "max_items": 100,
-                                    "description": "Phone numbers to add"
-                                },
-                                "settings": {
-                                    "type": "object",
-                                    "properties": {
-                                        "only_admins_send": {"type": "boolean", "default": False},
-                                        "only_admins_edit_info": {"type": "boolean", "default": True}
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    "responses": {
-                        "201": {
-                            "description": "Group created",
-                            "schema": {
-                                "success": True,
-                                "group_id": "grp_abc123",
-                                "name": "My Group",
-                                "member_count": 5,
-                                "invite_link": "https://vipchat.app/join/abc123"
-                            }
-                        }
-                    }
-                },
-                {
-                    "method": "POST",
-                    "path": "/v1/groups/{group_id}/members/add",
-                    "summary": "Add members to group",
-                    "tags": ["Groups"],
-                    "authentication": True,
-                    "request_body": {
-                        "schema": {
-                            "type": "object",
-                            "required": ["phones"],
-                            "properties": {
-                                "phones": {"type": "array", "items": {"type": "string"}}
-                            }
-                        }
-                    }
-                },
-                {
-                    "method": "POST",
-                    "path": "/v1/groups/{group_id}/messages",
-                    "summary": "Send group message",
-                    "tags": ["Groups"],
-                    "authentication": True
-                }
-            ]
-        },
-        
-        # ========== WEBHOOKS ==========
-        {
-            "group": "Webhooks",
-            "endpoints": [
-                {
-                    "method": "POST",
-                    "path": "/v1/webhooks/configure",
-                    "summary": "Configure webhook URL",
-                    "description": "Set up a webhook to receive real-time events when users respond to your messages.",
-                    "tags": ["Webhooks"],
-                    "authentication": True,
-                    "request_body": {
-                        "schema": {
-                            "type": "object",
-                            "required": ["url"],
-                            "properties": {
-                                "url": {"type": "string", "format": "uri", "description": "HTTPS URL to receive webhooks"},
-                                "events": {
-                                    "type": "array",
-                                    "items": {"type": "string", "enum": ["message.received", "message.delivered", "message.read", "message.failed", "contact.added"]},
-                                    "description": "Events to subscribe to (default: all)"
-                                }
-                            }
-                        }
-                    },
-                    "responses": {
-                        "200": {
-                            "description": "Webhook configured",
-                            "schema": {
-                                "success": True,
-                                "webhook_url": "https://yourapp.com/webhook",
-                                "webhook_secret": "whsec_abc123...",
-                                "events": ["message.received", "message.delivered"]
-                            }
-                        }
-                    },
-                    "webhook_payloads": {
-                        "message.received": {
-                            "event": "message.received",
-                            "data": {
-                                "from": "+1234567890",
-                                "message_id": "msg_abc123",
-                                "content": "Hello!",
-                                "timestamp": "2026-06-03T12:00:00Z"
+                        {
+                            'method': 'POST',
+                            'path': '/api/auth/signup',
+                            'description': 'Register new user',
+                            'body': {
+                                'phone': '+1234567890',
+                                'password': 'your_password',
+                                'full_name': 'John Doe'
                             },
-                            "signature": "sha256=..."
+                            'response': {
+                                'access_token': 'eyJ...',
+                                'user': {'id': '123', 'full_name': 'John Doe'}
+                            }
+                        },
+                        {
+                            'method': 'GET',
+                            'path': '/api/auth/user',
+                            'description': 'Get current user profile',
+                            'headers': {'Authorization': 'Bearer token'},
+                            'response': {
+                                'id': '123',
+                                'full_name': 'John Doe',
+                                'phone': '+1234567890',
+                                'avatar_url': 'https://...'
+                            }
                         }
-                    }
+                    ]
                 },
                 {
-                    "method": "POST",
-                    "path": "/v1/webhooks/test",
-                    "summary": "Test webhook delivery",
-                    "description": "Send a test event to your configured webhook URL.",
-                    "tags": ["Webhooks"],
-                    "authentication": True
+                    'name': 'Messages',
+                    'icon': 'message',
+                    'endpoints': [
+                        {
+                            'method': 'GET',
+                            'path': '/api/messages/chat/:id',
+                            'description': 'Get chat history with a user',
+                            'query': {'limit': 50, 'before': 'message_id'},
+                            'response': {
+                                'messages': [
+                                    {
+                                        'id': 'msg_123',
+                                        'sender_id': '123',
+                                        'content': 'Hello!',
+                                        'created_at': '2024-01-01T00:00:00Z'
+                                    }
+                                ]
+                            }
+                        },
+                        {
+                            'method': 'POST',
+                            'path': '/api/messages/:id',
+                            'description': 'Send a message',
+                            'body': {
+                                'receiver_id': '456',
+                                'content': 'Hello!',
+                                'media_url': 'optional'
+                            },
+                            'response': {
+                                'message': {'id': 'msg_123', 'status': 'sent'}
+                            }
+                        }
+                    ]
+                },
+                {
+                    'name': 'Calls',
+                    'icon': 'phone',
+                    'endpoints': [
+                        {
+                            'method': 'POST',
+                            'path': '/api/calls/initiate',
+                            'description': 'Start a voice or video call',
+                            'body': {
+                                'callee_id': '456',
+                                'call_type': 'video'
+                            },
+                            'response': {
+                                'call_id': 'call_123',
+                                'room_id': 'room_abc',
+                                'ice_servers': [{'urls': 'stun:stun.l.google.com:19302'}]
+                            }
+                        },
+                        {
+                            'method': 'GET',
+                            'path': '/api/calls/history',
+                            'description': 'Get call history',
+                            'response': {
+                                'calls': [
+                                    {
+                                        'id': 'call_123',
+                                        'caller_id': '123',
+                                        'call_type': 'video',
+                                        'duration': 120,
+                                        'status': 'completed'
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    'name': 'Contacts',
+                    'icon': 'users',
+                    'endpoints': [
+                        {
+                            'method': 'GET',
+                            'path': '/api/contacts',
+                            'description': 'Get contact list',
+                            'response': {
+                                'contacts': [
+                                    {'id': '123', 'full_name': 'John', 'status': 'online'}
+                                ]
+                            }
+                        },
+                        {
+                            'method': 'POST',
+                            'path': '/api/contacts',
+                            'description': 'Add new contact',
+                            'body': {'phone': '+1234567890'}
+                        }
+                    ]
+                },
+                {
+                    'name': 'Groups',
+                    'icon': 'database',
+                    'endpoints': [
+                        {
+                            'method': 'GET',
+                            'path': '/api/groups',
+                            'description': 'List user groups',
+                            'response': {
+                                'groups': [
+                                    {'id': 'grp_1', 'name': 'Family', 'member_count': 5}
+                                ]
+                            }
+                        },
+                        {
+                            'method': 'POST',
+                            'path': '/api/groups',
+                            'description': 'Create new group',
+                            'body': {
+                                'name': 'My Group',
+                                'members': ['123', '456']
+                            }
+                        }
+                    ]
+                },
+                {
+                    'name': 'File Upload',
+                    'icon': 'upload',
+                    'endpoints': [
+                        {
+                            'method': 'POST',
+                            'path': '/api/upload/image',
+                            'description': 'Upload image file',
+                            'body_type': 'multipart/form-data',
+                            'response': {
+                                'file_id': 'file_123',
+                                'url': '/uploads/images/file_123.jpg',
+                                'size': 102400
+                            }
+                        },
+                        {
+                            'method': 'POST',
+                            'path': '/api/upload/video',
+                            'description': 'Upload video file',
+                            'body_type': 'multipart/form-data'
+                        },
+                        {
+                            'method': 'POST',
+                            'path': '/api/upload/audio',
+                            'description': 'Upload audio/voice note',
+                            'body_type': 'multipart/form-data'
+                        }
+                    ]
+                },
+                {
+                    'name': 'Status Updates',
+                    'icon': 'activity',
+                    'endpoints': [
+                        {
+                            'method': 'GET',
+                            'path': '/api/status/all',
+                            'description': 'Get all status updates from contacts'
+                        },
+                        {
+                            'method': 'POST',
+                            'path': '/api/status',
+                            'description': 'Post new status update',
+                            'body': {
+                                'content': 'My status',
+                                'background_color': '#25D366'
+                            }
+                        }
+                    ]
                 }
             ]
         },
-        
-        # ========== ANALYTICS ==========
-        {
-            "group": "Analytics",
-            "endpoints": [
+        'pricing': {
+            'title': 'Pricing & Plans',
+            'description': 'Choose the perfect plan for your needs',
+            'plans': [
                 {
-                    "method": "GET",
-                    "path": "/v1/analytics",
-                    "summary": "Get usage analytics",
-                    "description": "Retrieve API usage statistics and metrics.",
-                    "tags": ["Analytics"],
-                    "authentication": True,
-                    "parameters": [
-                        {"name": "days", "in": "query", "type": "integer", "default": 7, "max": 90},
-                        {"name": "group_by", "in": "query", "type": "string", "enum": ["day", "hour"], "default": "day"}
+                    'id': 'free',
+                    'name': 'Free',
+                    'price': 0,
+                    'features': [
+                        '100 API requests/hour',
+                        '20 contacts',
+                        '3 groups',
+                        '2MB file uploads',
+                        'Basic messaging'
                     ],
-                    "responses": {
-                        "200": {
-                            "description": "Analytics data",
-                            "schema": {
-                                "period_days": 7,
-                                "total_calls": 1542,
-                                "total_messages": 8923,
-                                "success_rate": 99.2,
-                                "avg_latency_ms": 145,
-                                "daily": [],
-                                "by_endpoint": {
-                                    "/v1/messages/send": 1200,
-                                    "/v1/contacts/import": 342
-                                },
-                                "tier": "pro",
-                                "daily_limit": 10000
-                            }
-                        }
-                    }
-                }
-            ]
-        },
-        
-        # ========== ACCOUNT ==========
-        {
-            "group": "Account",
-            "endpoints": [
+                    'limitations': ['No video calls', 'No API access']
+                },
                 {
-                    "method": "GET",
-                    "path": "/v1/account",
-                    "summary": "Get account info",
-                    "description": "Retrieve your API account details, tier, and usage.",
-                    "tags": ["Account"],
-                    "authentication": True,
-                    "responses": {
-                        "200": {
-                            "description": "Account info",
-                            "schema": {
-                                "business_name": "Acme Corp",
-                                "tier": "pro",
-                                "is_active": True,
-                                "daily_limit": 10000,
-                                "today_used": 342,
-                                "remaining_today": 9658,
-                                "api_key_prefix": "vck_live_abc123...",
-                                "webhook_url": "https://yourapp.com/webhook",
-                                "created_at": "2026-01-01T00:00:00Z"
-                            }
-                        }
-                    }
+                    'id': 'pro',
+                    'name': 'Pro',
+                    'price': 9.99,
+                    'period': 'month',
+                    'features': [
+                        '1000 API requests/hour',
+                        '200 contacts',
+                        '50 groups',
+                        '25MB file uploads',
+                        'Video & voice calls',
+                        'Status updates',
+                        'Full API access'
+                    ],
+                    'cta': 'Get Pro'
+                },
+                {
+                    'id': 'enterprise',
+                    'name': 'Enterprise',
+                    'price': 49.99,
+                    'period': 'month',
+                    'features': [
+                        '10000 API requests/hour',
+                        'Unlimited contacts',
+                        'Unlimited groups',
+                        '100MB file uploads',
+                        'Priority support',
+                        'Webhooks',
+                        'Custom integrations'
+                    ],
+                    'cta': 'Contact Sales'
                 }
             ]
-        }
-    ],
-    
-    # SDK Downloads
-    "sdks": {
-        "python": {
-            "name": "vipchat-python",
-            "version": "2.0.0",
-            "install": "pip install vipchat",
-            "github": "https://github.com/vipchat/vipchat-python",
-            "docs": "https://docs.vipchat.app/python"
         },
-        "javascript": {
-            "name": "vipchat-node",
-            "version": "2.0.0",
-            "install": "npm install vipchat",
-            "github": "https://github.com/vipchat/vipchat-node",
-            "docs": "https://docs.vipchat.app/nodejs"
+        'sdks': {
+            'title': 'SDKs & Libraries',
+            'description': 'Official libraries for popular programming languages',
+            'languages': [
+                {
+                    'name': 'JavaScript/Node.js',
+                    'icon': 'javascript',
+                    'install': 'npm install @vipchat/sdk',
+                    'example': `import { VipChat } from '@vipchat/sdk';
+
+const client = new VipChat('your_api_key');
+
+const messages = await client.messages.list('chat_123');
+await client.messages.send({
+  receiver_id: '456',
+  content: 'Hello!'
+});`,
+                    'docs_link': '/docs/sdk/javascript'
+                },
+                {
+                    'name': 'Python',
+                    'icon': 'python',
+                    'install': 'pip install vipchat-sdk',
+                    'example': `from vipchat import VipChat
+
+client = VipChat('your_api_key')
+
+messages = client.messages.list('chat_123')
+client.messages.send(receiver_id='456', content='Hello!')`,
+                    'docs_link': '/docs/sdk/python'
+                },
+                {
+                    'name': 'React Native',
+                    'icon': 'react',
+                    'install': 'npx expo install vipchat-rn',
+                    'example': `import { VipChatProvider, useVipChat } from 'vipchat-rn';
+
+function App() {
+  return (
+    <VipChatProvider apiKey="your_key">
+      <ChatScreen />
+    </VipChatProvider>
+  );
+}`,
+                    'docs_link': '/docs/sdk/react-native'
+                }
+            ]
         },
-        "go": {
-            "name": "vipchat-go",
-            "version": "2.0.0",
-            "install": "go get github.com/vipchat/vipchat-go",
-            "github": "https://github.com/vipchat/vipchat-go",
-            "docs": "https://docs.vipchat.app/go"
-        },
-        "java": {
-            "name": "vipchat-java",
-            "version": "2.0.0",
-            "install": "Maven: <dependency>...<dependency>",
-            "github": "https://github.com/vipchat/vipchat-java",
-            "docs": "https://docs.vipchat.app/java"
-        }
-    },
-    
-    # Pricing & Plans
-    "pricing": {
-        "plans": [
-            {
-                "id": "starter",
-                "name": "Starter",
-                "price": 0,
-                "currency": "USD",
-                "billing": "monthly",
-                "features": [
-                    "100 messages per day",
-                    "Basic API access",
-                    "Webhook support",
-                    "Community support",
-                    "Standard delivery"
-                ],
-                "limits": {
-                    "daily_messages": 100,
-                    "requests_per_second": 10,
-                    "broadcast_recipients": 100,
-                    "groups": 5
-                }
-            },
-            {
-                "id": "pro",
-                "name": "Pro",
-                "price": 29,
-                "currency": "USD",
-                "billing": "monthly",
-                "popular": True,
-                "features": [
-                    "10,000 messages per day",
-                    "Priority delivery",
-                    "Advanced analytics",
-                    "Email support",
-                    "Webhook retries",
-                    "Message templates"
-                ],
-                "limits": {
-                    "daily_messages": 10000,
-                    "requests_per_second": 50,
-                    "broadcast_recipients": 1000,
-                    "groups": 50
-                }
-            },
-            {
-                "id": "enterprise",
-                "name": "Enterprise",
-                "price": 99,
-                "currency": "USD",
-                "billing": "monthly",
-                "features": [
-                    "Unlimited messages",
-                    "Dedicated support",
-                    "SLA guarantee (99.9%)",
-                    "Custom integrations",
-                    "Priority routing",
-                    "HMAC signature",
-                    "White-label options",
-                    "Dedicated account manager"
-                ],
-                "limits": {
-                    "daily_messages": "unlimited",
-                    "requests_per_second": 500,
-                    "broadcast_recipients": 10000,
-                    "groups": "unlimited"
-                }
+        'errors': {
+            'title': 'Error Handling',
+            'description': 'Understanding API error responses',
+            'codes': [
+                {'code': 400, 'name': 'Bad Request', 'description': 'Invalid request body or parameters'},
+                {'code': 401, 'name': 'Unauthorized', 'description': 'Invalid or missing API key'},
+                {'code': 403, 'name': 'Forbidden', 'description': 'Insufficient permissions'},
+                {'code': 404, 'name': 'Not Found', 'description': 'Resource not found'},
+                {'code': 429, 'name': 'Rate Limited', 'description': 'Too many requests'},
+                {'code': 500, 'name': 'Server Error', 'description': 'Internal server error'}
+            ],
+            'example': {
+                'error': 'Invalid API key',
+                'code': 401,
+                'message': 'The provided API key is invalid or expired'
             }
-        ],
-        "addons": [
-            {"id": "extra_messages", "name": "Extra 10K messages", "price": 10},
-            {"id": "priority_support", "name": "Priority Support", "price": 50},
-            {"id": "dedicated_ip", "name": "Dedicated IP", "price": 100}
-        ]
+        },
+        'webhooks': {
+            'title': 'Webhooks',
+            'description': 'Receive real-time notifications for events',
+            'events': [
+                {'event': 'message.received', 'description': 'New message received'},
+                {'event': 'message.delivered', 'description': 'Message delivered to recipient'},
+                {'event': 'call.ended', 'description': 'Call has ended'},
+                {'event': 'user.online', 'description': 'User came online'},
+                {'event': 'user.offline', 'description': 'User went offline'},
+                {'event': 'group.created', 'description': 'New group created'}
+            ],
+            'security': 'Verify webhook signatures using the X-Webhook-Signature header'
+        }
     },
-    
-    # Error codes
-    "errors": {
-        "AUTH_REQUIRED": {"code": 401, "message": "API key is required"},
-        "AUTH_INVALID": {"code": 401, "message": "Invalid API key"},
-        "CLIENT_SUSPENDED": {"code": 403, "message": "API client is suspended"},
-        "RATE_LIMIT_EXCEEDED": {"code": 429, "message": "Daily rate limit exceeded"},
-        "USER_NOT_FOUND": {"code": 404, "message": "User not found on VipChat"},
-        "INVALID_PHONE": {"code": 400, "message": "Invalid phone number format"},
-        "MESSAGE_TOO_LONG": {"code": 400, "message": "Message exceeds maximum length"},
-        "MEDIA_INVALID": {"code": 400, "message": "Invalid media URL or type"},
-        "GROUP_LIMIT": {"code": 400, "message": "Group limit exceeded"},
-        "WEBHOOK_FAILED": {"code": 502, "message": "Webhook delivery failed"}
+    'es': {
+        'meta': {
+            'title': 'Documentación de API VipChat',
+            'description': 'Referencia completa de API para la plataforma de mensajería VipChat',
+            'version': '2.0.0',
+            'base_url': 'https://api.vipchat.com',
+        },
+        'getting_started': {
+            'title': 'Comenzando',
+            'description': 'Aprende cómo autenticarte y hacer tu primera llamada API',
+            'steps': [
+                {
+                    'title': 'Crear una Clave API',
+                    'description': 'Regístrate y crea tu primera clave API desde el panel',
+                    'link': '/dashboard/api-keys'
+                },
+                {
+                    'title': 'Elige Tu Plan',
+                    'description': 'Selecciona un plan que se adapte a tus necesidades',
+                    'link': '/pricing'
+                }
+            ]
+        },
+        'authentication': {
+            'title': 'Autenticación',
+            'description': 'Todas las solicitudes de API requieren autenticación mediante clave API',
+            'header': 'X-API-Key',
+            'example': 'Authorization: Bearer tu_clave_api'
+        },
+        'pricing': {
+            'title': 'Precios y Planes',
+            'description': 'Elige el plan perfecto para tus necesidades',
+            'plans': [
+                {'id': 'free', 'name': 'Gratis', 'price': 0},
+                {'id': 'pro', 'name': 'Pro', 'price': 9.99, 'period': 'mes'},
+                {'id': 'enterprise', 'name': 'Empresarial', 'price': 49.99, 'period': 'mes'}
+            ]
+        }
+    },
+    'ar': {
+        'meta': {
+            'title': 'وثائق API فيب شات',
+            'description': 'مرجع API كامل لمنصة المراسلة فيب شات',
+            'version': '2.0.0',
+            'base_url': 'https://api.vipchat.com',
+        },
+        'getting_started': {
+            'title': 'البدء',
+            'description': 'تعلم كيفية المصادقة وإجراء أول طلب API',
+            'steps': [
+                {'title': 'إنشاء مفتاح API', 'description': 'سجل وأنشئ مفتاح API الأول'},
+                {'title': 'اختر خطتك', 'description': 'اختر خطة تناسب احتياجاتك'}
+            ]
+        },
+        'pricing': {
+            'title': 'الأسعار والخطط',
+            'description': 'اختر الخطة المثالية لاحتياجاتك',
+            'plans': [
+                {'id': 'free', 'name': 'مجاني', 'price': 0},
+                {'id': 'pro', 'name': 'احترافي', 'price': 9.99},
+                {'id': 'enterprise', 'name': 'مؤسسات', 'price': 49.99}
+            ]
+        }
+    },
+    'zh': {
+        'meta': {
+            'title': 'VipChat API 文档',
+            'description': 'VipChat 消息平台的完整 API 参考',
+            'version': '2.0.0',
+            'base_url': 'https://api.vipchat.com',
+        },
+        'getting_started': {
+            'title': '开始使用',
+            'description': '了解如何进行身份验证和您的第一个 API 调用',
+            'steps': [
+                {'title': '创建 API 密钥', 'description': '注册并从仪表板创建您的第一个 API 密钥'},
+                {'title': '选择您的套餐', 'description': '选择适合您需求的套餐'}
+            ]
+        },
+        'authentication': {
+            'title': '认证',
+            'description': '所有 API 请求都需要通过 API 密钥进行身份验证'
+        },
+        'pricing': {
+            'title': '定价和套餐',
+            'description': '选择适合您需求的完美套餐',
+            'plans': [
+                {'id': 'free', 'name': '免费', 'price': 0},
+                {'id': 'pro', 'name': '专业版', 'price': 9.99},
+                {'id': 'enterprise', 'name': '企业版', 'price': 49.99}
+            ]
+        }
     }
 }
 
-
-@api_docs_bp.route('/openapi.json', methods=['GET'])
-def get_openapi_spec():
-    """Get OpenAPI 3.0 specification"""
-    return jsonify(API_DOCUMENTATION)
-
-
-@api_docs_bp.route('/full', methods=['GET'])
-def get_full_docs():
-    """Get complete API documentation"""
-    return jsonify(API_DOCUMENTATION)
-
-
-@api_docs_bp.route('/endpoints', methods=['GET'])
-def get_endpoints():
-    """Get all endpoints grouped by category"""
-    endpoints = []
-    for group in API_DOCUMENTATION['endpoints']:
-        for ep in group['endpoints']:
-            endpoints.append({
-                'group': group['group'],
-                'method': ep['method'],
-                'path': ep['path'],
-                'summary': ep.get('summary', ''),
-                'tags': ep.get('tags', [])
-            })
-    return jsonify({'endpoints': endpoints})
+# Version history
+API_VERSIONS = [
+    {'version': '2.0.0', 'released': '2024-01-15', 'changes': [
+        'Added group call SFU support',
+        'Enhanced E2EE for calls',
+        'New webhook events',
+        'Rate limiting per endpoint'
+    ]},
+    {'version': '1.5.0', 'released': '2023-10-01', 'changes': [
+        'Added video calls',
+        'Status updates API',
+        'File upload improvements'
+    ]},
+    {'version': '1.0.0', 'released': '2023-01-01', 'changes': [
+        'Initial release',
+        'Core messaging',
+        'Voice calls',
+        'Contacts & groups'
+    }]
+]
 
 
-@api_docs_bp.route('/examples/<language>', methods=['GET'])
-def get_language_examples(language):
-    """Get code examples for a specific language"""
-    language = language.lower()
-    examples = []
+@docs_bp.route('', methods=['GET'])
+def get_docs_index():
+    """Get documentation index with available languages and versions"""
+    languages = list(DOCS_CONTENT.keys())
     
-    for group in API_DOCUMENTATION['endpoints']:
-        for ep in group['endpoints']:
-            if 'examples' in ep and language in ep['examples']:
-                examples.append({
-                    'method': ep['method'],
-                    'path': ep['path'],
-                    'code': ep['examples'][language]
+    return jsonify({
+        'success': True,
+        'languages': [
+            {'code': 'en', 'name': 'English'},
+            {'code': 'es', 'name': 'Español'},
+            {'code': 'ar', 'name': 'العربية'},
+            {'code': 'zh', 'name': '中文'}
+        ],
+        'current_version': '2.0.0',
+        'versions': API_VERSIONS,
+        'base_url': 'https://api.vipchat.com',
+        'docs_url': '/api/docs/en'
+    })
+
+
+@docs_bp.route('/<language>', methods=['GET'])
+def get_docs(language):
+    """Get documentation in specified language"""
+    if language not in DOCS_CONTENT:
+        language = 'en'
+    
+    return jsonify({
+        'success': True,
+        'language': language,
+        'content': DOCS_CONTENT[language]
+    })
+
+
+@docs_bp.route('/<language>/<section>', methods=['GET'])
+def get_docs_section(language, section):
+    """Get specific documentation section"""
+    if language not in DOCS_CONTENT:
+        language = 'en'
+    
+    content = DOCS_CONTENT.get(language, DOCS_CONTENT['en'])
+    
+    # Navigate to specific section
+    sections = section.split('.')
+    result = content
+    for s in sections:
+        if s in result:
+            result = result[s]
+        else:
+            return jsonify({'error': 'Section not found'}), 404
+    
+    return jsonify({
+        'success': True,
+        'language': language,
+        'section': section,
+        'content': result
+    })
+
+
+@docs_bp.route('/versions', methods=['GET'])
+def get_versions():
+    """Get API version history"""
+    return jsonify({
+        'success': True,
+        'versions': API_VERSIONS,
+        'current': '2.0.0'
+    })
+
+
+@docs_bp.route('/changelog', methods=['GET'])
+def get_changelog():
+    """Get detailed changelog"""
+    return jsonify({
+        'success': True,
+        'changelog': API_VERSIONS,
+        'additional_notes': {
+            'deprecations': [
+                {'endpoint': '/api/calls/legacy', 'deprecated_in': '1.5.0', 'removed_in': '2.0.0', 'replacement': '/api/calls/initiate'}
+            ],
+            'breaking_changes': [
+                {'change': 'Response format changed for message list', 'version': '2.0.0'}
+            ]
+        }
+    })
+
+
+@docs_bp.route('/search', methods=['GET'])
+def search_docs():
+    """Search documentation"""
+    query = request.args.get('q', '').lower()
+    language = request.args.get('lang', 'en')
+    
+    if language not in DOCS_CONTENT:
+        language = 'en'
+    
+    content = DOCS_CONTENT[language]
+    results = []
+    
+    # Simple search in content
+    def search_in_dict(d, path=''):
+        for key, value in d.items():
+            current_path = f"{path}.{key}" if path else key
+            if isinstance(value, dict):
+                search_in_dict(value, current_path)
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        search_in_dict(item, current_path)
+            elif isinstance(value, str) and query in str(value).lower():
+                results.append({
+                    'section': current_path,
+                    'match': str(value)[:100]
                 })
     
-    return jsonify({'language': language, 'examples': examples})
+    search_in_dict(content)
+    
+    return jsonify({
+        'success': True,
+        'query': query,
+        'results': results[:20]
+    })
 
 
-@api_docs_bp.route('/sdks', methods=['GET'])
-def get_sdks():
-    """Get available SDKs"""
-    return jsonify(API_DOCUMENTATION['sdks'])
+@docs_bp.route('/code-examples', methods=['GET'])
+def get_code_examples():
+    """Get code examples in various languages"""
+    category = request.args.get('category', 'authentication')
+    language = request.args.get('language', 'javascript')
+    
+    examples = {
+        'authentication': {
+            'javascript': '''// Using fetch
+const response = await fetch('https://api.vipchat.com/api/auth/login', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-API-Key': 'your_api_key'
+  },
+  body: JSON.stringify({
+    phone: '+1234567890',
+    password: 'your_password'
+  })
+});
+const { access_token } = await response.json();''',
+            'python': '''import requests
+
+response = requests.post(
+    'https://api.vipchat.com/api/auth/login',
+    headers={'X-API-Key': 'your_api_key'},
+    json={
+        'phone': '+1234567890',
+        'password': 'your_password'
+    }
+)
+data = response.json()
+token = data['access_token']''',
+            'bash': '''curl -X POST "https://api.vipchat.com/api/auth/login" \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: your_api_key" \\
+  -d '{"phone":"+1234567890","password":"your_password"}' '''
+        },
+        'send_message': {
+            'javascript': '''const response = await fetch('https://api.vipchat.com/api/messages/123', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer YOUR_TOKEN'
+  },
+  body: JSON.stringify({
+    receiver_id: '456',
+    content: 'Hello!'
+  })
+});''',
+            'python': '''import requests
+
+response = requests.post(
+    'https://api.vipchat.com/api/messages/123',
+    headers={'Authorization': 'Bearer YOUR_TOKEN'},
+    json={
+        'receiver_id': '456',
+        'content': 'Hello!'
+    }
+)'''
+        },
+        'make_call': {
+            'javascript': '''// Initiate video call
+const response = await fetch('https://api.vipchat.com/api/calls/initiate', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer YOUR_TOKEN'
+  },
+  body: JSON.stringify({
+    callee_id: '456',
+    call_type: 'video'
+  })
+});
+const { call_id, room_id, ice_servers } = await response.json();''',
+            'python': '''import requests
+
+response = requests.post(
+    'https://api.vipchat.com/api/calls/initiate',
+    headers={'Authorization': 'Bearer YOUR_TOKEN'},
+    json={
+        'callee_id': '456',
+        'call_type': 'video'
+    }
+)
+data = response.json()
+print(f"Call ID: {data['call_id']}, Room: {data['room_id']}")'''
+        },
+        'upload_file': {
+            'javascript': '''const formData = new FormData();
+formData.append('file', fileInput.files[0]);
+
+const response = await fetch('https://api.vipchat.com/api/upload/image', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer YOUR_TOKEN'
+  },
+  body: formData
+});''',
+            'python': '''import requests
+
+with open('image.jpg', 'rb') as f:
+    response = requests.post(
+        'https://api.vipchat.com/api/upload/image',
+        headers={'Authorization': 'Bearer YOUR_TOKEN'},
+        files={'file': f}
+    )'''
+        }
+    }
+    
+    return jsonify({
+        'success': True,
+        'category': category,
+        'language': language,
+        'example': examples.get(category, {}).get(language, 'No example available')
+    })
 
 
-@api_docs_bp.route('/pricing', methods=['GET'])
-def get_pricing():
-    """Get pricing information"""
-    return jsonify(API_DOCUMENTATION['pricing'])
+@docs_bp.route('/rate-limits', methods=['GET'])
+def get_rate_limits():
+    """Get rate limit information"""
+    return jsonify({
+        'success': True,
+        'rate_limits': {
+            'sandbox': {
+                'requests': 1000,
+                'window': 'hour',
+                'endpoints': ['/api/test/*']
+            },
+            'free': {
+                'requests': 100,
+                'window': 'hour',
+                'endpoints': ['/api/*']
+            },
+            'pro': {
+                'requests': 1000,
+                'window': 'hour',
+                'endpoints': ['/api/*']
+            },
+            'enterprise': {
+                'requests': 10000,
+                'window': 'hour',
+                'endpoints': ['/api/*']
+            }
+        },
+        'headers': {
+            'X-RateLimit-Limit': 'Number of requests allowed',
+            'X-RateLimit-Remaining': 'Number of requests remaining',
+            'X-RateLimit-Reset': 'Unix timestamp when limit resets'
+        }
+    })
 
 
-@api_docs_bp.route('/errors', methods=['GET'])
-def get_error_codes():
-    """Get all error codes"""
-    return jsonify(API_DOCUMENTATION['errors'])
+@docs_bp.route('/status', methods=['GET'])
+def get_api_status():
+    """Get API status and health information"""
+    return jsonify({
+        'success': True,
+        'status': 'operational',
+        'version': '2.0.0',
+        'uptime': '99.99%',
+        'latency': {
+            'avg': '45ms',
+            'p95': '120ms',
+            'p99': '250ms'
+        },
+        'services': {
+            'api': {'status': 'operational', 'latency': '32ms'},
+            'websocket': {'status': 'operational', 'latency': '15ms'},
+            'media': {'status': 'operational', 'latency': '65ms'},
+            'storage': {'status': 'operational', 'latency': '28ms'}
+        },
+        'incidents': []
+    })
