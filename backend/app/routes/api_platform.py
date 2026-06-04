@@ -46,6 +46,11 @@ def generate_api_key():
     return raw, _bcrypt_hash(raw)
 
 
+def generate_sandbox_key():
+    raw = 'vck_sbx_' + secrets.token_hex(32)
+    return raw, _bcrypt_hash(raw)
+
+
 # ── Register ──────────────────────────────────────────────────────────────────
 @api_platform_bp.route('/register', methods=['POST'])
 @jwt_required()
@@ -78,6 +83,35 @@ def register():
         'client': client.to_dict(),
         'api_key': raw_key,
         'warning': 'Save this API key — it will not be shown again.',
+    }), 201
+
+
+# ── Sandbox register (create a sandbox API key for testing) ─────────────────
+@api_platform_bp.route('/sandbox/register', methods=['POST'])
+@jwt_required()
+def sandbox_register():
+    user_id = get_jwt_identity()
+    data = request.json or {}
+    business_name = (data.get('business_name') or 'Sandbox Test Client').strip()
+
+    raw_key, key_hash = generate_sandbox_key()
+    client = ApiClient()
+    client.user_id = user_id
+    client.business_name = business_name + ' (sandbox)'
+    client.api_key_hash = key_hash
+    client.api_key_prefix = raw_key[:20] + '...'
+    client.tier = 'starter'
+    client.is_active = True
+    client.webhook_secret = secrets.token_hex(16)
+
+    db.session.add(client)
+    db.session.commit()
+
+    return jsonify({
+        'message': 'Sandbox API client created',
+        'client': client.to_dict(),
+        'api_key': raw_key,
+        'note': 'Sandbox keys start with vck_sbx_ and bypass daily limits (testing only).',
     }), 201
 
 
@@ -433,8 +467,8 @@ def get_api_docs():
         'authentication': {
             'type': 'Bearer',
             'header': 'Authorization',
-            'format': 'Bearer vck_live_<key>',
-            'description': 'All /v1/ endpoints require a valid API key in the Authorization header.',
+            'format': 'Bearer vck_live_<key> (or) Bearer vck_sbx_<key> for sandbox',
+            'description': 'All /v1/ endpoints require a valid API key in the Authorization header. Sandbox keys (vck_sbx_) are for testing and bypass rate limits.',
         },
         'rate_limits': {
             'starter': {'daily_messages': 100, 'price_usd': 0},
@@ -574,6 +608,74 @@ def get_api_docs():
             },
         ],
     }), 200
+
+
+# ── Promote sandbox client to paid / live (creates subscription or immediate demo upgrade) ─
+@api_platform_bp.route('/sandbox/promote', methods=['POST'])
+@jwt_required()
+def sandbox_promote():
+    user_id = get_jwt_identity()
+    data = request.json or {}
+    tier = (data.get('tier') or '').lower()
+    if tier not in ('pro', 'enterprise'):
+        return jsonify({'error': 'Invalid tier. Choose pro or enterprise'}), 400
+
+    # find most recent sandbox client for this user
+    client = ApiClient.query.filter_by(user_id=user_id).filter(
+        ApiClient.api_key_prefix.ilike('vck_sbx_%')
+    ).order_by(ApiClient.created_at.desc()).first()
+
+    if not client:
+        return jsonify({'error': 'No sandbox client found for user'}), 404
+
+    stripe_key = current_app.config.get('STRIPE_SECRET_KEY', '')
+    if not stripe_key:
+        # demo mode: immediately upgrade and rotate to a live API key
+        raw_key, key_hash = generate_api_key()
+        client.api_key_hash = key_hash
+        client.api_key_prefix = raw_key[:20] + '...'
+        client.tier = tier
+
+        sub = ApiSubscription()
+        sub.client_id = client.id
+        sub.tier = tier
+        sub.status = 'active'
+        sub.current_period_end = datetime.utcnow() + timedelta(days=30)
+
+        db.session.add(sub)
+        db.session.commit()
+
+        return jsonify({
+            'message': f'Upgraded sandbox to {tier} (demo mode).',
+            'client': client.to_dict(),
+            'api_key': raw_key,
+        }), 200
+
+    # Stripe configured: create checkout session (reuse subscribe flow behavior)
+    try:
+        import stripe  # type: ignore
+        stripe.api_key = stripe_key
+        user = User.query.get(user_id)
+
+        customer = stripe.Customer.create(
+            email=getattr(user, 'email', None) or f'{user_id}@vipchat.app',
+            name=client.business_name,
+            metadata={'client_id': client.id, 'user_id': user_id},
+        )
+
+        price_id = STRIPE_PRICE_IDS.get(tier) or 'price_default'
+        checkout = stripe.checkout.Session.create(
+            customer=customer.id,
+            mode='subscription',
+            line_items=[{'price': str(price_id), 'quantity': 1}],
+            success_url=data.get('success_url', 'https://vipchat.app/api-platform?success=1'),
+            cancel_url=data.get('cancel_url', 'https://vipchat.app/api-platform?cancel=1'),
+            metadata={'client_id': str(client.id), 'tier': tier},
+            subscription_data={'metadata': {'client_id': str(client.id), 'tier': tier}},
+        )
+        return jsonify({'checkout_url': checkout.url}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # ── Deliver inbound webhook ───────────────────────────────────────────────────

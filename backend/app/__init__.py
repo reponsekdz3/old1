@@ -16,6 +16,9 @@ load_dotenv()
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["200 per minute"])
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 def create_app(config_name='development'):
     """Application factory"""
@@ -98,9 +101,6 @@ def create_app(config_name='development'):
         # Continue anyway - fallback to basic mode
     
     # ── Original Enterprise Services Initialization ────────────────────────
-    import logging
-    logger = logging.getLogger(__name__)
-    
     try:
         logger.info("Initializing enterprise services...")
         
