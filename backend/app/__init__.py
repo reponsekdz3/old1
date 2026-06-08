@@ -268,6 +268,31 @@ def create_app(config_name='development'):
     except Exception as e:
         logger.warning(f"⚠ Status Ads routes not available: {e}")
 
+    try:
+        from app.routes.auth import csrf_public_bp
+        app.register_blueprint(csrf_public_bp)
+        logger.info("✓ CSRF token endpoint registered")
+    except Exception as e:
+        logger.warning(f"⚠ CSRF token endpoint not available: {e}")
+
+    try:
+        from app.routes.marketplace_physical import physical_bp
+        app.register_blueprint(physical_bp)
+        with app.app_context():
+            db.create_all()
+        logger.info("✓ Physical Marketplace routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ Physical Marketplace routes not available: {e}")
+
+    try:
+        from app.routes.business_api_platform import biz_api_bp
+        app.register_blueprint(biz_api_bp)
+        with app.app_context():
+            db.create_all()
+        logger.info("✓ Business API Platform routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ Business API Platform routes not available: {e}")
+
     # ── JWT token blocklist ────────────────────────────────────────────────
     @jwt.token_in_blocklist_loader
     def _check_token_revoked(jwt_header, jwt_payload):

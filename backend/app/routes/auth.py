@@ -17,6 +17,18 @@ auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 from app import limiter
 
 
+# ── CSRF token endpoint (public) ──────────────────────────────────────────────
+from flask import Blueprint as _Blueprint, current_app
+csrf_public_bp = _Blueprint('csrf_public', __name__, url_prefix='/api')
+
+@csrf_public_bp.route('/csrf-token', methods=['GET'])
+def get_csrf_token():
+    """Return a fresh CSRF token for unauthenticated clients (e.g. before login/signup)."""
+    from app.security.csrf_protection import csrf_protection
+    token = csrf_protection.generate_token()
+    return jsonify({'csrf_token': token}), 200
+
+
 def _validate_phone(phone_number):
     import phonenumbers
     try:

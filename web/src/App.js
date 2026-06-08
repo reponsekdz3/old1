@@ -12,6 +12,8 @@ import ApiPlatformPage from './pages/ApiPlatformPage';
 import AccountVerificationPage from './pages/AccountVerificationPage';
 import DownloadPage from './pages/DownloadPage';
 import MarketplacePage from './pages/MarketplacePage';
+import PhysicalStorePage from './pages/PhysicalStorePage';
+import BusinessAPIPage from './pages/BusinessAPIPage';
 import SubscriptionPage from './pages/SubscriptionPage';
 import AdvertisePage from './pages/AdvertisePage';
 import OfflineIndicator from './components/OfflineIndicator';
@@ -116,6 +118,12 @@ function App() {
             <ProtectedRoute user={user}><ApiPlatformPage /></ProtectedRoute>
           } />
           <Route path="/marketplace" element={<MarketplacePage />} />
+          <Route path="/store" element={
+            <ProtectedRoute user={user}><PhysicalStorePage /></ProtectedRoute>
+          } />
+          <Route path="/business-api" element={
+            <ProtectedRoute user={user}><BusinessAPIPage /></ProtectedRoute>
+          } />
           <Route path="/subscription" element={
             <ProtectedRoute user={user}><SubscriptionPage onBack={() => window.history.back()} /></ProtectedRoute>
           } />

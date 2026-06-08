@@ -68,15 +68,34 @@ class CSRFProtection:
         except Exception:
             return False
     
+    # Public routes that are exempt from CSRF (they use rate limiting + other protections)
+    EXEMPT_PATHS = {
+        '/api/auth/signup',
+        '/api/auth/login',
+        '/api/auth/send-verification-sms',
+        '/api/auth/send-reconfirmation-sms',
+        '/api/auth/verify-sms',
+        '/api/auth/refresh',
+        '/api/auth/qr-session/create',
+        '/api/auth/qr-session/confirm',
+        '/api/payments/stripe/webhook',
+        '/api/payments/flutterwave/webhook',
+        '/api/csrf-token',
+    }
+
     def _before_request(self):
         """Check CSRF token on mutating requests"""
         if request.method in ['POST', 'PUT', 'DELETE', 'PATCH']:
-            # Skip CSRF for API with JWT (already protected)
+            # Skip CSRF for exempt public routes
+            if request.path in self.EXEMPT_PATHS:
+                return
+
+            # Skip CSRF for API with JWT (already protected by token auth)
             if request.headers.get('Authorization'):
                 return
-            
+
             token = request.headers.get('X-CSRF-Token') or request.form.get('csrf_token')
-            
+
             if not token or not self.validate_token(token):
                 return jsonify({'error': 'Invalid CSRF token'}), 403
 
