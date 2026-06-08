@@ -1,2 +1,4 @@
-- [Input remount bug pattern](input-remount.md) — defining a component inside another's render function causes remount + focus loss on every keystroke; must define at module level.
-- [OTP dev mode](otp-dev-mode.md) — SMS OTP works in dev with no API key; backend logs code and returns `dev_code` in response; frontend shows it as a toast and on-screen banner.
+- [Replit preview iframe guard](replit-iframe-guard.md) — webSecurity.js clickjacking check must whitelist *.replit.dev / *.janeway.replit.dev or it breaks the preview iframe.
+- [AdminPage Live tab](admin-live-tab.md) — live polling useEffect, liveData state, /api/admin/live endpoint, SeverityBadge component added.
+- [E2EE imports fix](e2ee-imports.md) — backend/app/security/__init__.py must not import RateLimiter or TLSManager (they don't exist).
+- [OTP dev mode](otp-dev-mode.md) — AfricanTalkingService returns {ok, dev, code} in dev; both auth routes return dev_code so AccountVerificationPage can show it.

@@ -379,3 +379,107 @@ def check_admin():
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ── Real-time live dashboard ──────────────────────────────────────────────────
+@admin_bp.route('/live', methods=['GET'])
+@admin_required
+def live_dashboard():
+    """Real-time snapshot: active WebSocket sessions + recent security events + OTP counts."""
+    from flask import current_app
+    from app.models.e2ee_models import SecurityAuditLog
+    from app.models.models import VerificationCode
+
+    try:
+        # Active WebSocket connections
+        active_connections = getattr(current_app, 'active_connections', {})
+        active_sessions = []
+        for uid, sids in active_connections.items():
+            user = User.query.get(uid)
+            if user:
+                active_sessions.append({
+                    'user_id': uid,
+                    'full_name': user.full_name,
+                    'phone_number': user.phone_number,
+                    'avatar_url': user.avatar_url,
+                    'socket_count': len(sids),
+                    'last_seen': user.last_seen.isoformat() if user.last_seen else None,
+                })
+
+        # Recent auth/OTP security events (last 100)
+        recent_logs = (
+            SecurityAuditLog.query
+            .order_by(SecurityAuditLog.created_at.desc())
+            .limit(100)
+            .all()
+        )
+
+        # Pending OTP codes
+        pending_otps = VerificationCode.query.filter(
+            VerificationCode.expires_at >= datetime.utcnow()
+        ).count()
+
+        # Online in last 5 min
+        online_5m = User.query.filter(
+            User.last_seen >= datetime.utcnow() - timedelta(minutes=5)
+        ).count()
+
+        # Online in last 1 hour
+        online_1h = User.query.filter(
+            User.last_seen >= datetime.utcnow() - timedelta(hours=1)
+        ).count()
+
+        # Auth events grouped by type (last 24h)
+        yesterday = datetime.utcnow() - timedelta(hours=24)
+        auth_events_24h = (
+            db.session.query(
+                SecurityAuditLog.event_type,
+                db.func.count(SecurityAuditLog.id).label('count')
+            )
+            .filter(SecurityAuditLog.created_at >= yesterday)
+            .group_by(SecurityAuditLog.event_type)
+            .all()
+        )
+
+        return jsonify({
+            'active_sessions': active_sessions,
+            'active_session_count': len(active_sessions),
+            'pending_otps': pending_otps,
+            'online_5m': online_5m,
+            'online_1h': online_1h,
+            'auth_events_24h': [{'event': e, 'count': c} for e, c in auth_events_24h],
+            'auth_logs': [l.to_dict() for l in recent_logs],
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/auth-logs', methods=['GET'])
+@admin_required
+def auth_logs():
+    """Paginated security audit log."""
+    from app.models.e2ee_models import SecurityAuditLog
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 50, type=int)
+        severity = request.args.get('severity', '')
+        event_type = request.args.get('event_type', '')
+
+        query = SecurityAuditLog.query
+        if severity:
+            query = query.filter(SecurityAuditLog.severity == severity)
+        if event_type:
+            query = query.filter(SecurityAuditLog.event_type == event_type)
+
+        pagination = query.order_by(SecurityAuditLog.created_at.desc()).paginate(
+            page=page, per_page=per_page, error_out=False
+        )
+        return jsonify({
+            'logs': [l.to_dict() for l in pagination.items],
+            'total': pagination.total,
+            'pages': pagination.pages,
+            'page': page,
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

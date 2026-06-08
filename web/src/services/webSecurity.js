@@ -301,14 +301,22 @@ class WebSecurityManager {
   };
 
   /**
-   * Prevent clickjacking
+   * Prevent clickjacking — skipped for Replit preview and known dev environments.
    */
   preventClickjacking() {
-    if (window.self !== window.top) {
-      console.warn('[WebSecurity] Clickjacking attempt detected!');
-      this.logSecurityEvent('CLICKJACKING_ATTEMPT', {});
-      window.top.location = window.self.location;
+    if (window.self === window.top) return;
+    try {
+      const parentHost = window.top.location.hostname;
+      // Allow Replit preview domains
+      if (parentHost && (parentHost.endsWith('.replit.dev') || parentHost.endsWith('.repl.co') || parentHost.endsWith('.janeway.replit.dev'))) return;
+    } catch {
+      // Cross-origin — can't read parent hostname. Check our own host.
+      const host = window.location.hostname;
+      if (host.endsWith('.replit.dev') || host.endsWith('.repl.co') || host.endsWith('.janeway.replit.dev')) return;
     }
+    console.warn('[WebSecurity] Clickjacking attempt detected!');
+    this.logSecurityEvent('CLICKJACKING_ATTEMPT', {});
+    try { window.top.location = window.self.location; } catch {}
   }
 
   /**

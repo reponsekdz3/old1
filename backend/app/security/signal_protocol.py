@@ -409,3 +409,120 @@ class DoubleRatchet:
             for k, v in state.get('skipped_message_keys', {}).items()
         }
         return ratchet
+
+
+class E2EESessionManager:
+    """
+    Manages E2EE sessions between users.
+    Wraps SignalProtocol (X3DH) and DoubleRatchet into a unified session lifecycle.
+    Sessions are stored in-memory indexed by (local_user_id, remote_user_id).
+    Persistence is handled externally via export_state / import_state.
+    """
+
+    def __init__(self):
+        # {(local_id, remote_id): DoubleRatchet}
+        self._sessions: Dict[tuple, DoubleRatchet] = {}
+
+    # ── Session creation ────────────────────────────────────────────────────
+
+    def create_session_sender(
+        self,
+        local_user_id: str,
+        remote_user_id: str,
+        local_identity_key: bytes,
+        remote_bundle: Dict,
+    ) -> DoubleRatchet:
+        """
+        X3DH sender-side: establish a new session from the recipient's key bundle.
+        remote_bundle must contain: identity_key, signed_prekey (pub + sig),
+        optionally one_time_prekey.
+        Returns the initialised DoubleRatchet ready for encrypt.
+        """
+        signal = SignalProtocol()
+        ik_bytes = bytes.fromhex(local_identity_key) if isinstance(local_identity_key, str) else local_identity_key
+        sk, ephemeral_pub = signal.x3dh_sender(ik_bytes, remote_bundle)
+        ratchet = DoubleRatchet(sk)
+        # seed the DH ratchet with recipient's signed prekey public
+        ratchet.remote_dh_public = remote_bundle['signed_prekey']['public_key']
+        key = (local_user_id, remote_user_id)
+        self._sessions[key] = ratchet
+        return ratchet
+
+    def create_session_receiver(
+        self,
+        local_user_id: str,
+        remote_user_id: str,
+        local_identity_key: bytes,
+        local_signed_prekey: bytes,
+        local_one_time_prekey: Optional[bytes],
+        sender_x3dh_header: Dict,
+    ) -> DoubleRatchet:
+        """
+        X3DH receiver-side: process sender's X3DH header and establish session.
+        """
+        signal = SignalProtocol()
+        ik_bytes = bytes.fromhex(local_identity_key) if isinstance(local_identity_key, str) else local_identity_key
+        spk_bytes = bytes.fromhex(local_signed_prekey) if isinstance(local_signed_prekey, str) else local_signed_prekey
+        opk_bytes = None
+        if local_one_time_prekey:
+            opk_bytes = bytes.fromhex(local_one_time_prekey) if isinstance(local_one_time_prekey, str) else local_one_time_prekey
+        sk = signal.x3dh_receiver(ik_bytes, spk_bytes, opk_bytes, sender_x3dh_header)
+        ratchet = DoubleRatchet(sk)
+        key = (local_user_id, remote_user_id)
+        self._sessions[key] = ratchet
+        return ratchet
+
+    # ── Message encryption / decryption ────────────────────────────────────
+
+    def encrypt(self, local_user_id: str, remote_user_id: str, plaintext: bytes) -> Dict:
+        """Encrypt a message using the Double Ratchet for this session."""
+        ratchet = self._get_or_raise(local_user_id, remote_user_id)
+        ciphertext, header = ratchet.encrypt(plaintext)
+        return {
+            'ciphertext': base64.b64encode(ciphertext).decode(),
+            'header': header,
+            'session_state': ratchet.export_state(),
+        }
+
+    def decrypt(self, local_user_id: str, remote_user_id: str, ciphertext_b64: str, header: Dict) -> bytes:
+        """Decrypt a message using the Double Ratchet for this session."""
+        ratchet = self._get_or_raise(local_user_id, remote_user_id)
+        ciphertext = base64.b64decode(ciphertext_b64)
+        return ratchet.decrypt(ciphertext, header)
+
+    # ── Session persistence ─────────────────────────────────────────────────
+
+    def export_session(self, local_user_id: str, remote_user_id: str) -> Optional[Dict]:
+        """Export ratchet state for DB persistence."""
+        ratchet = self._sessions.get((local_user_id, remote_user_id))
+        return ratchet.export_state() if ratchet else None
+
+    def import_session(self, local_user_id: str, remote_user_id: str, state: Dict) -> DoubleRatchet:
+        """Restore a ratchet from a previously exported state dict."""
+        ratchet = DoubleRatchet.import_state(state)
+        self._sessions[(local_user_id, remote_user_id)] = ratchet
+        return ratchet
+
+    def has_session(self, local_user_id: str, remote_user_id: str) -> bool:
+        return (local_user_id, remote_user_id) in self._sessions
+
+    def drop_session(self, local_user_id: str, remote_user_id: str):
+        self._sessions.pop((local_user_id, remote_user_id), None)
+
+    def active_session_count(self) -> int:
+        return len(self._sessions)
+
+    # ── Internal ────────────────────────────────────────────────────────────
+
+    def _get_or_raise(self, local_user_id: str, remote_user_id: str) -> DoubleRatchet:
+        ratchet = self._sessions.get((local_user_id, remote_user_id))
+        if ratchet is None:
+            raise RuntimeError(
+                f"No E2EE session found for {local_user_id} → {remote_user_id}. "
+                "Call create_session_sender or create_session_receiver first."
+            )
+        return ratchet
+
+
+# Module-level singleton — import this across the app
+e2ee_session_manager = E2EESessionManager()

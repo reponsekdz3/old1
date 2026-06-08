@@ -10,7 +10,7 @@ import {
   FiActivity, FiTrendingUp, FiUserCheck, FiAlertTriangle,
   FiGrid, FiList, FiMoreVertical, FiSend, FiX, FiEye,
   FiToggleLeft, FiToggleRight, FiDownload, FiFilter,
-  FiCode, FiZap,
+  FiCode, FiZap, FiWifi, FiLock, FiServer, FiClock,
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -165,9 +165,24 @@ function BroadcastModal({ onClose, onSend }) {
   );
 }
 
+// ── Severity badge ──────────────────────────────────────────────────────────────
+function SeverityBadge({ severity }) {
+  const map = {
+    critical: 'bg-red-100 text-red-700',
+    warning: 'bg-amber-100 text-amber-700',
+    info: 'bg-blue-50 text-blue-600',
+  };
+  return (
+    <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${map[severity] || 'bg-gray-100 text-gray-500'}`}>
+      {severity}
+    </span>
+  );
+}
+
 // ── MAIN AdminPage ─────────────────────────────────────────────────────────────
 const TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: FiGrid },
+  { id: 'live', label: 'Live', icon: FiRadio, badge: 'LIVE' },
   { id: 'users', label: 'Users', icon: FiUsers },
   { id: 'messages', label: 'Messages', icon: FiMessageSquare },
   { id: 'groups', label: 'Groups', icon: FiUsers },
@@ -204,10 +219,32 @@ function AdminPage() {
   const [apiClientsPage, setApiClientsPage] = useState(1);
   const [apiClientsTotalPages, setApiClientsTotalPages] = useState(1);
   const [apiClientsSearch, setApiClientsSearch] = useState('');
+  const [liveData, setLiveData] = useState(null);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const liveIntervalRef = React.useRef(null);
 
   useEffect(() => {
     checkAdminAccess();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'live' && isAdmin) {
+      fetchLive();
+      liveIntervalRef.current = setInterval(fetchLive, 5000);
+    } else {
+      clearInterval(liveIntervalRef.current);
+    }
+    return () => clearInterval(liveIntervalRef.current);
+  }, [activeTab, isAdmin]);
+
+  const fetchLive = async () => {
+    setLiveLoading(true);
+    try {
+      const { data } = await api.get('/admin/live');
+      setLiveData(data);
+    } catch {}
+    finally { setLiveLoading(false); }
+  };
 
   const checkAdminAccess = async () => {
     try {
@@ -444,7 +481,13 @@ function AdminPage() {
                 activeTab === tab.id ? 'bg-white/20 text-white' : 'text-white/60 hover:bg-white/10 hover:text-white'
               }`}>
               <tab.icon size={16}/>
-              {tab.label}
+              <span className="flex-1 text-left">{tab.label}</span>
+              {tab.badge && (
+                <motion.span animate={{ opacity: [1, 0.4, 1] }} transition={{ duration: 1.4, repeat: Infinity }}
+                  className="text-[9px] font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full">
+                  {tab.badge}
+                </motion.span>
+              )}
             </button>
           ))}
         </nav>
@@ -488,6 +531,7 @@ function AdminPage() {
             </h2>
             <p className="text-gray-400 text-sm">
               {activeTab === 'dashboard' && 'Platform overview and metrics'}
+              {activeTab === 'live' && 'Real-time sessions, OTP activity and auth events · refreshes every 5s'}
               {activeTab === 'users' && `${usersTotal.toLocaleString()} total users`}
               {activeTab === 'messages' && 'All messages on the platform'}
               {activeTab === 'groups' && 'All groups and communities'}
@@ -531,6 +575,167 @@ function AdminPage() {
             </div>
           ) : (
             <>
+              {/* ── LIVE ── */}
+              {activeTab === 'live' && (
+                <div className="space-y-5">
+                  {liveLoading && !liveData && (
+                    <div className="flex items-center justify-center py-16">
+                      <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                        className="w-8 h-8 border-2 border-[#25D366] border-t-transparent rounded-full"/>
+                    </div>
+                  )}
+                  {liveData && (
+                    <>
+                      {/* Live stat cards */}
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+                          className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="w-11 h-11 bg-[#25D366] rounded-xl flex items-center justify-center">
+                              <FiWifi size={20} className="text-white"/>
+                            </div>
+                            <motion.div animate={{ opacity: [1, 0, 1] }} transition={{ duration: 1.4, repeat: Infinity }}
+                              className="w-2.5 h-2.5 bg-[#25D366] rounded-full mt-1"/>
+                          </div>
+                          <p className="text-2xl font-bold text-gray-900">{liveData.active_session_count}</p>
+                          <p className="text-sm text-gray-500 mt-0.5">Active WebSocket sessions</p>
+                        </motion.div>
+                        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+                          className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                          <div className="w-11 h-11 bg-blue-500 rounded-xl flex items-center justify-center mb-3">
+                            <FiUsers size={20} className="text-white"/>
+                          </div>
+                          <p className="text-2xl font-bold text-gray-900">{liveData.online_5m}</p>
+                          <p className="text-sm text-gray-500 mt-0.5">Online (last 5 min)</p>
+                        </motion.div>
+                        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+                          className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                          <div className="w-11 h-11 bg-purple-500 rounded-xl flex items-center justify-center mb-3">
+                            <FiServer size={20} className="text-white"/>
+                          </div>
+                          <p className="text-2xl font-bold text-gray-900">{liveData.online_1h}</p>
+                          <p className="text-sm text-gray-500 mt-0.5">Online (last 1 hour)</p>
+                        </motion.div>
+                        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+                          className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                          <div className="w-11 h-11 bg-amber-500 rounded-xl flex items-center justify-center mb-3">
+                            <FiLock size={20} className="text-white"/>
+                          </div>
+                          <p className="text-2xl font-bold text-gray-900">{liveData.pending_otps}</p>
+                          <p className="text-sm text-gray-500 mt-0.5">Pending OTP codes</p>
+                        </motion.div>
+                      </div>
+
+                      {/* Auth events breakdown */}
+                      {liveData.auth_events_24h?.length > 0 && (
+                        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                          <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            <FiShield size={15} className="text-[#25D366]"/> Auth Events (last 24h)
+                          </h3>
+                          <div className="flex flex-wrap gap-2">
+                            {liveData.auth_events_24h.map((e, i) => (
+                              <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
+                                <span className="text-sm font-bold text-gray-900">{e.count}</span>
+                                <span className="text-xs text-gray-500">{e.event.replace(/_/g, ' ').toLowerCase()}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Active WebSocket sessions */}
+                      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                          <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                            <FiWifi size={15} className="text-[#25D366]"/> Active Sessions
+                          </h3>
+                          <span className="text-xs text-gray-400 flex items-center gap-1.5">
+                            <motion.div animate={{ opacity: [1, 0, 1] }} transition={{ duration: 1.5, repeat: Infinity }}
+                              className="w-1.5 h-1.5 bg-[#25D366] rounded-full"/>
+                            Live
+                          </span>
+                        </div>
+                        {liveData.active_sessions.length === 0 ? (
+                          <div className="py-10 text-center text-gray-400">
+                            <FiWifi size={28} className="mx-auto mb-2 opacity-30"/>
+                            <p className="text-sm">No active WebSocket sessions right now</p>
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-gray-50">
+                            {liveData.active_sessions.map(s => (
+                              <div key={s.user_id} className="flex items-center gap-3 px-5 py-3">
+                                <div className="relative flex-shrink-0">
+                                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#075E54] to-[#25D366] flex items-center justify-center text-white font-bold text-sm">
+                                    {s.full_name?.[0]?.toUpperCase()}
+                                  </div>
+                                  <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[#25D366] rounded-full border-2 border-white"/>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold text-gray-900 truncate">{s.full_name}</p>
+                                  <p className="text-xs text-gray-400 truncate">{s.phone_number}</p>
+                                </div>
+                                <div className="text-right flex-shrink-0">
+                                  <span className="text-xs bg-green-50 text-green-700 font-semibold px-2 py-0.5 rounded-full">
+                                    {s.socket_count} socket{s.socket_count !== 1 ? 's' : ''}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Auth / OTP event log */}
+                      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                          <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                            <FiClock size={15} className="text-[#25D366]"/> Auth &amp; OTP Event Log
+                          </h3>
+                          <span className="text-xs text-gray-400">Last 100 events</span>
+                        </div>
+                        {!liveData.auth_logs?.length ? (
+                          <div className="py-10 text-center text-gray-400">
+                            <FiShield size={28} className="mx-auto mb-2 opacity-30"/>
+                            <p className="text-sm">No security events recorded yet</p>
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-gray-50 max-h-96 overflow-y-auto">
+                            {liveData.auth_logs.map(log => (
+                              <div key={log.id} className="flex items-start gap-3 px-5 py-3 hover:bg-gray-50 transition-colors">
+                                <div className="mt-0.5 flex-shrink-0">
+                                  <SeverityBadge severity={log.severity}/>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold text-gray-800 truncate">
+                                    {log.event_type.replace(/_/g, ' ')}
+                                  </p>
+                                  {log.user_name && (
+                                    <p className="text-xs text-gray-500 truncate">👤 {log.user_name}</p>
+                                  )}
+                                  {log.ip_address && (
+                                    <p className="text-xs text-gray-400 font-mono">{log.ip_address}</p>
+                                  )}
+                                </div>
+                                <span className="text-xs text-gray-400 flex-shrink-0 mt-0.5">
+                                  {log.created_at ? formatDistanceToNow(new Date(log.created_at), { addSuffix: true }) : '—'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Footer timestamp */}
+                      <p className="text-xs text-gray-400 text-center flex items-center justify-center gap-1.5">
+                        <motion.div animate={{ opacity: [1, 0, 1] }} transition={{ duration: 1.5, repeat: Infinity }}
+                          className="w-1.5 h-1.5 bg-[#25D366] rounded-full"/>
+                        Last updated: {liveData.timestamp ? new Date(liveData.timestamp).toLocaleTimeString() : '—'} · auto-refreshes every 5s
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* ── DASHBOARD ── */}
               {activeTab === 'dashboard' && (
                 <div className="space-y-6">

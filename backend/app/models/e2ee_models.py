@@ -178,6 +178,7 @@ class SecurityAuditLog(db.Model):
         return {
             'id': self.id,
             'user_id': self.user_id,
+            'user_name': self.user.full_name if self.user else None,
             'event_type': self.event_type,
             'severity': self.severity,
             'ip_address': self.ip_address,
