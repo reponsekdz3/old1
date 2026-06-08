@@ -64,12 +64,34 @@ def _is_allowed_media_domain(url):
     try:
         from urllib.parse import urlparse
         host = urlparse(str(url)).netloc.lower()
+        # Strip port number if present
+        host = host.split(':')[0]
         # Allow empty host (relative URLs for uploaded content)
         if not host:
             return True
-        return any(allowed in host for allowed in ALLOWED_MEDIA_DOMAINS)
+        # Exact match OR suffix match (.cloudinary.com etc.)
+        # Substring matching (e.g. "allowed in host") is bypassable by crafted
+        # hostnames like "evil-cloudinary.com", so we use exact/suffix only.
+        return any(
+            host == allowed or host.endswith('.' + allowed)
+            for allowed in ALLOWED_MEDIA_DOMAINS
+        )
     except Exception:
         return False
+
+
+def _check_rate_limit_redis(redis_client, key, max_count, window_seconds):
+    """Simple Redis-based sliding rate limiter. Returns True if allowed."""
+    if not redis_client:
+        return True
+    try:
+        pipe = redis_client.pipeline()
+        pipe.incr(key)
+        pipe.expire(key, window_seconds)
+        results = pipe.execute()
+        return results[0] <= max_count
+    except Exception:
+        return True  # fail open rather than blocking all ad traffic
 
 def _make_ad_token(ad_id, user_id, expiry_seconds=120):
     """Create a signed ad delivery token (HMAC-SHA256)."""
@@ -502,7 +524,17 @@ def get_ad_feed():
         ad_data['token_expires'] = expires
         ad_data['is_ad'] = True
 
-        return jsonify({'ad': ad_data}), 200
+        resp = jsonify({'ad': ad_data})
+        # Restrict what the ad creative can do: no scripts, only safe image/media sources
+        resp.headers['Content-Security-Policy'] = (
+            "default-src 'none'; "
+            "img-src https: data:; "
+            "media-src https:; "
+            "script-src 'none'; "
+            "frame-ancestors 'self'"
+        )
+        resp.headers['X-Content-Type-Options'] = 'nosniff'
+        return resp, 200
 
     except Exception as e:
         logger.exception('get_ad_feed error')
@@ -512,9 +544,22 @@ def get_ad_feed():
 @ads_bp.route('/impression', methods=['POST'])
 @jwt_required()
 def record_impression():
-    """Record ad impression with token verification."""
+    """
+    Record exactly ONE ad impression per ad-view with token verification.
+    The client sends a single event at the conclusion of the ad view, with
+    skipped=True if the user skipped or skipped=False if it ran to completion.
+    Rate limit: max 30 impression events per user per minute to block flood fraud.
+    """
     try:
         user_id = get_jwt_identity()
+        redis_client = _get_redis()
+
+        # Rate limit: max 30 impressions/user/60s
+        rl_key = f"ad_imp_rl:{user_id}"
+        if not _check_rate_limit_redis(redis_client, rl_key, 30, 60):
+            _log_fraud_attempt(None, user_id, 'impression_rate_limit')
+            return jsonify({'error': 'Rate limit exceeded'}), 429
+
         data = request.get_json() or {}
         campaign_id = data.get('campaign_id')
         token = data.get('ad_token', '')
@@ -529,7 +574,17 @@ def record_impression():
             _log_fraud_attempt(campaign_id, user_id, 'invalid_impression_token')
             return jsonify({'error': 'Invalid ad token'}), 401
 
-        # Record impression
+        # Dedup guard: prevent duplicate impression for the same token+user combo.
+        # The token embeds an expiry; we use a short Redis key to deduplicate within
+        # the token's validity window so a retry-stormed client can't double-count.
+        dedup_key = f"ad_imp_dedup:{user_id}:{campaign_id}:{token[-8:]}"
+        if redis_client:
+            already = redis_client.set(dedup_key, '1', ex=300, nx=True)
+            if not already:
+                # Duplicate submission — acknowledge but don't double-count
+                return jsonify({'ok': True, 'duplicate': True}), 200
+
+        # Record ONE impression
         imp = AdImpression(
             campaign_id=campaign_id,
             user_id=user_id,
@@ -542,7 +597,7 @@ def record_impression():
         if skipped:
             campaign.skip_count = (campaign.skip_count or 0) + 1
         else:
-            # Deduct CPM cost
+            # Deduct CPM cost only for fully-viewed impressions
             cost = campaign.bid_cpm / 1000
             campaign.budget_spent = (campaign.budget_spent or 0) + cost
             if campaign.budget_spent >= campaign.budget_total:
@@ -550,8 +605,7 @@ def record_impression():
 
         db.session.commit()
 
-        # Increment session frequency cap
-        redis_client = _get_redis()
+        # Increment 24h session frequency cap
         _increment_session_count(user_id, redis_client)
 
         return jsonify({'ok': True}), 200
@@ -565,9 +619,21 @@ def record_impression():
 @ads_bp.route('/click', methods=['POST'])
 @jwt_required()
 def record_click():
-    """Record ad click with token verification and fraud detection."""
+    """
+    Record ad click with token verification and fraud detection.
+    Rate limit: max 20 clicks per user per minute to block click fraud.
+    Dedup: same user cannot click the same ad token twice.
+    """
     try:
         user_id = get_jwt_identity()
+        redis_client = _get_redis()
+
+        # Rate limit: max 20 clicks/user/60s
+        rl_key = f"ad_click_rl:{user_id}"
+        if not _check_rate_limit_redis(redis_client, rl_key, 20, 60):
+            _log_fraud_attempt(None, user_id, 'click_rate_limit')
+            return jsonify({'error': 'Rate limit exceeded'}), 429
+
         data = request.get_json() or {}
         campaign_id = data.get('campaign_id')
         token = data.get('ad_token', '')
@@ -579,6 +645,14 @@ def record_click():
         token_valid = _verify_ad_token(token, campaign_id, user_id)
         if not token_valid:
             _log_fraud_attempt(campaign_id, user_id, 'invalid_click_token')
+
+        # Dedup: same token cannot produce more than one counted click
+        if token_valid and redis_client:
+            dedup_key = f"ad_click_dedup:{user_id}:{campaign_id}:{token[-8:]}"
+            already = redis_client.set(dedup_key, '1', ex=300, nx=True)
+            if not already:
+                # Duplicate click — return the redirect URL but don't count it
+                return jsonify({'ok': True, 'redirect_url': campaign.cta_url, 'duplicate': True}), 200
 
         # Record click (even invalid, for fraud analysis)
         click = AdClick(

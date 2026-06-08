@@ -137,18 +137,19 @@ function AdSlide({ ad, onSkip, onAdvance }) {
   const [showReport, setShowReport] = useState(false);
   const [countdown, setCountdown] = useState(5);
   const timerRef = useRef(null);
+  const autoAdvanceRef = useRef(null);
   const tokenRef = useRef(ad?.ad_token);
+  // Track whether we already sent the ONE impression for this ad view
   const impressionSentRef = useRef(false);
 
-  useEffect(() => {
-    if (!impressionSentRef.current && ad?.id) {
-      impressionSentRef.current = true;
-      api.post('/ads/impression', {
-        campaign_id: ad.id,
-        ad_token: tokenRef.current,
-        skipped: false,
-      }).catch(() => {});
-    }
+  const sendImpression = useCallback((skipped) => {
+    if (impressionSentRef.current || !ad?.id) return;
+    impressionSentRef.current = true;
+    api.post('/ads/impression', {
+      campaign_id: ad.id,
+      ad_token: tokenRef.current,
+      skipped,
+    }).catch(() => {});
   }, [ad?.id]);
 
   useEffect(() => {
@@ -158,16 +159,16 @@ function AdSlide({ ad, onSkip, onAdvance }) {
   }, [countdown]);
 
   useEffect(() => {
-    const t = setTimeout(() => onAdvance(), 8000);
-    return () => clearTimeout(t);
-  }, [onAdvance]);
+    autoAdvanceRef.current = setTimeout(() => {
+      sendImpression(false);
+      onAdvance();
+    }, 8000);
+    return () => clearTimeout(autoAdvanceRef.current);
+  }, [onAdvance, sendImpression]);
 
   const handleSkip = () => {
-    api.post('/ads/impression', {
-      campaign_id: ad.id,
-      ad_token: tokenRef.current,
-      skipped: true,
-    }).catch(() => {});
+    clearTimeout(autoAdvanceRef.current);
+    sendImpression(true);
     onSkip();
   };
 
@@ -259,6 +260,11 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
   const [replySending, setReplySending] = useState(false);
   const [adData, setAdData] = useState(null);
   const [showAd, setShowAd] = useState(false);
+  // When an ad is shown between organic statuses N and N+1, we park the
+  // pending destination here and only commit setIdx after the ad dismisses.
+  // This prevents the double-advance bug where both the ad trigger and the
+  // ad's onAdvance callback each called setIdx, skipping a status.
+  const pendingNextIdxRef = useRef(null);
   const adShownRef = useRef(false);
   const swipeStartRef = useRef(null);
   const timerRef = useRef(null);
@@ -276,28 +282,43 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
     }).catch(() => {});
   }, []);
 
-  const showAdSlide = useCallback(() => {
-    if (adData && !adShownRef.current) {
-      adShownRef.current = true;
-      setShowAd(true);
-    }
-  }, [adData]);
-
-  const advance = useCallback(() => {
+  // Called after the ad is dismissed (skip or auto-advance).
+  // Commits the previously parked organic index.
+  const afterAd = useCallback(() => {
     setShowAd(false);
     setShowReactions(false);
     setShowReply(false);
-    if (idx < items.length - 1) {
-      const nextIdx = idx + 1;
-      if (nextIdx % AD_EVERY_N === 0 && adData && !adShownRef.current) {
-        showAdSlide();
-      }
+    const nextIdx = pendingNextIdxRef.current;
+    pendingNextIdxRef.current = null;
+    if (nextIdx === null) return;
+    if (nextIdx < items.length) {
       setIdx(nextIdx);
     } else {
       if (onNextGroup) onNextGroup();
       else onClose();
     }
-  }, [idx, items.length, onClose, adData, showAdSlide, onNextGroup]);
+  }, [items.length, onNextGroup, onClose]);
+
+  const advance = useCallback(() => {
+    setShowReactions(false);
+    setShowReply(false);
+    const nextIdx = idx + 1;
+    // Inject ad between organic status N and N+1 when the boundary is hit.
+    // We do NOT advance idx here — we park nextIdx and show the ad.
+    // idx only moves inside afterAd(), keeping the state machine clean.
+    if (nextIdx % AD_EVERY_N === 0 && adData && !adShownRef.current) {
+      adShownRef.current = true;
+      pendingNextIdxRef.current = nextIdx;
+      setShowAd(true);
+      return;
+    }
+    if (nextIdx < items.length) {
+      setIdx(nextIdx);
+    } else {
+      if (onNextGroup) onNextGroup();
+      else onClose();
+    }
+  }, [idx, items.length, onClose, adData, onNextGroup]);
 
   useEffect(() => {
     if (paused || isVideo || showAd || showReply) return;
@@ -391,8 +412,8 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
         </div>
         <AdSlide
           ad={adData}
-          onSkip={() => setShowAd(false)}
-          onAdvance={() => { setShowAd(false); advance(); }}
+          onSkip={afterAd}
+          onAdvance={afterAd}
         />
       </motion.div>
     );
