@@ -371,6 +371,28 @@ def create_app(config_name='development'):
         }, room=f"user_{receiver_id}")
         emit('message_sent', {'message_id': message_id})
 
+        # Push notification for users not currently connected via WebSocket
+        try:
+            active_connections = getattr(current_app, 'active_connections', {})
+            if str(receiver_id) not in active_connections:
+                from app.utils.push_sender import push_to_user
+                from app.models.models import User as _User
+                _sender = _User.query.get(sender_id)
+                _name = _sender.full_name if _sender else 'Someone'
+                _preview = (content[:60] + '…') if content and len(content) > 60 else (content or '[Message]')
+                push_to_user(
+                    receiver_id, _name, _preview,
+                    url=f'/chat/{sender_id}',
+                    extra={
+                        'type': 'message',
+                        'sender_id': str(sender_id),
+                        'chat_id': str(sender_id),
+                        'sender_name': _name,
+                    }
+                )
+        except Exception:
+            pass
+
     @socketio.on('message_delivered')
     def handle_message_delivered(data):
         message_id = data.get('message_id')

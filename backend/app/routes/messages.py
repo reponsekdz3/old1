@@ -56,7 +56,16 @@ def send_message(receiver_id):
             sender = User.query.get(sender_id)
             sender_name = sender.full_name if sender else 'Someone'
             preview = (content[:60] + '…') if content and len(content) > 60 else (content or f'[{media_type or "attachment"}]')
-            push_to_user(receiver_id, sender_name, preview)
+            push_to_user(
+                receiver_id, sender_name, preview,
+                url=f'/chat/{sender_id}',
+                extra={
+                    'type': 'message',
+                    'sender_id': str(sender_id),
+                    'chat_id': str(sender_id),
+                    'sender_name': sender_name,
+                }
+            )
         except Exception:
             pass
 

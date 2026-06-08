@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import {
   FiArrowLeft, FiLock, FiBell, FiDownload, FiDatabase,
   FiHelpCircle, FiInfo, FiChevronRight,
-  FiCheck, FiShield,
+  FiCheck, FiShield, FiSend,
 } from 'react-icons/fi';
+import { subscribeToPush, unsubscribeFromPush } from '../services/pushService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
@@ -340,6 +341,30 @@ export default function SettingsPage() {
     }
   };
 
+  const handlePushToggle = async (value) => {
+    if (value) {
+      const ok = await subscribeToPush();
+      if (!ok) {
+        toast.error('Could not enable notifications. Check browser permissions.');
+        return;
+      }
+      toast.success('Push notifications enabled');
+    } else {
+      await unsubscribeFromPush();
+      toast('Push notifications disabled');
+    }
+    await updateSetting('show_notifications', value);
+  };
+
+  const sendTestNotification = async () => {
+    try {
+      await api.post('/push/test');
+      toast.success('Test notification sent!');
+    } catch {
+      toast.error('Could not send test notification');
+    }
+  };
+
   const handleBackup = async () => {
     try {
       await api.post('/settings/backup');
@@ -459,7 +484,15 @@ export default function SettingsPage() {
                 <SectionHeader icon={FiBell} title="Notifications" desc="Manage alerts and sounds" />
 
                 <ToggleRow label="Push Notifications" sub="Receive notifications when a new message arrives"
-                  value={settings.show_notifications} onChange={v => updateSetting('show_notifications', v)} />
+                  value={settings.show_notifications} onChange={handlePushToggle} />
+                {settings.show_notifications && (
+                  <div className="px-5 pb-4">
+                    <button onClick={sendTestNotification}
+                      className="flex items-center gap-2 text-xs font-semibold text-[#25D366] hover:text-[#1aa355] transition">
+                      <FiSend size={12}/> Send a test notification
+                    </button>
+                  </div>
+                )}
                 <ToggleRow label="Message Preview" sub="Show message content in notifications"
                   value={settings.show_preview} onChange={v => updateSetting('show_preview', v)} />
                 <ToggleRow label="Message Sounds" sub="Play sound when a message is received"

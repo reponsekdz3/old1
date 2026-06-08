@@ -2,3 +2,4 @@
 - [AdminPage Live tab](admin-live-tab.md) — live polling useEffect, liveData state, /api/admin/live endpoint, SeverityBadge component added.
 - [E2EE imports fix](e2ee-imports.md) — backend/app/security/__init__.py must not import RateLimiter or TLSManager (they don't exist).
 - [OTP dev mode](otp-dev-mode.md) — AfricanTalkingService returns {ok, dev, code} in dev; both auth routes return dev_code so AccountVerificationPage can show it.
+- [pywebpush install](pywebpush-install.md) — pywebpush+py-vapid must be installed via `uv pip install --target .pythonlibs/lib/python3.12/site-packages`; standard pip/installLanguagePackages fails with nix permission errors.

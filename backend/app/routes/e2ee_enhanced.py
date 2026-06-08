@@ -195,7 +195,17 @@ def send_encrypted_message():
         try:
             from app.utils.push_sender import push_to_user
             sender = User.query.get(sender_id)
-            push_to_user(receiver_id, f"{sender.full_name if sender else 'Someone'}", "[Encrypted Message]")
+            push_to_user(
+                receiver_id,
+                f"{sender.full_name if sender else 'Someone'}",
+                "[Encrypted Message]",
+                url=f'/chat/{sender_id}',
+                extra={
+                    'type': 'message',
+                    'sender_id': str(sender_id),
+                    'chat_id': str(sender_id),
+                }
+            )
         except:
             pass
         
