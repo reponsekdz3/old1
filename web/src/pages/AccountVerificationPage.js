@@ -1,20 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../services/store';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { motion } from 'framer-motion';
-import { FiShield, FiArrowRight, FiLogOut, FiCheck } from 'react-icons/fi';
+import { FiShield, FiArrowRight, FiLogOut, FiCheck, FiRefreshCw } from 'react-icons/fi';
 
 function AccountVerificationPage() {
   const navigate = useNavigate();
   const { user, setUser, logout } = useAuthStore();
-  const [step, setStep] = useState('intro'); // intro | otp
+  const [step, setStep] = useState('intro');
   const [codeDigits, setCodeDigits] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [countdown, setCountdown] = useState(0);
-  const codeRefs = Array.from({ length: 6 }, () => React.createRef());
+  const [devCode, setDevCode] = useState(null);
+  const inputRefs = useRef([]);
 
   useEffect(() => {
     let t;
@@ -25,10 +26,15 @@ function AccountVerificationPage() {
   const handleSendOTP = async () => {
     setSending(true);
     try {
-      await api.post('/auth/send-reconfirmation-sms');
+      const res = await api.post('/auth/send-reconfirmation-sms');
       toast.success('Verification code sent to your phone!');
+      if (res.data?.dev_code) {
+        setDevCode(res.data.dev_code);
+        toast(`🧪 Dev mode — OTP: ${res.data.dev_code}`, { icon: '🔑', duration: 15000 });
+      }
       setStep('otp');
       setCountdown(60);
+      setTimeout(() => inputRefs.current[0]?.focus(), 100);
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to send code');
     } finally {
@@ -37,23 +43,50 @@ function AccountVerificationPage() {
   };
 
   const handleDigitChange = (index, value) => {
-    if (!/^[0-9]?$/.test(value)) return;
+    const digit = value.replace(/\D/g, '').slice(-1);
     const newDigits = [...codeDigits];
-    newDigits[index] = value;
+    newDigits[index] = digit;
     setCodeDigits(newDigits);
-    if (value && index < 5) codeRefs[index + 1].current?.focus();
-  };
-
-  const handleDigitKeyDown = (index, e) => {
-    if (e.key === 'Backspace' && !codeDigits[index] && index > 0) {
-      codeRefs[index - 1].current?.focus();
+    if (digit && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+    if (newDigits.every(d => d !== '') && newDigits.join('').length === 6) {
+      submitCode(newDigits.join(''));
     }
   };
 
-  const handleVerify = async (e) => {
+  const handleDigitKeyDown = (index, e) => {
+    if (e.key === 'Backspace') {
+      if (codeDigits[index]) {
+        const newDigits = [...codeDigits];
+        newDigits[index] = '';
+        setCodeDigits(newDigits);
+      } else if (index > 0) {
+        inputRefs.current[index - 1]?.focus();
+        const newDigits = [...codeDigits];
+        newDigits[index - 1] = '';
+        setCodeDigits(newDigits);
+      }
+    } else if (e.key === 'ArrowLeft' && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    } else if (e.key === 'ArrowRight' && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handlePaste = (e) => {
     e.preventDefault();
-    const code = codeDigits.join('');
-    if (code.length !== 6) { toast.error('Enter the full 6-digit code'); return; }
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (!pasted) return;
+    const newDigits = Array(6).fill('');
+    for (let i = 0; i < pasted.length; i++) newDigits[i] = pasted[i];
+    setCodeDigits(newDigits);
+    const nextEmpty = Math.min(pasted.length, 5);
+    inputRefs.current[nextEmpty]?.focus();
+    if (pasted.length === 6) submitCode(pasted);
+  };
+
+  const submitCode = async (code) => {
     setLoading(true);
     try {
       const response = await api.post('/auth/confirm-account', { code });
@@ -62,9 +95,18 @@ function AccountVerificationPage() {
       navigate('/');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Invalid or expired code');
+      setCodeDigits(['', '', '', '', '', '']);
+      setTimeout(() => inputRefs.current[0]?.focus(), 50);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleVerify = async (e) => {
+    e.preventDefault();
+    const code = codeDigits.join('');
+    if (code.length !== 6) { toast.error('Enter the full 6-digit code'); return; }
+    await submitCode(code);
   };
 
   const handleLogout = () => {
@@ -80,7 +122,6 @@ function AccountVerificationPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#075E54] via-[#128C7E] to-[#25D366] flex items-center justify-center px-4">
-      {/* Background circles */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         {[...Array(8)].map((_, i) => (
           <motion.div key={i} animate={{ y: [0, i % 2 === 0 ? 20 : -20, 0] }}
@@ -93,7 +134,7 @@ function AccountVerificationPage() {
 
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
         className="relative z-10 bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md">
-        {/* Shield icon */}
+
         <motion.div animate={{ scale: [1, 1.05, 1] }} transition={{ duration: 2, repeat: Infinity }}
           className="w-20 h-20 rounded-3xl bg-gradient-to-br from-[#075E54] to-[#25D366] flex items-center justify-center mx-auto mb-6 shadow-lg shadow-green-200">
           <FiShield size={36} className="text-white" />
@@ -107,7 +148,6 @@ function AccountVerificationPage() {
               please verify your phone number.
             </p>
 
-            {/* Info card */}
             <div className="bg-[#f0f9f4] border border-[#25D366]/30 rounded-2xl p-4 mb-6">
               <div className="flex items-start gap-3">
                 <div className="w-8 h-8 rounded-full bg-[#25D366]/20 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -122,7 +162,6 @@ function AccountVerificationPage() {
               </div>
             </div>
 
-            {/* Phone preview */}
             <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3 mb-6">
               <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#075E54] to-[#25D366] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                 {user?.full_name?.[0]?.toUpperCase() || '?'}
@@ -152,28 +191,44 @@ function AccountVerificationPage() {
         ) : (
           <>
             <h1 className="text-2xl font-bold text-gray-900 text-center mb-2">Enter OTP Code</h1>
-            <p className="text-gray-500 text-center text-sm mb-6">
+            <p className="text-gray-500 text-center text-sm mb-2">
               Code sent to <strong>{user?.phone_number}</strong>
             </p>
+            {devCode && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4 text-center">
+                <p className="text-xs text-amber-700 font-semibold">🧪 Dev mode — OTP code: <span className="font-mono text-amber-900 text-base tracking-widest">{devCode}</span></p>
+              </div>
+            )}
 
             <form onSubmit={handleVerify} className="space-y-6">
               <div className="flex gap-2 justify-between">
                 {codeDigits.map((d, i) => (
-                  <input key={i} ref={codeRefs[i]} type="text" inputMode="numeric" maxLength={1} value={d}
+                  <input
+                    key={i}
+                    ref={el => inputRefs.current[i] = el}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={d}
                     onChange={e => handleDigitChange(i, e.target.value)}
                     onKeyDown={e => handleDigitKeyDown(i, e)}
-                    className="w-12 h-14 text-center text-2xl font-bold border-2 rounded-xl focus:outline-none focus:border-[#25D366] focus:ring-4 focus:ring-green-50 transition"
-                    style={{ borderColor: d ? '#25D366' : '#e5e7eb' }} />
+                    onPaste={i === 0 ? handlePaste : undefined}
+                    className="w-12 h-14 text-center text-2xl font-bold border-2 rounded-xl focus:outline-none focus:ring-4 focus:ring-green-50 transition bg-white"
+                    style={{ borderColor: d ? '#25D366' : loading ? '#e5e7eb' : '#e5e7eb', borderWidth: d ? '2px' : '2px' }}
+                    disabled={loading}
+                  />
                 ))}
               </div>
 
               <div className="text-center">
                 {countdown > 0 ? (
-                  <p className="text-sm text-gray-500">Resend in <span className="text-[#25D366] font-semibold">{countdown}s</span></p>
+                  <p className="text-sm text-gray-500">
+                    Resend in <span className="text-[#25D366] font-semibold">{countdown}s</span>
+                  </p>
                 ) : (
                   <button type="button" onClick={handleSendOTP} disabled={sending}
-                    className="text-sm text-[#25D366] font-semibold hover:underline disabled:opacity-50">
-                    {sending ? 'Sending...' : 'Resend Code'}
+                    className="text-sm text-[#25D366] font-semibold hover:underline disabled:opacity-50 flex items-center gap-1 mx-auto">
+                    <FiRefreshCw size={13} /> {sending ? 'Sending...' : 'Resend Code'}
                   </button>
                 )}
               </div>

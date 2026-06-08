@@ -1,0 +1,2 @@
+- [Input remount bug pattern](input-remount.md) — defining a component inside another's render function causes remount + focus loss on every keystroke; must define at module level.
+- [OTP dev mode](otp-dev-mode.md) — SMS OTP works in dev with no API key; backend logs code and returns `dev_code` in response; frontend shows it as a toast and on-screen banner.

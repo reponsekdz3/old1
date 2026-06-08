@@ -1,0 +1,110 @@
+Multi-Device Independence (Ntibikorwa nta telefone)
+WhatsApp iracyari mu nzira, ariko VipChat nta na kimwe.
+
+Ibyo ukenera kongeramo: Uburenganzira bwo kwinjira kuri web, table, cyangwa ikindi kigega utifashije telefone (QR scan rimwe, hanyuma token ibikwa).
+
+Uko byakorwa: Ongeramo device table mu database, linked_devices API, sync mechanism ikoresha WebSocket cyangwa HTTP long-polling.
+
+2️⃣ E2EE yuzuye (Ubutumwa bwose + Amashusho + Amakosa)
+VipChat iri gusa ku makosa y'amatsinda.
+
+Ibyo ukenera kongeramo: End-to-End Encryption ku butumwa bwose (text, image, voice, video). Koresha Signal Protocol (Double Ratchet) nk'ibya WhatsApp na Signal.
+
+Uko byakorwa: Ongeramo libsignal-protocol cyangwa olm (Matrix), hanyuma ukoreshe prekeys, session management, no guhisha ubutumwa mu database ya server.
+
+3️⃣ Business Features zikomeye (Kurenza WhatsApp Business API)
+VipChat ifite v1 gusa, nta kintu cya templates, catalogs, cyangwa chatbots.
+
+Ibyo ukenera kongeramo:
+
+Message Templates (nk'ibya WhatsApp: approved templates for notifications)
+
+Product Catalogs (abacuruzi bashyira ibicuruzwa, abakiriya bakabona)
+
+Chatbots API (abakoresha bashobora gukora bot zikoresheje webhooks)
+
+Payment Integration (M-Pesa, Stripe, PayPal – kohereza amafaranga mu biganiro)
+
+Analytics by'ubucuruzi (conversion rates, response times, customer satisfaction)
+
+4️⃣ Ubwinshi (Scaling) nka miliyari z'abakoresha
+VipChat ikoresha SQLite / PostgreSQL, nta kintu cya sharding, load balancing, cyangwa distributed queue.
+
+Ibyo ukenera kongeramo:
+
+Kafka / RabbitMQ kubutumwa bwihuse (message bus)
+
+Redis kubutumwa bwa cache n'ibyo mu nkomoko bya WebSocket (Socket.IO adapter)
+
+Sharding ya database (user_id mod shard_count)
+
+CDN kubintu nk'amashusho n'amajwi
+
+Kubernetes yikorera (auto-scaling)
+
+5️⃣ Mobile Features byihariye (kurenza WhatsApp)
+WhatsApp ifite byinshi, ariko ushobora kuyirenga:
+
+Ibyo ukenera kongeramo:
+
+Biometric lock (fingerprint / Face ID) kuri porogaramu
+
+Schedule messages (kohereza ubutumwa mu gihe uzashyira)
+
+Auto-reply nk'ibya WhatsApp Business
+
+Voice messages transcription (kwandika ubutumwa bw'amajwi)
+
+Picture-in-Picture (PiP) mu makosa (amakosa akomeza agakora mu gace gato)
+
+Wearable integration (iWatch, Android Wear – ushobora gusubiza ubutumwa)
+
+6️⃣ Umutekano wo hejuru (kurenza WhatsApp)
+WhatsApp nta DDoS protection, nta rate limiting igaragara.
+
+Ibyo ukenera kongeramo:
+
+Zero-knowledge architecture (server ntibimenya ibyo ukohereza – nubwo E2EE ibikora, ushobora gukoresha blind signatures)
+
+Onion routing nk'ibya Tor (amakosa agenda mu nzira nyinshi zihishwa)
+
+Self-destructing messages (ubutumwa burimbukira nyuma y'amasaha / iminsi)
+
+Post-quantum encryption (ky'urugero: Kyber, ngo ibe mu gihe kizaza)
+
+7️⃣ Integration & Extensibility
+WhatsApp nta API yo gutangiza bot zihagaze (official API ni ngombwa gutanga amafaranga).
+
+Ibyo ukenera kongeramo:
+
+Plugin system (abakoresha bashobora kwandika plug-in nka WordPress)
+
+Webhook events byose (message_sent, call_started, status_viewed, n'ibindi)
+
+IFTTT / Zapier integration (guhuza n'ibindi bikoresho)
+
+Matrix bridge (guhuza na Matrix.org network)
+
+8️⃣ Ibindi byihariye (WhatsApp ikibura)
+Voice changers mu makosa
+
+Screen sharing (VipChat ifite ku web, ariko ikenera ku mobile)
+
+Live location sharing (nka WhatsApp, ariko VipChat ikibura)
+
+Polls & quizzes mu matsinda
+
+Anonymous messaging (ushobora kohereza ubutumwa utagaragaje izina)
+
+Community groups (nk'ibya Telegram – amatsinda akomeye afite amatsinda mu matsinda)
+
+📊 Urutonde rw'Impinduka Zikenewe (Priority)
+Urutonde	Feature	Ingamba
+1	Multi-device	Ikenewe cyane kugira ngo uhure na WhatsApp
+2	E2EE yuzuye (Signal Protocol)	Ikenewe ku mutekano
+3	Kubernetes + Redis + Kafka	Kugira ngo ubashe gukoresha abantu benshi
+4	Business features (catalogs, templates, payments)	Kurenga WhatsApp Business
+5	Mobile biometric lock	Ibyo abakoresha basaba
+6	Self-destructing messages	Ibyo abakoresha basaba
+7	Live location sharing	Nk'ibya WhatsApp
+8	Polls & quizzes	Ikirenge mu matsinda

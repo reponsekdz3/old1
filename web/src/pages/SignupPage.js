@@ -57,6 +57,58 @@ function PasswordStrength({ password }) {
   );
 }
 
+const inputCls = (error) =>
+  `w-full pl-11 pr-4 py-3 border-2 rounded-2xl focus:outline-none focus:ring-4 transition text-sm bg-white
+  ${error ? 'border-red-300 focus:border-red-400 focus:ring-red-50' : 'border-gray-200 focus:border-[#25D366] focus:ring-green-50'}`;
+
+function Field({ label, icon: Icon, error, children }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-sm font-semibold text-gray-700">{label}</label>
+      <div className="relative">
+        {Icon && <Icon className="absolute left-4 top-1/2 -translate-y-1/2 text-[#25D366] z-10" size={16} />}
+        {children}
+      </div>
+      {error && (
+        <p className="text-xs text-red-500 flex items-center gap-1">
+          <FiAlertCircle size={11} /> {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SignupDownloadBanner() {
+  const DOWNLOAD_URL = window.location.origin + '/download';
+  return (
+    <div className="py-3 flex items-center gap-3">
+      <div className="bg-white p-1 rounded-lg border border-gray-100 shadow-sm flex-shrink-0">
+        <img
+          src={`https://api.qrserver.com/v1/create-qr-code/?size=48x48&data=${encodeURIComponent(DOWNLOAD_URL)}&color=075E54`}
+          alt="QR Code"
+          width={48}
+          height={48}
+          className="rounded"
+          onError={e => { e.target.style.display = 'none'; }}
+        />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-bold text-gray-800 mb-1">📱 Get VipChat on your phone</p>
+        <div className="flex gap-1.5 flex-wrap">
+          <a href="https://apps.apple.com/app/vipchat" target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1 bg-black text-white rounded-lg px-2 py-1 hover:bg-gray-800 transition text-[10px] font-semibold">
+            🍎 App Store
+          </a>
+          <a href="https://play.google.com/store/apps/vipchat" target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1 bg-[#25D366] text-white rounded-lg px-2 py-1 hover:bg-[#1fbd5a] transition text-[10px] font-semibold">
+            ▶ Google Play
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SignupPage() {
   const navigate = useNavigate();
   const { setUser } = useAuthStore();
@@ -148,7 +200,6 @@ export default function SignupPage() {
       localStorage.setItem('access_token', data.access_token);
       localStorage.setItem('refresh_token', data.refresh_token);
       setUser(data.user);
-      // Generate + publish Signal Protocol key bundle for new account
       try {
         const { generateAndPublishKeys } = await import('../services/e2ee');
         await generateAndPublishKeys(api);
@@ -166,207 +217,6 @@ export default function SignupPage() {
       setLoading(false);
     }
   };
-
-  const inputCls = (error) =>
-    `w-full pl-11 pr-4 py-3 border-2 rounded-2xl focus:outline-none focus:ring-4 transition text-sm bg-white
-    ${error ? 'border-red-300 focus:border-red-400 focus:ring-red-50' : 'border-gray-200 focus:border-[#25D366] focus:ring-green-50'}`;
-
-  const Field = ({ label, icon: Icon, error, children }) => (
-    <div className="space-y-1.5">
-      <label className="block text-sm font-semibold text-gray-700">{label}</label>
-      <div className="relative">
-        {Icon && <Icon className="absolute left-4 top-1/2 -translate-y-1/2 text-[#25D366] z-10" size={16} />}
-        {children}
-      </div>
-      {error && (
-        <p className="text-xs text-red-500 flex items-center gap-1">
-          <FiAlertCircle size={11} /> {error}
-        </p>
-      )}
-    </div>
-  );
-
-  const stepContent = [
-    /* Step 0 */
-    <motion.div key="s0" initial={{ opacity:0, x:30 }} animate={{ opacity:1, x:0 }} exit={{ opacity:0, x:-30 }} className="space-y-4">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Create your account</h2>
-        <p className="text-gray-400 text-sm mt-1">Start with your basic information</p>
-      </div>
-
-      <div className="space-y-1.5">
-        <label className="block text-sm font-semibold text-gray-700">Phone Number *</label>
-        <PhoneInput
-          value={form.phone_number}
-          onChange={(v) => handleInputChange('phone_number', v)}
-          error={!!errors.phone_number}
-        />
-        {errors.phone_number && (
-          <p className="text-xs text-red-500 flex items-center gap-1">
-            <FiAlertCircle size={11} /> {errors.phone_number}
-          </p>
-        )}
-      </div>
-
-      <Field label="Full Name *" icon={FiUser} error={errors.full_name}>
-        <input type="text" value={form.full_name}
-          onChange={(e) => handleInputChange('full_name', e.target.value)}
-          placeholder="Your full name"
-          className={inputCls(!!errors.full_name)} />
-      </Field>
-
-      <Field label="Email Address (optional)" icon={FiMail} error={errors.email}>
-        <input type="email" value={form.email}
-          onChange={(e) => handleInputChange('email', e.target.value)}
-          placeholder="you@example.com"
-          className={inputCls(!!errors.email)} />
-        <p className="text-xs text-gray-400 mt-1">Used for account recovery</p>
-      </Field>
-
-      <button type="button" onClick={handleNext}
-        className="w-full bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold py-3.5 rounded-2xl transition flex items-center justify-center gap-2 text-sm shadow-lg shadow-green-100">
-        Continue <FiArrowRight size={17} />
-      </button>
-    </motion.div>,
-
-    /* Step 1 */
-    <motion.div key="s1" initial={{ opacity:0, x:30 }} animate={{ opacity:1, x:0 }} exit={{ opacity:0, x:-30 }} className="space-y-4">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Your profile</h2>
-        <p className="text-gray-400 text-sm mt-1">Help others know you (all optional)</p>
-      </div>
-
-      <Field label="Age" icon={FiCalendar} error={errors.age}>
-        <input type="number" min="13" max="120" value={form.age}
-          onChange={(e) => handleInputChange('age', e.target.value)}
-          placeholder="Your age (must be 13+)"
-          className={inputCls(!!errors.age)} />
-      </Field>
-
-      <div className="space-y-1.5" ref={countryRef}>
-        <label className="block text-sm font-semibold text-gray-700">Country</label>
-        <div className="relative">
-          <FiGlobe className="absolute left-4 top-1/2 -translate-y-1/2 text-[#25D366] z-10" size={16} />
-          <input type="text"
-            value={form.country || countrySearch}
-            onChange={(e) => {
-              const val = e.target.value;
-              setCountrySearch(val);
-              handleInputChange('country', '');
-              setShowCountryDropdown(true);
-            }}
-            onFocus={() => setShowCountryDropdown(true)}
-            placeholder="Search your country..."
-            className={inputCls(false)} />
-          {form.country && (
-            <button type="button" onClick={() => { handleInputChange('country',''); setCountrySearch(''); setShowCountryDropdown(true); }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">✕</button>
-          )}
-        </div>
-        <AnimatePresence>
-          {showCountryDropdown && filteredCountries.length > 0 && !form.country && (
-            <motion.div initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-4 }}
-              className="border border-gray-200 rounded-2xl bg-white shadow-xl max-h-44 overflow-y-auto z-50 relative">
-              {filteredCountries.slice(0,30).map(c => {
-                const pc = PHONE_COUNTRIES.find(p => p.name === c);
-                return (
-                  <button key={c} type="button"
-                    onClick={() => { handleInputChange('country',c); setCountrySearch(c); setShowCountryDropdown(false); }}
-                    className="w-full text-left px-4 py-2.5 text-sm hover:bg-green-50 hover:text-[#25D366] transition flex items-center gap-2">
-                    {pc && <span className="text-base">{getFlag(pc.iso2)}</span>}
-                    {c}
-                  </button>
-                );
-              })}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      <Field label="City" icon={FiHome} error={errors.city}>
-        <input type="text" value={form.city}
-          onChange={(e) => handleInputChange('city', e.target.value)}
-          placeholder="Your city"
-          className={inputCls(!!errors.city)} />
-      </Field>
-
-      <div className="flex gap-3 pt-1">
-        <button type="button" onClick={() => setStep(0)}
-          className="flex-1 border-2 border-gray-200 text-gray-600 font-semibold py-3 rounded-2xl hover:bg-gray-50 transition text-sm">
-          ← Back
-        </button>
-        <button type="button" onClick={handleNext}
-          className="flex-1 bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold py-3 rounded-2xl transition flex items-center justify-center gap-2 text-sm shadow-lg shadow-green-100">
-          Continue <FiArrowRight size={17} />
-        </button>
-      </div>
-    </motion.div>,
-
-    /* Step 2 */
-    <motion.form key="s2" initial={{ opacity:0, x:30 }} animate={{ opacity:1, x:0 }} exit={{ opacity:0, x:-30 }}
-      onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Secure your account</h2>
-        <p className="text-gray-400 text-sm mt-1">Choose a strong password</p>
-      </div>
-
-      <div className="bg-[#f0fdf4] border border-green-100 rounded-2xl p-3.5 flex items-start gap-3">
-        <FiShield className="text-[#25D366] mt-0.5 flex-shrink-0" size={16} />
-        <div>
-          <p className="text-xs font-semibold text-green-800">Account summary</p>
-          <p className="text-xs text-green-700 mt-0.5 leading-relaxed">
-            <strong>{form.full_name}</strong> · {form.phone_number}
-            {form.email && <> · {form.email}</>}
-            {form.country && <> · {form.country}</>}
-            {form.city && <>, {form.city}</>}
-            {form.age && <> · Age {form.age}</>}
-          </p>
-        </div>
-      </div>
-
-      <Field label="Password *" icon={FiLock} error={errors.password}>
-        <input type={showPassword ? 'text' : 'password'} value={form.password}
-          onChange={(e) => handleInputChange('password', e.target.value)}
-          placeholder="Min. 8 characters" autoComplete="new-password"
-          className={`${inputCls(!!errors.password)} pr-12`} />
-        <button type="button" onClick={() => setShowPassword(v => !v)}
-          className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 z-10">
-          {showPassword ? <FiEyeOff size={16} /> : <FiEye size={16} />}
-        </button>
-        <PasswordStrength password={form.password} />
-      </Field>
-
-      <Field label="Confirm Password *" icon={FiLock} error={errors.confirmPassword}>
-        <input type={showConfirm ? 'text' : 'password'} value={form.confirmPassword}
-          onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
-          placeholder="Re-enter password" autoComplete="new-password"
-          className={`${inputCls(!!errors.confirmPassword)} pr-12`} />
-        <button type="button" onClick={() => setShowConfirm(v => !v)}
-          className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 z-10">
-          {showConfirm ? <FiEyeOff size={16} /> : <FiEye size={16} />}
-        </button>
-        {form.confirmPassword && form.password === form.confirmPassword && (
-          <p className="text-xs text-[#25D366] mt-1 flex items-center gap-1">
-            <FiCheck size={11} strokeWidth={3} /> Passwords match
-          </p>
-        )}
-      </Field>
-
-      <div className="flex gap-3 pt-1">
-        <button type="button" onClick={() => setStep(1)}
-          className="flex-1 border-2 border-gray-200 text-gray-600 font-semibold py-3.5 rounded-2xl hover:bg-gray-50 transition text-sm">
-          ← Back
-        </button>
-        <motion.button whileTap={{ scale: 0.99 }} type="submit" disabled={loading}
-          className="flex-1 bg-[#25D366] hover:bg-[#1fbd5a] disabled:bg-gray-200 text-white font-bold py-3.5 rounded-2xl transition flex items-center justify-center gap-2 text-sm shadow-lg shadow-green-100">
-          {loading
-            ? <motion.div animate={{ rotate: 360 }} transition={{ duration:1, repeat:Infinity, ease:'linear' }}
-                className="w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
-            : <><FiCheck size={16} strokeWidth={3} /> Create Account</>}
-        </motion.button>
-      </div>
-    </motion.form>,
-  ];
 
   return (
     <div className="flex min-h-screen overflow-hidden font-sans">
@@ -463,7 +313,215 @@ export default function SignupPage() {
           </div>
 
           <AnimatePresence mode="wait">
-            {stepContent[step]}
+            {step === 0 && (
+              <motion.div key="s0" initial={{ opacity:0, x:30 }} animate={{ opacity:1, x:0 }} exit={{ opacity:0, x:-30 }} className="space-y-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Create your account</h2>
+                  <p className="text-gray-400 text-sm mt-1">Start with your basic information</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-semibold text-gray-700">Phone Number *</label>
+                  <PhoneInput
+                    value={form.phone_number}
+                    onChange={(v) => handleInputChange('phone_number', v)}
+                    error={!!errors.phone_number}
+                  />
+                  {errors.phone_number && (
+                    <p className="text-xs text-red-500 flex items-center gap-1">
+                      <FiAlertCircle size={11} /> {errors.phone_number}
+                    </p>
+                  )}
+                </div>
+
+                <Field label="Full Name *" icon={FiUser} error={errors.full_name}>
+                  <input
+                    type="text"
+                    value={form.full_name}
+                    onChange={(e) => handleInputChange('full_name', e.target.value)}
+                    placeholder="Your full name"
+                    autoComplete="name"
+                    className={inputCls(!!errors.full_name)}
+                  />
+                </Field>
+
+                <Field label="Email Address (optional)" icon={FiMail} error={errors.email}>
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => handleInputChange('email', e.target.value)}
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    className={inputCls(!!errors.email)}
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Used for account recovery</p>
+                </Field>
+
+                <button type="button" onClick={handleNext}
+                  className="w-full bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold py-3.5 rounded-2xl transition flex items-center justify-center gap-2 text-sm shadow-lg shadow-green-100">
+                  Continue <FiArrowRight size={17} />
+                </button>
+              </motion.div>
+            )}
+
+            {step === 1 && (
+              <motion.div key="s1" initial={{ opacity:0, x:30 }} animate={{ opacity:1, x:0 }} exit={{ opacity:0, x:-30 }} className="space-y-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Your profile</h2>
+                  <p className="text-gray-400 text-sm mt-1">Help others know you (all optional)</p>
+                </div>
+
+                <Field label="Age" icon={FiCalendar} error={errors.age}>
+                  <input
+                    type="number"
+                    min="13"
+                    max="120"
+                    value={form.age}
+                    onChange={(e) => handleInputChange('age', e.target.value)}
+                    placeholder="Your age (must be 13+)"
+                    className={inputCls(!!errors.age)}
+                  />
+                </Field>
+
+                <div className="space-y-1.5" ref={countryRef}>
+                  <label className="block text-sm font-semibold text-gray-700">Country</label>
+                  <div className="relative">
+                    <FiGlobe className="absolute left-4 top-1/2 -translate-y-1/2 text-[#25D366] z-10" size={16} />
+                    <input
+                      type="text"
+                      value={form.country || countrySearch}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCountrySearch(val);
+                        handleInputChange('country', '');
+                        setShowCountryDropdown(true);
+                      }}
+                      onFocus={() => setShowCountryDropdown(true)}
+                      placeholder="Search your country..."
+                      className={inputCls(false)}
+                    />
+                    {form.country && (
+                      <button type="button"
+                        onClick={() => { handleInputChange('country',''); setCountrySearch(''); setShowCountryDropdown(true); }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">✕</button>
+                    )}
+                  </div>
+                  <AnimatePresence>
+                    {showCountryDropdown && filteredCountries.length > 0 && !form.country && (
+                      <motion.div initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-4 }}
+                        className="border border-gray-200 rounded-2xl bg-white shadow-xl max-h-44 overflow-y-auto z-50 relative">
+                        {filteredCountries.slice(0,30).map(c => {
+                          const pc = PHONE_COUNTRIES.find(p => p.name === c);
+                          return (
+                            <button key={c} type="button"
+                              onClick={() => { handleInputChange('country',c); setCountrySearch(c); setShowCountryDropdown(false); }}
+                              className="w-full text-left px-4 py-2.5 text-sm hover:bg-green-50 hover:text-[#25D366] transition flex items-center gap-2">
+                              {pc && <span className="text-base">{getFlag(pc.iso2)}</span>}
+                              {c}
+                            </button>
+                          );
+                        })}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                <Field label="City" icon={FiHome} error={errors.city}>
+                  <input
+                    type="text"
+                    value={form.city}
+                    onChange={(e) => handleInputChange('city', e.target.value)}
+                    placeholder="Your city"
+                    className={inputCls(!!errors.city)}
+                  />
+                </Field>
+
+                <div className="flex gap-3 pt-1">
+                  <button type="button" onClick={() => setStep(0)}
+                    className="flex-1 border-2 border-gray-200 text-gray-600 font-semibold py-3 rounded-2xl hover:bg-gray-50 transition text-sm">
+                    ← Back
+                  </button>
+                  <button type="button" onClick={handleNext}
+                    className="flex-1 bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold py-3 rounded-2xl transition flex items-center justify-center gap-2 text-sm shadow-lg shadow-green-100">
+                    Continue <FiArrowRight size={17} />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 2 && (
+              <motion.form key="s2" initial={{ opacity:0, x:30 }} animate={{ opacity:1, x:0 }} exit={{ opacity:0, x:-30 }}
+                onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Secure your account</h2>
+                  <p className="text-gray-400 text-sm mt-1">Choose a strong password</p>
+                </div>
+
+                <div className="bg-[#f0fdf4] border border-green-100 rounded-2xl p-3.5 flex items-start gap-3">
+                  <FiShield className="text-[#25D366] mt-0.5 flex-shrink-0" size={16} />
+                  <div>
+                    <p className="text-xs font-semibold text-green-800">Account summary</p>
+                    <p className="text-xs text-green-700 mt-0.5 leading-relaxed">
+                      <strong>{form.full_name}</strong> · {form.phone_number}
+                      {form.email && <> · {form.email}</>}
+                      {form.country && <> · {form.country}</>}
+                      {form.city && <>, {form.city}</>}
+                      {form.age && <> · Age {form.age}</>}
+                    </p>
+                  </div>
+                </div>
+
+                <Field label="Password *" icon={FiLock} error={errors.password}>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={form.password}
+                    onChange={(e) => handleInputChange('password', e.target.value)}
+                    placeholder="Min. 8 characters"
+                    autoComplete="new-password"
+                    className={`${inputCls(!!errors.password)} pr-12`}
+                  />
+                  <button type="button" onClick={() => setShowPassword(v => !v)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 z-10">
+                    {showPassword ? <FiEyeOff size={16} /> : <FiEye size={16} />}
+                  </button>
+                  <PasswordStrength password={form.password} />
+                </Field>
+
+                <Field label="Confirm Password *" icon={FiLock} error={errors.confirmPassword}>
+                  <input
+                    type={showConfirm ? 'text' : 'password'}
+                    value={form.confirmPassword}
+                    onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+                    placeholder="Re-enter password"
+                    autoComplete="new-password"
+                    className={`${inputCls(!!errors.confirmPassword)} pr-12`}
+                  />
+                  <button type="button" onClick={() => setShowConfirm(v => !v)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 z-10">
+                    {showConfirm ? <FiEyeOff size={16} /> : <FiEye size={16} />}
+                  </button>
+                  {form.confirmPassword && form.password === form.confirmPassword && (
+                    <p className="text-xs text-[#25D366] mt-1 flex items-center gap-1">
+                      <FiCheck size={11} strokeWidth={3} /> Passwords match
+                    </p>
+                  )}
+                </Field>
+
+                <div className="flex gap-3 pt-1">
+                  <button type="button" onClick={() => setStep(1)}
+                    className="flex-1 border-2 border-gray-200 text-gray-600 font-semibold py-3.5 rounded-2xl hover:bg-gray-50 transition text-sm">
+                    ← Back
+                  </button>
+                  <motion.button whileTap={{ scale: 0.99 }} type="submit" disabled={loading}
+                    className="flex-1 bg-[#25D366] hover:bg-[#1fbd5a] disabled:bg-gray-200 text-white font-bold py-3.5 rounded-2xl transition flex items-center justify-center gap-2 text-sm shadow-lg shadow-green-100">
+                    {loading
+                      ? <motion.div animate={{ rotate: 360 }} transition={{ duration:1, repeat:Infinity, ease:'linear' }}
+                          className="w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
+                      : <><FiCheck size={16} strokeWidth={3} /> Create Account</>}
+                  </motion.button>
+                </div>
+              </motion.form>
+            )}
           </AnimatePresence>
 
           <p className="text-center mt-6 text-sm text-gray-500">
@@ -477,42 +535,8 @@ export default function SignupPage() {
             End-to-end encrypted · Your data stays private
           </p>
         </div>
-        {/* Download App Banner — fixed at bottom, never scrolls away */}
         <div className="border-t border-gray-100 bg-white px-8 sm:px-10 max-w-md mx-auto w-full flex-shrink-0">
           <SignupDownloadBanner />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SignupDownloadBanner() {
-  const DOWNLOAD_URL = window.location.origin + '/download';
-  return (
-    <div className="py-3 flex items-center gap-3">
-      <div className="bg-white p-1 rounded-lg border border-gray-100 shadow-sm flex-shrink-0">
-        <img
-          src={`https://api.qrserver.com/v1/create-qr-code/?size=48x48&data=${encodeURIComponent(DOWNLOAD_URL)}&color=075E54`}
-          alt="QR Code"
-          width={48}
-          height={48}
-          className="rounded"
-          onError={e => { e.target.style.display = 'none'; }}
-        />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-bold text-gray-800 mb-1">📱 Get VipChat on your phone</p>
-        <div className="flex gap-1.5 flex-wrap">
-          <a href="https://apps.apple.com/app/vipchat" target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-1 bg-black text-white rounded-lg px-2 py-1 hover:bg-gray-800 transition text-[10px] font-semibold">
-            <svg viewBox="0 0 24 24" className="w-3 h-3 fill-current flex-shrink-0"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-            App Store
-          </a>
-          <a href="https://play.google.com/store/apps/details?id=com.vipchat.app" target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-1 bg-black text-white rounded-lg px-2 py-1 hover:bg-gray-800 transition text-[10px] font-semibold">
-            <svg viewBox="0 0 24 24" className="w-3 h-3 fill-current flex-shrink-0"><path d="M3.18 23.76c.3.17.64.24.99.2l12.6-7.17-2.68-2.68-10.91 9.65zM.55 1.12C.2 1.5 0 2.08 0 2.82v18.36c0 .74.2 1.32.55 1.7l.09.09L10.39 12.9v-.22L.64 1.03l-.09.09zM20.5 10.56L17.29 8.7l-3.03 3.03 3.03 3.03L20.5 13.5c.86-.49.86-1.46 0-1.94zM3.18.24l10.91 9.65 2.68-2.68L4.17.04C3.83 0 3.48.07 3.18.24z"/></svg>
-            Google Play
-          </a>
         </div>
       </div>
     </div>

@@ -47,19 +47,22 @@ def send_verification_sms():
             }), 200
 
         verification = AuthService.send_verification_sms(phone_number)
-        if not verification:
+        if not verification.get('ok'):
             return jsonify({'error': 'Failed to send verification code'}), 500
 
         fresh = VerificationCode.query.filter_by(phone_number=phone_number).first()
         if not fresh:
             raise RuntimeError('Verification code was not stored after send')
 
-        logger.info('Verification SMS sent', extra={'phone_number': phone_number, 'code': '***' if fresh.code else ''})
-        return jsonify({
+        logger.info('Verification SMS sent to %s', phone_number)
+        response_data = {
             'message': 'Verification code sent successfully',
             'phone_number': phone_number,
             'expires_at': fresh.expires_at.isoformat() + 'Z',
-        }), 200
+        }
+        if verification.get('dev_code'):
+            response_data['dev_code'] = verification['dev_code']
+        return jsonify(response_data), 200
     except Exception as e:
         logger.exception('Failed to send verification SMS')
         return jsonify({'error': str(e)}), 500
@@ -347,14 +350,17 @@ def send_reconfirmation_sms():
         db.session.commit()
 
         result = AuthService.send_verification_sms(user.phone_number)
-        if not result:
+        if not result.get('ok'):
             return jsonify({'error': 'Failed to send verification code'}), 500
 
         fresh = VerificationCode.query.filter_by(phone_number=user.phone_number).first()
-        return jsonify({
+        response_data = {
             'message': 'Verification code sent',
             'expires_at': fresh.expires_at.isoformat() + 'Z' if fresh else None,
-        }), 200
+        }
+        if result.get('dev_code'):
+            response_data['dev_code'] = result['dev_code']
+        return jsonify(response_data), 200
     except Exception as e:
         db.session.rollback()
         logger.exception('send_reconfirmation_sms failed')

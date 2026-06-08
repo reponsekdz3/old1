@@ -32,15 +32,20 @@ class AuthService:
 
     @staticmethod
     def send_verification_sms(phone_number):
+        """Send OTP SMS. Returns dict with {'ok': bool, 'dev_code': str|None}."""
         if not _validate_phone(phone_number):
             logger.warning('Invalid phone number for verification SMS: %s', phone_number)
-            return False
+            return {'ok': False, 'dev_code': None}
         try:
-            existing = VerificationCode.query.filter_by(
-                phone_number=phone_number,
-            ).first()
+            # Always create a fresh code (caller deletes old ones beforehand if needed)
+            existing = VerificationCode.query.filter_by(phone_number=phone_number).first()
             if existing and not existing.is_expired():
-                return True
+                # Resend using the same code so retries work
+                sms_response = AuthService._get_sms_service().send_verification_code(
+                    phone_number, existing.code
+                )
+                dev_code = existing.code if sms_response.get('dev') else None
+                return {'ok': True, 'dev_code': dev_code}
 
             code = AuthService.generate_verification_code()
             expires_at = datetime.utcnow() + timedelta(minutes=10)
@@ -52,15 +57,16 @@ class AuthService:
             db.session.add(verification)
             db.session.commit()
 
-            response = AuthService._get_sms_service().send_verification_code(phone_number, code)
-            if not response.get('ok'):
-                raise RuntimeError(f"SMS provider returned failure: {response}")
-            logger.info('Verification SMS accepted by provider', extra={'phone_number': phone_number})
-            return True
+            sms_response = AuthService._get_sms_service().send_verification_code(phone_number, code)
+            if not sms_response.get('ok'):
+                raise RuntimeError(f"SMS provider returned failure: {sms_response}")
+            logger.info('Verification SMS accepted by provider for %s', phone_number)
+            dev_code = code if sms_response.get('dev') else None
+            return {'ok': True, 'dev_code': dev_code}
         except Exception as e:
             logger.exception('Error in send_verification_sms')
             db.session.rollback()
-            return False
+            return {'ok': False, 'dev_code': None}
 
     @staticmethod
     def verify_code(phone_number, code):
