@@ -262,7 +262,9 @@ def _generate_download_token(purchase_id: str, product_id: str) -> str:
     import hmac as hmac_mod
     import hashlib
     import os
-    secret = os.environ.get('SECRET_KEY', 'vipchat-dev-secret')
+    secret = os.environ.get('SECRET_KEY', '')
+    if not secret:
+        raise RuntimeError('SECRET_KEY env var is required for download token generation')
     expiry = int((datetime.utcnow() + __import__('datetime').timedelta(hours=24)).timestamp())
     msg = f'{purchase_id}:{product_id}:{expiry}'
     sig = hmac_mod.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()

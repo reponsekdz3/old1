@@ -431,8 +431,7 @@ def paypal_create_order():
         payment.amount = amount
         payment.currency = 'USD'
         payment.status = 'pending'
-        if purpose == 'verification':
-            payment.tier = tier
+        payment.tier = tier if purpose == 'verification' else 'marketplace'
         payment.metadata_json = json.dumps({'purpose': purpose, **(
             {'tier': tier} if purpose == 'verification' else {'product_id': data.get('product_id', '')}
         )})
@@ -491,15 +490,16 @@ def paypal_capture_order():
         if payment:
             payment.status = 'completed'
             payment.provider_payment_id = capture['capture_id']
-            payment.metadata_json = json.dumps({
+            orig_meta = json.loads(payment.metadata_json or '{}')
+            orig_meta.update({
                 'order_id': order_id,
                 'capture_id': capture['capture_id'],
                 'payer_email': capture.get('payer_email', ''),
                 'amount': capture['amount'],
-                'purpose': json.loads(payment.metadata_json or '{}').get('purpose', 'verification'),
             })
+            payment.metadata_json = json.dumps(orig_meta)
             db.session.commit()
-            meta = json.loads(payment.metadata_json)
+            meta = orig_meta
             purpose = meta.get('purpose', 'verification')
         else:
             purpose = data.get('purpose', 'verification')
@@ -549,13 +549,15 @@ def paypal_webhook():
         if not client_id or not client_secret:
             return jsonify({'error': 'PayPal not configured'}), 503
 
+        if not webhook_id:
+            return jsonify({'error': 'PAYPAL_WEBHOOK_ID not configured; webhook rejected'}), 503
+
         payload = request.get_data()
-        if webhook_id:
-            from app.services.monetization import PayPalPaymentProcessor
-            sandbox = current_app.config.get('PAYPAL_SANDBOX', 'false').lower() == 'true'
-            pp = PayPalPaymentProcessor(client_id, client_secret, sandbox=sandbox)
-            if not pp.verify_webhook(dict(request.headers), payload, webhook_id):
-                return jsonify({'error': 'Invalid webhook signature'}), 400
+        from app.services.monetization import PayPalPaymentProcessor
+        sandbox = current_app.config.get('PAYPAL_SANDBOX', 'false').lower() == 'true'
+        pp = PayPalPaymentProcessor(client_id, client_secret, sandbox=sandbox)
+        if not pp.verify_webhook(dict(request.headers), payload, webhook_id):
+            return jsonify({'error': 'Invalid webhook signature'}), 400
 
         event = json.loads(payload)
         event_type = event.get('event_type', '')

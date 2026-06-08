@@ -280,7 +280,7 @@ function PayPalCheckout({ product, user, onSuccess }) {
   const [paypalClientId, setPaypalClientId] = useState('');
   const [loading, setLoading] = useState(true);
   const [purchaseId, setPurchaseId] = useState(null);
-  const [orderId, setOrderId] = useState(null);
+  const [paypalPaymentId, setPaypalPaymentId] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -302,7 +302,7 @@ function PayPalCheckout({ product, user, onSuccess }) {
       purpose: 'marketplace',
       product_id: product.id,
     });
-    setOrderId(r.data.order_id);
+    setPaypalPaymentId(r.data.payment_id);
     return r.data.order_id;
   };
 
@@ -310,7 +310,7 @@ function PayPalCheckout({ product, user, onSuccess }) {
     try {
       await api.post('/payments/paypal/capture-order', {
         order_id: data.orderID,
-        payment_id: null,
+        payment_id: paypalPaymentId,
         purpose: 'marketplace',
         product_id: product.id,
         purchase_id: purchaseId,
