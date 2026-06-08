@@ -165,6 +165,11 @@ function ApiPlatformPage() {
   const [apiDocs, setApiDocs] = useState(null);
   const [docsLoading, setDocsLoading] = useState(false);
   const [billingInfo, setBillingInfo] = useState(null);
+  const [billingPlans, setBillingPlans] = useState([]);
+  const [billingSubscription, setBillingSubscription] = useState(null);
+  const [billingInvoices, setBillingInvoices] = useState([]);
+  const [upgradingPlan, setUpgradingPlan] = useState(null);
+  const [cancellingSubscription, setCancellingSubscription] = useState(false);
 
   const loadClient = useCallback(async () => {
     try {
@@ -205,10 +210,13 @@ function ApiPlatformPage() {
   }, [activeTab, apiDocs]);
 
   useEffect(() => {
-    if (activeTab === 'billing' && client && !billingInfo) {
+    if (activeTab === 'billing' && client) {
       api.get('/platform/billing').then(({ data }) => setBillingInfo(data)).catch(() => {});
+      api.get('/api/billing/plans').then(({ data }) => setBillingPlans(data.plans || [])).catch(() => {});
+      api.get('/api/billing/subscription').then(({ data }) => setBillingSubscription(data.subscription)).catch(() => {});
+      api.get('/api/billing/invoices').then(({ data }) => setBillingInvoices(data.invoices || [])).catch(() => {});
     }
-  }, [activeTab, client, billingInfo]);
+  }, [activeTab, client]);
 
   const handleRegisterSuccess = (data) => {
     setClient(data.client);
@@ -246,10 +254,11 @@ function ApiPlatformPage() {
     }
   };
 
-  const handleUpgrade = async (tier) => {
+  const handleUpgrade = async (plan) => {
+    setUpgradingPlan(plan);
     try {
-      const { data } = await api.post('/platform/subscribe', {
-        tier,
+      const { data } = await api.post('/api/billing/upgrade', {
+        plan,
         success_url: window.location.href + '?success=1',
         cancel_url: window.location.href,
       });
@@ -257,10 +266,28 @@ function ApiPlatformPage() {
         window.open(data.checkout_url, '_blank');
       } else {
         await loadClient();
-        toast.success(data.message || `Upgraded to ${tier}`);
+        setBillingSubscription(data.subscription || null);
+        toast.success(data.message || `Upgraded to ${plan}!`);
       }
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed');
+      toast.error(err.response?.data?.error || 'Upgrade failed');
+    } finally {
+      setUpgradingPlan(null);
+    }
+  };
+
+  const handleCancelSubscription = async () => {
+    if (!window.confirm('Cancel your subscription? You keep access until the end of the billing period.')) return;
+    setCancellingSubscription(true);
+    try {
+      const { data } = await api.delete('/api/billing/subscription');
+      toast.success(data.message || 'Subscription cancelled');
+      setBillingSubscription(prev => prev ? { ...prev, status: 'cancelled' } : null);
+      await loadClient();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to cancel');
+    } finally {
+      setCancellingSubscription(false);
     }
   };
 
@@ -742,64 +769,169 @@ if (sig !== expected) return res.status(401).send('Invalid');`} language="js"/>
 
           {/* ── BILLING ── */}
           {activeTab === 'billing' && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-bold text-gray-900">Plans & Billing</h2>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {[
-                  { id: 'starter', title: 'Starter', price: '$0', period: '/month', limit: '100 msg/day', features: ['API key access', 'Basic analytics', 'Community support'], cta: 'Current Plan', disabled: true },
-                  { id: 'pro', title: 'Pro', price: '$29', period: '/month', limit: '10,000 msg/day', features: ['Everything in Starter', 'Webhook delivery', 'Priority support', 'Usage dashboard'], cta: 'Upgrade to Pro', highlight: true },
-                  { id: 'enterprise', title: 'Enterprise', price: '$99', period: '/month', limit: 'Unlimited', features: ['Everything in Pro', 'Unlimited messages', 'Dedicated support', 'SLA guarantee'], cta: 'Upgrade to Enterprise' },
-                ].map(plan => (
-                  <motion.div key={plan.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-                    className={`bg-white rounded-2xl p-6 shadow-sm border-2 ${plan.highlight ? 'border-[#075E54]' : 'border-gray-100'} relative`}>
-                    {plan.highlight && (
-                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#075E54] text-white text-xs font-bold px-3 py-1 rounded-full">
-                        Most Popular
-                      </div>
-                    )}
-                    <h3 className="font-bold text-gray-900 text-lg">{plan.title}</h3>
-                    <div className="mt-2 mb-4">
-                      <span className="text-3xl font-bold text-gray-900">{plan.price}</span>
-                      <span className="text-gray-400 text-sm">{plan.period}</span>
-                    </div>
-                    <p className="text-sm text-gray-500 mb-4 font-medium">{plan.limit}</p>
-                    <ul className="space-y-2 mb-6">
-                      {plan.features.map(f => (
-                        <li key={f} className="flex items-center gap-2 text-sm text-gray-600">
-                          <FiCheck size={14} className="text-[#25D366] flex-shrink-0"/>
-                          {f}
-                        </li>
-                      ))}
-                    </ul>
-                    <button
-                      disabled={plan.disabled || client?.tier === plan.id || !client}
-                      onClick={() => client && handleUpgrade(plan.id)}
-                      className={`w-full py-2.5 rounded-xl font-semibold text-sm transition ${
-                        client?.tier === plan.id
-                          ? 'bg-gray-100 text-gray-400 cursor-default'
-                          : plan.highlight
-                            ? 'bg-[#075E54] hover:bg-[#054d46] text-white'
-                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                      }`}>
-                      {client?.tier === plan.id ? 'Current Plan' : !client ? 'Register first' : plan.cta}
-                    </button>
-                  </motion.div>
-                ))}
+            <div className="space-y-5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-900">Plans & Billing</h2>
+                {billingSubscription && billingSubscription.status === 'active' && billingSubscription.plan !== 'free' && (
+                  <button onClick={handleCancelSubscription} disabled={cancellingSubscription}
+                    className="text-xs text-red-500 hover:text-red-700 font-medium flex items-center gap-1.5 px-3 py-1.5 border border-red-200 hover:border-red-300 rounded-lg transition">
+                    {cancellingSubscription ? <FiRefreshCw size={11} className="animate-spin"/> : null}
+                    Cancel subscription
+                  </button>
+                )}
               </div>
 
-              {subscription && (
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                  <h3 className="font-semibold text-gray-900 mb-3">Active Subscription</h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between"><span className="text-gray-400">Plan</span><span className="font-medium">{TIERS[subscription.tier]?.label}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-400">Status</span><span className={`font-medium ${subscription.status === 'active' ? 'text-green-600' : 'text-red-500'}`}>{subscription.status}</span></div>
-                    {subscription.current_period_end && (
-                      <div className="flex justify-between"><span className="text-gray-400">Renews</span><span className="font-medium">{new Date(subscription.current_period_end).toLocaleDateString()}</span></div>
-                    )}
+              {/* Active subscription summary */}
+              {billingSubscription && (
+                <div className={`rounded-2xl p-4 border-2 flex items-center gap-4 ${
+                  billingSubscription.status === 'active' ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'
+                }`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                    billingSubscription.status === 'active' ? 'bg-green-100' : 'bg-yellow-100'
+                  }`}>
+                    <FiCreditCard size={18} className={billingSubscription.status === 'active' ? 'text-green-600' : 'text-yellow-600'}/>
                   </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-gray-900 capitalize">{billingSubscription.plan} Plan</div>
+                    <div className="text-xs text-gray-500 flex items-center gap-3 mt-0.5">
+                      <span className={`font-medium capitalize ${billingSubscription.status === 'active' ? 'text-green-600' : 'text-yellow-600'}`}>
+                        {billingSubscription.status}
+                      </span>
+                      {billingSubscription.current_period_end && (
+                        <span>Renews {new Date(billingSubscription.current_period_end).toLocaleDateString()}</span>
+                      )}
+                      {billingSubscription.messages_sent_today !== undefined && (
+                        <span>{billingSubscription.messages_sent_today?.toLocaleString()} / {billingSubscription.daily_limit === -1 ? '∞' : billingSubscription.daily_limit?.toLocaleString()} msgs today</span>
+                      )}
+                    </div>
+                  </div>
+                  {billingSubscription.daily_limit > 0 && (
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-xs text-gray-400 mb-1">Daily usage</div>
+                      <div className="w-24 bg-gray-200 rounded-full h-2">
+                        <div className="bg-[#25D366] h-2 rounded-full transition-all"
+                          style={{ width: `${Math.min(100, ((billingSubscription.messages_sent_today || 0) / billingSubscription.daily_limit) * 100)}%` }}/>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* Plans grid — use live plans from API, fallback to hardcoded */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {(billingPlans.length > 0 ? billingPlans : [
+                  { id: 'free', name: 'Starter', price_monthly: 0, daily_message_limit: 100, features: ['API key access', 'Basic analytics', 'Community support'], popular: false },
+                  { id: 'pro', name: 'Pro', price_monthly: 29, daily_message_limit: 10000, features: ['Everything in Starter', 'Webhook delivery', 'Priority support', 'Usage dashboard'], popular: true },
+                  { id: 'enterprise', name: 'Enterprise', price_monthly: 99, daily_message_limit: -1, features: ['Everything in Pro', 'Unlimited messages', 'Dedicated support', 'SLA guarantee', 'Custom domain'], popular: false },
+                ]).map((plan, idx) => {
+                  const planId = plan.id || plan.name?.toLowerCase();
+                  const currentPlan = billingSubscription?.plan || client?.tier || 'free';
+                  const isCurrent = currentPlan === planId;
+                  const isPopular = plan.popular;
+                  return (
+                    <motion.div key={planId} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.07 }}
+                      className={`bg-white rounded-2xl p-6 shadow-sm border-2 relative ${isPopular ? 'border-[#075E54]' : isCurrent ? 'border-[#25D366]' : 'border-gray-100'}`}>
+                      {isPopular && (
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#075E54] text-white text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap">
+                          Most Popular
+                        </div>
+                      )}
+                      {isCurrent && !isPopular && (
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#25D366] text-white text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap">
+                          Current Plan
+                        </div>
+                      )}
+                      <h3 className="font-bold text-gray-900 text-lg">{plan.name || plan.id}</h3>
+                      <div className="mt-2 mb-1">
+                        <span className="text-3xl font-bold text-gray-900">${plan.price_monthly ?? '?'}</span>
+                        <span className="text-gray-400 text-sm">/month</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mb-4 font-medium">
+                        {plan.daily_message_limit === -1 ? 'Unlimited messages/day' : `${(plan.daily_message_limit || 0).toLocaleString()} messages/day`}
+                      </p>
+                      <ul className="space-y-2 mb-6">
+                        {(plan.features || []).map(f => (
+                          <li key={f} className="flex items-center gap-2 text-sm text-gray-600">
+                            <FiCheck size={13} className="text-[#25D366] flex-shrink-0"/>
+                            {f}
+                          </li>
+                        ))}
+                      </ul>
+                      <button
+                        disabled={isCurrent || !client || upgradingPlan === planId}
+                        onClick={() => client && !isCurrent && handleUpgrade(planId)}
+                        className={`w-full py-2.5 rounded-xl font-semibold text-sm transition flex items-center justify-center gap-2 ${
+                          isCurrent
+                            ? 'bg-gray-100 text-gray-400 cursor-default'
+                            : isPopular
+                              ? 'bg-[#075E54] hover:bg-[#054d46] text-white'
+                              : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                        }`}>
+                        {upgradingPlan === planId
+                          ? <><FiRefreshCw size={13} className="animate-spin"/>Processing…</>
+                          : isCurrent ? '✓ Active' : !client ? 'Register first' : `Upgrade to ${plan.name || planId}`
+                        }
+                      </button>
+                    </motion.div>
+                  );
+                })}
+              </div>
+
+              {/* Invoice history */}
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <FiCreditCard size={16} className="text-gray-400"/>
+                  Invoice History
+                </h3>
+                {billingInvoices.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">
+                    <FiCreditCard size={32} className="mx-auto mb-2 opacity-30"/>
+                    <p className="text-sm">No invoices yet — payments will appear here</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-100">
+                          <th className="pb-2 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide">Date</th>
+                          <th className="pb-2 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide">Plan</th>
+                          <th className="pb-2 text-right text-xs font-semibold text-gray-400 uppercase tracking-wide">Amount</th>
+                          <th className="pb-2 text-right text-xs font-semibold text-gray-400 uppercase tracking-wide">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {billingInvoices.map(inv => (
+                          <tr key={inv.id} className="hover:bg-gray-50 transition">
+                            <td className="py-3 text-gray-600">{new Date(inv.created_at).toLocaleDateString()}</td>
+                            <td className="py-3 text-gray-900 font-medium capitalize">{inv.plan}</td>
+                            <td className="py-3 text-right font-mono text-gray-900">
+                              ${(inv.amount || 0).toFixed(2)} <span className="text-xs text-gray-400">{inv.currency}</span>
+                            </td>
+                            <td className="py-3 text-right">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                inv.status === 'paid' ? 'bg-green-100 text-green-700' :
+                                inv.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                                'bg-red-100 text-red-700'
+                              }`}>{inv.status}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Stripe note */}
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3">
+                <FiShield size={16} className="text-blue-500 flex-shrink-0 mt-0.5"/>
+                <div className="text-xs text-blue-700">
+                  <span className="font-semibold">Secure payments via Stripe.</span> We never store your card details.
+                  All transactions are encrypted and PCI-compliant. Upgrades take effect immediately;
+                  cancellations remain active until period end.
+                </div>
+              </div>
             </div>
           )}
         </div>

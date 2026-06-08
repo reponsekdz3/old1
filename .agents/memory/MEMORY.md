@@ -1,1 +1,4 @@
 - [VipChat architecture](vipchat-arch.md) — Flask+SQLAlchemy backend port 8000, React+Tailwind frontend port 5000, two workflows required
+- [SQLAlchemy extend_existing](sqlalchemy-extend-existing.md) — all new blueprint models must declare extend_existing=True or MetaData conflicts crash startup.
+- [react-icons/fi missing icons](react-icons-missing.md) — FiMegaphone does not exist in react-icons/fi; use FiRadio as replacement for broadcast/ads icons.
+- [MySQL config resolution](mysql-config.md) — config.py resolves MYSQL_DATABASE_URL → DATABASE_URL → individual MYSQL_* vars → SQLite fallback via PyMySQL.

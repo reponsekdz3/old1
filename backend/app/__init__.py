@@ -234,6 +234,31 @@ def create_app(config_name='development'):
     except Exception as e:
         logger.warning(f"⚠ Marketplace routes not available: {e}")
 
+    try:
+        from app.routes.marketplace_advanced import marketplace_adv_bp
+        app.register_blueprint(marketplace_adv_bp)
+        with app.app_context():
+            db.create_all()
+        logger.info("✓ Marketplace Advanced (Ads/B2B/Analytics) routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ Marketplace Advanced routes not available: {e}")
+
+    try:
+        from app.routes.contacts_enhanced import contacts_enhanced_bp
+        app.register_blueprint(contacts_enhanced_bp)
+        logger.info("✓ Contacts Enhanced routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ Contacts Enhanced routes not available: {e}")
+
+    try:
+        from app.routes.api_billing import api_billing_bp
+        app.register_blueprint(api_billing_bp)
+        with app.app_context():
+            db.create_all()
+        logger.info("✓ API Billing routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ API Billing routes not available: {e}")
+
     # ── JWT token blocklist ────────────────────────────────────────────────
     @jwt.token_in_blocklist_loader
     def _check_token_revoked(jwt_header, jwt_payload):

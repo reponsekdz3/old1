@@ -13,6 +13,7 @@ import { useAuthStore } from '../services/store';
 import GetVerifiedModal from '../components/GetVerifiedModal';
 import { VerifiedBadgeInline } from '../components/VerifiedBadge';
 import DeviceSessionsModal from '../components/DeviceSessionsModal';
+import ContactsSyncPanel from '../components/ContactsSyncPanel';
 
 function Toggle({ value, onChange }) {
   return (
@@ -111,6 +112,7 @@ const PRIVACY_OPTIONS = [
 const TABS = [
   { id: 'general', label: 'General' },
   { id: 'security', label: 'Security' },
+  { id: 'contacts', label: 'Contacts' },
   { id: 'verification', label: 'Verification' },
 ];
 
@@ -570,6 +572,12 @@ export default function SettingsPage() {
                   All your messages are protected with industry-standard end-to-end encryption.
                   No one — not even VipChat — can read your messages.
                 </p>
+              </div>
+            </motion.div>
+          ) : activeTab === 'contacts' ? (
+            <motion.div key="contacts" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <div className="px-4 pt-4 pb-8">
+                <ContactsSyncPanel />
               </div>
             </motion.div>
           ) : (
