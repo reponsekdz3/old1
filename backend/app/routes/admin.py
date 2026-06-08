@@ -3,6 +3,9 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.models import db, User, Message, Group, Call, Status, Contact
 from datetime import datetime, timedelta
 from functools import wraps
+import os
+import sys
+import platform
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 
@@ -481,5 +484,274 @@ def auth_logs():
             'pages': pagination.pages,
             'page': page,
         }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ── System Settings ───────────────────────────────────────────────────────────
+_SYSTEM_SETTINGS = {
+    'maintenance_mode': False,
+    'registration_open': True,
+    'require_phone_verification': True,
+    'max_message_length': 4096,
+    'max_group_members': 1024,
+    'max_file_size_mb': 100,
+    'rate_limit_per_minute': 200,
+    'allow_marketplace': True,
+    'allow_business_api': True,
+    'allow_ads': True,
+    'allow_physical_store': True,
+    'e2ee_forced': True,
+    'ai_moderation_enabled': False,
+    'platform_fee_pct': 5.0,
+    'seller_cashback_pct': 3.0,
+    'min_withdrawal_usd': 10.0,
+}
+
+@admin_bp.route('/system/settings', methods=['GET'])
+@admin_required
+def get_system_settings():
+    try:
+        return jsonify({'settings': _SYSTEM_SETTINGS}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@admin_bp.route('/system/settings', methods=['PUT'])
+@admin_required
+def update_system_settings():
+    try:
+        data = request.json or {}
+        allowed = set(_SYSTEM_SETTINGS.keys())
+        updated = {}
+        for k, v in data.items():
+            if k in allowed:
+                _SYSTEM_SETTINGS[k] = v
+                updated[k] = v
+        return jsonify({'message': f'Updated {len(updated)} settings', 'settings': _SYSTEM_SETTINGS}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ── System Health ─────────────────────────────────────────────────────────────
+@admin_bp.route('/system/health', methods=['GET'])
+@admin_required
+def system_health():
+    try:
+        import time
+        start = time.time()
+
+        # DB ping
+        db_ok = False
+        db_latency_ms = None
+        try:
+            t0 = time.time()
+            db.session.execute(db.text('SELECT 1'))
+            db_latency_ms = round((time.time() - t0) * 1000, 1)
+            db_ok = True
+        except Exception:
+            pass
+
+        # Redis ping
+        redis_ok = False
+        redis_latency_ms = None
+        try:
+            import redis as r_lib
+            rc = r_lib.from_url(os.environ.get('REDIS_URL', 'redis://localhost:6379/0'), socket_connect_timeout=1)
+            t0 = time.time()
+            rc.ping()
+            redis_latency_ms = round((time.time() - t0) * 1000, 1)
+            redis_ok = True
+        except Exception:
+            pass
+
+        total_users = User.query.count()
+        total_messages = Message.query.count()
+        active_24h = User.query.filter(
+            User.last_seen >= datetime.utcnow() - timedelta(hours=24)
+        ).count()
+
+        return jsonify({
+            'status': 'healthy' if db_ok else 'degraded',
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'python_version': sys.version.split()[0],
+            'platform': platform.system(),
+            'uptime_info': 'running',
+            'database': {'status': 'ok' if db_ok else 'error', 'latency_ms': db_latency_ms},
+            'redis': {'status': 'ok' if redis_ok else 'unavailable', 'latency_ms': redis_latency_ms},
+            'metrics': {
+                'total_users': total_users,
+                'total_messages': total_messages,
+                'active_24h': active_24h,
+            },
+            'response_time_ms': round((time.time() - start) * 1000, 1),
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Revenue / Financial Analytics ────────────────────────────────────────────
+@admin_bp.route('/revenue', methods=['GET'])
+@admin_required
+def revenue_overview():
+    try:
+        period = request.args.get('period', '30')  # days
+        days = int(period)
+        since = datetime.utcnow() - timedelta(days=days)
+
+        # Marketplace purchases
+        mp_revenue = 0.0
+        mp_count = 0
+        physical_revenue = 0.0
+        physical_count = 0
+        api_revenue = 0.0
+        ad_revenue = 0.0
+
+        try:
+            from app.routes.marketplace import MarketplacePurchase
+            rows = MarketplacePurchase.query.filter(
+                MarketplacePurchase.purchased_at >= since,
+                MarketplacePurchase.payment_status == 'completed'
+            ).all()
+            mp_revenue = sum(r.amount_paid or 0 for r in rows)
+            mp_count = len(rows)
+        except Exception:
+            pass
+
+        try:
+            from app.routes.marketplace_physical import PhysicalOrder
+            rows = PhysicalOrder.query.filter(
+                PhysicalOrder.created_at >= since,
+                PhysicalOrder.payment_status == 'paid'
+            ).all()
+            physical_revenue = sum(r.total_amount or 0 for r in rows)
+            physical_count = len(rows)
+        except Exception:
+            pass
+
+        try:
+            from app.routes.business_api_platform import APISubscription
+            rows = APISubscription.query.filter(
+                APISubscription.created_at >= since,
+                APISubscription.is_active == True
+            ).all()
+            api_revenue = sum(r.amount_paid or 0 for r in rows)
+        except Exception:
+            pass
+
+        try:
+            from app.routes.ads import AdCampaign
+            rows = AdCampaign.query.filter(
+                AdCampaign.created_at >= since,
+            ).all()
+            ad_revenue = sum(r.budget_spent or 0 for r in rows)
+        except Exception:
+            pass
+
+        platform_fee_pct = _SYSTEM_SETTINGS.get('platform_fee_pct', 5.0) / 100.0
+        total_gross = mp_revenue + physical_revenue + api_revenue + ad_revenue
+        platform_earnings = total_gross * platform_fee_pct
+
+        # Daily breakdown for chart
+        daily = []
+        for i in range(min(days, 30) - 1, -1, -1):
+            day = datetime.utcnow() - timedelta(days=i)
+            start_day = day.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_day = start_day + timedelta(days=1)
+            day_total = 0.0
+            try:
+                from app.routes.marketplace import MarketplacePurchase
+                day_rows = MarketplacePurchase.query.filter(
+                    MarketplacePurchase.purchased_at >= start_day,
+                    MarketplacePurchase.purchased_at < end_day,
+                    MarketplacePurchase.payment_status == 'completed'
+                ).all()
+                day_total += sum(r.amount_paid or 0 for r in day_rows)
+            except Exception:
+                pass
+            daily.append({'date': start_day.strftime('%Y-%m-%d'), 'revenue': round(day_total, 2)})
+
+        return jsonify({
+            'period_days': days,
+            'summary': {
+                'total_gross': round(total_gross, 2),
+                'platform_earnings': round(platform_earnings, 2),
+                'marketplace_revenue': round(mp_revenue, 2),
+                'marketplace_orders': mp_count,
+                'physical_revenue': round(physical_revenue, 2),
+                'physical_orders': physical_count,
+                'api_revenue': round(api_revenue, 2),
+                'ad_revenue': round(ad_revenue, 2),
+            },
+            'daily': daily,
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Bulk user actions ─────────────────────────────────────────────────────────
+@admin_bp.route('/users/bulk', methods=['POST'])
+@admin_required
+def bulk_user_action():
+    """Bulk ban/unban/delete users"""
+    try:
+        me = get_jwt_identity()
+        data = request.json or {}
+        action = data.get('action')  # ban | unban | delete | confirm
+        user_ids = data.get('user_ids', [])
+        if not action or not user_ids:
+            return jsonify({'error': 'action and user_ids required'}), 400
+        affected = 0
+        for uid in user_ids:
+            if uid == me:
+                continue
+            u = User.query.get(uid)
+            if not u:
+                continue
+            if action == 'ban':
+                u.is_banned = True
+                affected += 1
+            elif action == 'unban':
+                u.is_banned = False
+                affected += 1
+            elif action == 'confirm':
+                u.account_confirmed_at = datetime.utcnow()
+                affected += 1
+            elif action == 'delete':
+                db.session.delete(u)
+                affected += 1
+        db.session.commit()
+        return jsonify({'message': f'{action} applied to {affected} users'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Export users CSV ──────────────────────────────────────────────────────────
+@admin_bp.route('/users/export', methods=['GET'])
+@admin_required
+def export_users():
+    """Export users as CSV"""
+    try:
+        import csv
+        import io
+        from flask import Response
+        users = User.query.order_by(User.created_at.desc()).all()
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['id', 'full_name', 'phone_number', 'email', 'is_admin', 'is_banned', 'created_at', 'last_seen'])
+        for u in users:
+            writer.writerow([
+                u.id, u.full_name, u.phone_number,
+                getattr(u, 'email', ''),
+                getattr(u, 'is_admin', False),
+                getattr(u, 'is_banned', False),
+                u.created_at.isoformat() if u.created_at else '',
+                u.last_seen.isoformat() if u.last_seen else '',
+            ])
+        return Response(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': 'attachment; filename=users_export.csv'}
+        )
     except Exception as e:
         return jsonify({'error': str(e)}), 500

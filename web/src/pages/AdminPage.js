@@ -12,7 +12,8 @@ import {
   FiToggleLeft, FiToggleRight, FiDownload, FiFilter,
   FiCode, FiZap, FiWifi, FiLock, FiServer, FiClock,
   FiDollarSign, FiMousePointer, FiShoppingBag, FiCreditCard,
-  FiPackage, FiAlertCircle,
+  FiPackage, FiAlertCircle, FiSettings, FiPieChart, FiDatabase,
+  FiGlobe, FiCpu, FiCheck, FiMinus, FiPlus,
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -193,6 +194,8 @@ const TABS = [
   { id: 'ads', label: 'Ads', icon: FiZap },
   { id: 'marketplace', label: 'Marketplace', icon: FiShoppingBag },
   { id: 'paypal', label: 'PayPal', icon: FiCreditCard },
+  { id: 'revenue', label: 'Revenue', icon: FiPieChart },
+  { id: 'system', label: 'System', icon: FiSettings },
 ];
 
 function AdminPage() {
@@ -253,6 +256,19 @@ function AdminPage() {
   const [paypalTotal, setPaypalTotal] = useState(0);
   const [refundingPaypal, setRefundingPaypal] = useState(null);
 
+  // Revenue analytics state
+  const [revenueData, setRevenueData] = useState(null);
+  const [revenueLoading, setRevenueLoading] = useState(false);
+  const [revenuePeriod, setRevenuePeriod] = useState('30');
+
+  // System settings state
+  const [systemSettings, setSystemSettings] = useState(null);
+  const [systemSettingsLoading, setSystemSettingsLoading] = useState(false);
+  const [systemHealth, setSystemHealth] = useState(null);
+  const [systemHealthLoading, setSystemHealthLoading] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsDirty, setSettingsDirty] = useState({});
+
   useEffect(() => {
     checkAdminAccess();
   }, []);
@@ -273,6 +289,17 @@ function AdminPage() {
 
   useEffect(() => {
     if (activeTab === 'paypal' && isAdmin) fetchPaypalTxns(1);
+  }, [activeTab, isAdmin]);
+
+  useEffect(() => {
+    if (activeTab === 'revenue' && isAdmin) fetchRevenue(revenuePeriod);
+  }, [activeTab, isAdmin]);
+
+  useEffect(() => {
+    if (activeTab === 'system' && isAdmin) {
+      fetchSystemSettings();
+      fetchSystemHealth();
+    }
   }, [activeTab, isAdmin]);
 
   const fetchLive = async () => {
@@ -474,6 +501,47 @@ function AdminPage() {
       toast.success('Campaign resumed');
       loadAdCampaigns(adCampaignsPage);
     } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
+  const fetchRevenue = async (period = '30') => {
+    setRevenueLoading(true);
+    try {
+      const { data } = await api.get(`/admin/revenue?period=${period}`);
+      setRevenueData(data);
+      setRevenuePeriod(period);
+    } catch (e) { toast.error('Failed to load revenue data'); }
+    finally { setRevenueLoading(false); }
+  };
+
+  const fetchSystemSettings = async () => {
+    setSystemSettingsLoading(true);
+    try {
+      const { data } = await api.get('/admin/system/settings');
+      setSystemSettings(data.settings);
+      setSettingsDirty({});
+    } catch (e) { toast.error('Failed to load system settings'); }
+    finally { setSystemSettingsLoading(false); }
+  };
+
+  const fetchSystemHealth = async () => {
+    setSystemHealthLoading(true);
+    try {
+      const { data } = await api.get('/admin/system/health');
+      setSystemHealth(data);
+    } catch (e) {}
+    finally { setSystemHealthLoading(false); }
+  };
+
+  const saveSetting = async (key, value) => {
+    const prev = systemSettings?.[key];
+    setSystemSettings(s => ({ ...s, [key]: value }));
+    try {
+      await api.put('/admin/system/settings', { [key]: value });
+      toast.success(`"${key.replace(/_/g, ' ')}" updated`);
+    } catch (e) {
+      setSystemSettings(s => ({ ...s, [key]: prev }));
+      toast.error('Failed to save setting');
+    }
   };
 
   const handleResolveReport = async (id) => {
@@ -1662,6 +1730,330 @@ function AdminPage() {
                           {d.resolution && <p className="text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2">Resolution: {d.resolution}</p>}
                         </div>
                       ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── REVENUE ── */}
+              {activeTab === 'revenue' && (
+                <div className="space-y-5">
+                  {/* Period selector */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex gap-2">
+                      {[
+                        { label: '7 days', val: '7' },
+                        { label: '30 days', val: '30' },
+                        { label: '90 days', val: '90' },
+                        { label: '1 year', val: '365' },
+                      ].map(p => (
+                        <button key={p.val} onClick={() => fetchRevenue(p.val)}
+                          className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${revenuePeriod === p.val ? 'bg-[#075E54] text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                    <button onClick={() => fetchRevenue(revenuePeriod)} className="ml-auto flex items-center gap-1.5 text-sm text-gray-500 border border-gray-200 px-3 py-2 rounded-xl hover:bg-gray-50 transition">
+                      <FiRefreshCw size={13} className={revenueLoading ? 'animate-spin' : ''} />Refresh
+                    </button>
+                  </div>
+
+                  {revenueLoading ? (
+                    <div className="flex items-center justify-center py-24">
+                      <div className="w-8 h-8 border-2 border-[#25D366] border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  ) : revenueData ? (
+                    <>
+                      {/* Summary cards */}
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        {[
+                          { icon: FiDollarSign, label: 'Total Gross', value: `$${revenueData.summary.total_gross?.toFixed(2)}`, color: 'bg-[#075E54]', sub: `Last ${revenuePeriod} days` },
+                          { icon: FiTrendingUp, label: 'Platform Earnings', value: `$${revenueData.summary.platform_earnings?.toFixed(2)}`, color: 'bg-purple-600', sub: 'After fees' },
+                          { icon: FiShoppingBag, label: 'Marketplace', value: `$${revenueData.summary.marketplace_revenue?.toFixed(2)}`, color: 'bg-teal-500', sub: `${revenueData.summary.marketplace_orders} orders` },
+                          { icon: FiZap, label: 'Ads Revenue', value: `$${revenueData.summary.ad_revenue?.toFixed(2)}`, color: 'bg-amber-500', sub: 'Spend captured' },
+                        ].map(s => (
+                          <motion.div key={s.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+                            className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                            <div className={`w-10 h-10 ${s.color} rounded-xl flex items-center justify-center mb-3`}>
+                              <s.icon size={18} className="text-white" />
+                            </div>
+                            <p className="text-2xl font-bold text-gray-900">{s.value}</p>
+                            <p className="text-sm font-medium text-gray-600">{s.label}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">{s.sub}</p>
+                          </motion.div>
+                        ))}
+                      </div>
+
+                      {/* Revenue breakdown */}
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 lg:col-span-2">
+                          <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                            <FiBarChart2 size={16} className="text-[#25D366]" /> Daily Revenue (last {Math.min(parseInt(revenuePeriod), 30)} days)
+                          </h3>
+                          {revenueData.daily?.length > 0 ? (
+                            <div className="space-y-3">
+                              <div className="flex items-end gap-1 h-36">
+                                {revenueData.daily.slice(-30).map((d, i) => {
+                                  const max = Math.max(...revenueData.daily.map(x => x.revenue), 1);
+                                  const height = Math.max(4, (d.revenue / max) * 100);
+                                  return (
+                                    <div key={i} className="flex-1 flex flex-col items-center gap-1" title={`${d.date}: $${d.revenue}`}>
+                                      <div className="w-full bg-gradient-to-t from-[#075E54] to-[#25D366] rounded-t-sm transition-all"
+                                        style={{ height: `${height}%`, opacity: 0.6 + (i / revenueData.daily.length) * 0.4 }} />
+                                      {i % 5 === 0 && <span className="text-[8px] text-gray-400 whitespace-nowrap">{d.date?.slice(5)}</span>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center h-36 text-gray-400 text-sm">
+                              <div className="text-center">
+                                <FiDollarSign size={32} className="mx-auto mb-2 opacity-30" />
+                                <p>No revenue data for this period</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                          <h3 className="font-bold text-gray-900 mb-4">Revenue Mix</h3>
+                          <div className="space-y-3">
+                            {[
+                              { label: 'Marketplace', amount: revenueData.summary.marketplace_revenue, color: 'bg-teal-400' },
+                              { label: 'Physical Store', amount: revenueData.summary.physical_revenue, color: 'bg-orange-400' },
+                              { label: 'API Subscriptions', amount: revenueData.summary.api_revenue, color: 'bg-violet-400' },
+                              { label: 'Ad Spend', amount: revenueData.summary.ad_revenue, color: 'bg-amber-400' },
+                            ].map(item => {
+                              const total = revenueData.summary.total_gross || 1;
+                              const pct = Math.round((item.amount / total) * 100);
+                              return (
+                                <div key={item.label}>
+                                  <div className="flex justify-between text-xs mb-1">
+                                    <span className="font-medium text-gray-700">{item.label}</span>
+                                    <span className="text-gray-500">${item.amount?.toFixed(2)} ({pct}%)</span>
+                                  </div>
+                                  <div className="w-full bg-gray-100 rounded-full h-2">
+                                    <div className={`${item.color} h-2 rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="mt-5 pt-4 border-t border-gray-100 text-center">
+                            <p className="text-xs text-gray-400">Platform takes</p>
+                            <p className="text-2xl font-black text-[#25D366]">${revenueData.summary.platform_earnings?.toFixed(2)}</p>
+                            <p className="text-xs text-gray-500">of ${revenueData.summary.total_gross?.toFixed(2)} gross</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Order summary */}
+                      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                        <h3 className="font-bold text-gray-900 mb-4">Transaction Summary</h3>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                          {[
+                            { label: 'Digital Orders', value: revenueData.summary.marketplace_orders, icon: '💾' },
+                            { label: 'Physical Orders', value: revenueData.summary.physical_orders, icon: '📦' },
+                            { label: 'Avg Order Value', value: revenueData.summary.marketplace_orders > 0 ? `$${(revenueData.summary.marketplace_revenue / revenueData.summary.marketplace_orders).toFixed(2)}` : '$0.00', icon: '📊' },
+                            { label: 'Revenue / Day', value: `$${(revenueData.summary.total_gross / parseInt(revenuePeriod)).toFixed(2)}`, icon: '📅' },
+                          ].map(s => (
+                            <div key={s.label} className="bg-gray-50 rounded-xl p-4">
+                              <p className="text-2xl mb-1">{s.icon}</p>
+                              <p className="text-xl font-bold text-gray-900">{s.value?.toLocaleString?.() ?? s.value}</p>
+                              <p className="text-xs text-gray-500">{s.label}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="bg-white rounded-2xl border border-gray-100 py-24 text-center text-gray-400">
+                      <FiDollarSign size={40} className="mx-auto mb-3 opacity-30" />
+                      <p>No revenue data available. Start selling to see analytics here.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── SYSTEM ── */}
+              {activeTab === 'system' && (
+                <div className="space-y-5">
+                  {/* Health status */}
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                        <FiServer size={16} className="text-[#25D366]" /> System Health
+                      </h3>
+                      <button onClick={fetchSystemHealth} className="flex items-center gap-1.5 text-sm text-gray-500 border border-gray-200 px-3 py-1.5 rounded-xl hover:bg-gray-50 transition">
+                        <FiRefreshCw size={12} className={systemHealthLoading ? 'animate-spin' : ''} /> Refresh
+                      </button>
+                    </div>
+                    {systemHealth ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                          <div className={`w-3 h-3 rounded-full ${systemHealth.status === 'healthy' ? 'bg-green-500' : 'bg-amber-500'}`} />
+                          <span className={`font-bold text-sm ${systemHealth.status === 'healthy' ? 'text-green-700' : 'text-amber-700'}`}>
+                            {systemHealth.status === 'healthy' ? 'All Systems Operational' : 'Degraded Performance'}
+                          </span>
+                          <span className="ml-auto text-xs text-gray-400">{systemHealth.response_time_ms}ms response</span>
+                        </div>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                          {[
+                            { label: 'Database', status: systemHealth.database?.status, latency: systemHealth.database?.latency_ms, icon: FiDatabase },
+                            { label: 'Cache (Redis)', status: systemHealth.redis?.status, latency: systemHealth.redis?.latency_ms, icon: FiCpu },
+                            { label: 'Python', value: systemHealth.python_version, icon: FiCode },
+                            { label: 'Platform', value: systemHealth.platform, icon: FiGlobe },
+                          ].map(s => {
+                            const ok = s.status === 'ok' || (!s.status && s.value);
+                            return (
+                              <div key={s.label} className="bg-gray-50 rounded-xl p-3 flex items-start gap-2">
+                                <s.icon size={14} className={`mt-0.5 flex-shrink-0 ${s.status ? (s.status === 'ok' ? 'text-green-500' : 'text-amber-500') : 'text-gray-400'}`} />
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold text-gray-700">{s.label}</p>
+                                  {s.status ? (
+                                    <p className={`text-xs font-bold ${s.status === 'ok' ? 'text-green-600' : 'text-amber-600'}`}>
+                                      {s.status === 'ok' ? `OK${s.latency != null ? ` · ${s.latency}ms` : ''}` : s.status}
+                                    </p>
+                                  ) : (
+                                    <p className="text-xs text-gray-600 truncate">{s.value || '—'}</p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="grid grid-cols-3 gap-3">
+                          {[
+                            { label: 'Total Users', value: systemHealth.metrics?.total_users },
+                            { label: 'Total Messages', value: systemHealth.metrics?.total_messages },
+                            { label: 'Active (24h)', value: systemHealth.metrics?.active_24h },
+                          ].map(m => (
+                            <div key={m.label} className="bg-gray-50 rounded-xl p-3 text-center">
+                              <p className="text-lg font-bold text-gray-900">{m.value?.toLocaleString() ?? '—'}</p>
+                              <p className="text-xs text-gray-500">{m.label}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-xs text-gray-400 text-right">Last checked: {systemHealth.timestamp ? new Date(systemHealth.timestamp).toLocaleTimeString() : '—'}</p>
+                      </div>
+                    ) : systemHealthLoading ? (
+                      <div className="flex items-center justify-center py-8"><div className="w-6 h-6 border-2 border-[#25D366] border-t-transparent rounded-full animate-spin" /></div>
+                    ) : (
+                      <p className="text-sm text-gray-400 text-center py-4">Click Refresh to check system health</p>
+                    )}
+                  </div>
+
+                  {/* Feature flags */}
+                  {systemSettingsLoading ? (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 flex items-center justify-center">
+                      <div className="w-7 h-7 border-2 border-[#25D366] border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  ) : systemSettings ? (
+                    <>
+                      {/* Toggle settings */}
+                      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                        <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                          <FiToggleRight size={16} className="text-[#25D366]" /> Feature Flags
+                        </h3>
+                        <div className="space-y-0 divide-y divide-gray-50">
+                          {[
+                            { key: 'maintenance_mode', label: 'Maintenance Mode', desc: 'Take platform offline for maintenance', danger: true },
+                            { key: 'registration_open', label: 'Open Registration', desc: 'Allow new users to sign up' },
+                            { key: 'require_phone_verification', label: 'Phone Verification Required', desc: 'Require OTP verification on signup' },
+                            { key: 'e2ee_forced', label: 'Force End-to-End Encryption', desc: 'Enforce E2EE on all messages' },
+                            { key: 'allow_marketplace', label: 'Digital Marketplace', desc: 'Enable digital goods marketplace' },
+                            { key: 'allow_physical_store', label: 'Physical Store', desc: 'Enable physical product orders' },
+                            { key: 'allow_business_api', label: 'Business API', desc: 'Enable third-party API access' },
+                            { key: 'allow_ads', label: 'Advertising Platform', desc: 'Enable sponsored ads in feeds' },
+                            { key: 'ai_moderation_enabled', label: 'AI Content Moderation', desc: 'Auto-flag policy-violating content' },
+                          ].map(setting => {
+                            const val = systemSettings[setting.key];
+                            return (
+                              <div key={setting.key} className="flex items-center gap-4 py-4">
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-sm font-semibold ${setting.danger && val ? 'text-red-600' : 'text-gray-900'}`}>{setting.label}</p>
+                                  <p className="text-xs text-gray-400">{setting.desc}</p>
+                                </div>
+                                <button
+                                  onClick={() => saveSetting(setting.key, !val)}
+                                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${val ? (setting.danger ? 'bg-red-500' : 'bg-[#25D366]') : 'bg-gray-200'}`}
+                                >
+                                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${val ? 'translate-x-6' : 'translate-x-1'}`} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Numeric settings */}
+                      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                        <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                          <FiSettings size={16} className="text-[#25D366]" /> Platform Limits & Rates
+                        </h3>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          {[
+                            { key: 'max_message_length', label: 'Max Message Length', unit: 'chars', min: 100, max: 65536, step: 100 },
+                            { key: 'max_group_members', label: 'Max Group Members', unit: 'users', min: 10, max: 10000, step: 10 },
+                            { key: 'max_file_size_mb', label: 'Max File Upload Size', unit: 'MB', min: 1, max: 500, step: 1 },
+                            { key: 'rate_limit_per_minute', label: 'API Rate Limit', unit: 'req/min', min: 10, max: 10000, step: 10 },
+                            { key: 'platform_fee_pct', label: 'Platform Fee', unit: '%', min: 0, max: 30, step: 0.5 },
+                            { key: 'seller_cashback_pct', label: 'Seller Cashback', unit: '%', min: 0, max: 20, step: 0.5 },
+                            { key: 'min_withdrawal_usd', label: 'Min Withdrawal', unit: 'USD', min: 1, max: 100, step: 1 },
+                          ].map(setting => (
+                            <div key={setting.key} className="flex flex-col gap-1.5">
+                              <label className="text-xs font-semibold text-gray-700">{setting.label}</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="number"
+                                  value={systemSettings[setting.key] ?? ''}
+                                  min={setting.min}
+                                  max={setting.max}
+                                  step={setting.step}
+                                  onChange={e => setSystemSettings(s => ({ ...s, [setting.key]: parseFloat(e.target.value) || 0 }))}
+                                  onBlur={e => saveSetting(setting.key, parseFloat(e.target.value) || 0)}
+                                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#25D366] focus:border-transparent"
+                                />
+                                <span className="text-xs text-gray-400 min-w-[40px]">{setting.unit}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Danger zone */}
+                      <div className="bg-white rounded-2xl shadow-sm border-2 border-red-100 p-5">
+                        <h3 className="font-bold text-red-700 mb-1 flex items-center gap-2">
+                          <FiAlertTriangle size={16} /> Danger Zone
+                        </h3>
+                        <p className="text-xs text-gray-500 mb-4">These actions are irreversible. Use with caution.</p>
+                        <div className="flex flex-col gap-2">
+                          <button onClick={async () => {
+                            if (!window.confirm('Export all users as CSV?')) return;
+                            try {
+                              const r = await api.get('/admin/users/export', { responseType: 'blob' });
+                              const url = URL.createObjectURL(r.data);
+                              const a = document.createElement('a'); a.href = url; a.download = 'users_export.csv'; a.click();
+                              toast.success('Users exported');
+                            } catch { toast.error('Export failed'); }
+                          }} className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-xl text-sm font-medium transition w-fit">
+                            <FiDownload size={14} /> Export All Users (CSV)
+                          </button>
+                          <button onClick={async () => {
+                            if (!window.confirm('Enable maintenance mode? Users will see a maintenance page.')) return;
+                            await saveSetting('maintenance_mode', true);
+                          }} className="flex items-center gap-2 px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-xl text-sm font-medium transition w-fit">
+                            <FiAlertTriangle size={14} /> Enable Maintenance Mode
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="bg-white rounded-2xl border border-gray-100 py-16 text-center text-gray-400">
+                      <FiSettings size={40} className="mx-auto mb-3 opacity-30" />
+                      <p>Failed to load system settings</p>
+                      <button onClick={fetchSystemSettings} className="mt-3 text-sm text-[#25D366] hover:underline">Retry</button>
                     </div>
                   )}
                 </div>
