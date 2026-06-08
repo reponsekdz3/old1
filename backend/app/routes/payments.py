@@ -529,21 +529,34 @@ def paypal_capture_order():
             from app.routes.marketplace import MarketplacePurchase, _deliver_purchase_async
             meta = json.loads(payment.metadata_json or '{}')
             product_id = meta.get('product_id', '')
-            existing = MarketplacePurchase.query.filter_by(
-                buyer_id=user_id, product_id=product_id, status='completed'
+            # Resolve the pending purchase created by /products/<id>/purchase
+            purchase = MarketplacePurchase.query.filter_by(
+                buyer_id=user_id, product_id=product_id, status='pending',
+                payment_provider='paypal',
             ).first()
-            if not existing:
-                purchase = MarketplacePurchase()
-                purchase.buyer_id = user_id
-                purchase.product_id = product_id
-                purchase.amount_paid = capture['amount']
-                purchase.currency = capture.get('currency', 'USD')
-                purchase.payment_provider = 'paypal'
-                purchase.payment_ref = capture['capture_id']
+            if purchase:
                 purchase.status = 'completed'
-                db.session.add(purchase)
+                purchase.payment_ref = capture['capture_id']
+                purchase.amount_paid = capture['amount']
                 db.session.commit()
                 _deliver_purchase_async(purchase.id)
+            else:
+                # No pending purchase found; check if already completed (idempotent)
+                already = MarketplacePurchase.query.filter_by(
+                    buyer_id=user_id, product_id=product_id, status='completed'
+                ).first()
+                if not already and product_id:
+                    purchase = MarketplacePurchase()
+                    purchase.buyer_id = user_id
+                    purchase.product_id = product_id
+                    purchase.amount_paid = capture['amount']
+                    purchase.currency = capture.get('currency', 'USD')
+                    purchase.payment_provider = 'paypal'
+                    purchase.payment_ref = capture['capture_id']
+                    purchase.status = 'completed'
+                    db.session.add(purchase)
+                    db.session.commit()
+                    _deliver_purchase_async(purchase.id)
 
         return jsonify({'captured': True, 'capture_id': capture['capture_id']}), 200
 

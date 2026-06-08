@@ -284,8 +284,18 @@ class PayPalPaymentProcessor:
         return resp.json()
 
     def verify_webhook(self, headers: Dict, body: bytes, webhook_id: str) -> bool:
-        """Verify a PayPal webhook event using PayPal's verification API."""
+        """Verify a PayPal webhook event using PayPal's verification API.
+
+        PayPal's /v1/notifications/verify-webhook-signature requires
+        webhook_event to be the parsed JSON object of the raw event body,
+        not a string representation.
+        """
         import requests as http
+        import json as _json
+        try:
+            event_obj = _json.loads(body)
+        except Exception:
+            return False
         payload = {
             'auth_algo': headers.get('PAYPAL-AUTH-ALGO', ''),
             'cert_url': headers.get('PAYPAL-CERT-URL', ''),
@@ -293,7 +303,7 @@ class PayPalPaymentProcessor:
             'transmission_sig': headers.get('PAYPAL-TRANSMISSION-SIG', ''),
             'transmission_time': headers.get('PAYPAL-TRANSMISSION-TIME', ''),
             'webhook_id': webhook_id,
-            'webhook_event': body.decode('utf-8') if isinstance(body, bytes) else body,
+            'webhook_event': event_obj,
         }
         try:
             resp = http.post(

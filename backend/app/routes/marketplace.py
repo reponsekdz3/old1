@@ -57,6 +57,7 @@ class MarketplaceProduct(db.Model):
     view_count = Column(Integer, default=0)
     wishlist_count = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
+    is_approved = Column(Boolean, default=True)
     is_free = Column(Boolean, default=False)
     is_featured = Column(Boolean, default=False)
     is_boosted = Column(Boolean, default=False)
@@ -138,12 +139,18 @@ class MarketplacePurchase(db.Model):
 
 class MarketplaceReview(db.Model):
     __tablename__ = 'marketplace_reviews'
+    __table_args__ = {'extend_existing': True}
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     product_id = Column(String(36), ForeignKey('marketplace_products.id'), nullable=False)
     reviewer_id = Column(String(36), ForeignKey('users.id'), nullable=False)
     rating = Column(Integer, nullable=False)
     comment = Column(Text, nullable=True)
+    media_url = Column(Text, nullable=True)
+    helpful_count = Column(Integer, default=0)
+    is_verified_purchase = Column(Boolean, default=False)
+    is_moderated = Column(Boolean, default=False)
+    seller_reply = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     reviewer = relationship('User', foreign_keys=[reviewer_id])
@@ -157,6 +164,11 @@ class MarketplaceReview(db.Model):
             'reviewer_avatar': self.reviewer.avatar_url if self.reviewer else None,
             'rating': self.rating,
             'comment': self.comment,
+            'media_url': self.media_url,
+            'helpful_count': self.helpful_count,
+            'is_verified_purchase': self.is_verified_purchase,
+            'is_moderated': self.is_moderated,
+            'seller_reply': self.seller_reply,
             'created_at': self.created_at.isoformat(),
         }
 
@@ -951,9 +963,177 @@ def add_review(product_id):
         review.reviewer_id = user_id
         review.rating = rating
         review.comment = data.get('comment', '').strip()[:1000]
+        review.media_url = data.get('media_url', '').strip() or None
+        review.is_verified_purchase = has_purchase
         db.session.add(review)
         db.session.commit()
         return jsonify(review.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@marketplace_bp.route('/reviews/<review_id>/helpful', methods=['POST'])
+@jwt_required()
+def mark_review_helpful(review_id):
+    """Mark a review as helpful (increments helpful_count)."""
+    try:
+        review = MarketplaceReview.query.get(review_id)
+        if not review:
+            return jsonify({'error': 'Not found'}), 404
+        review.helpful_count = (review.helpful_count or 0) + 1
+        db.session.commit()
+        return jsonify({'helpful_count': review.helpful_count}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@marketplace_bp.route('/reviews/<review_id>/reply', methods=['POST'])
+@jwt_required()
+def seller_reply_review(review_id):
+    """Seller replies to a review on their product."""
+    try:
+        user_id = get_jwt_identity()
+        review = MarketplaceReview.query.get(review_id)
+        if not review:
+            return jsonify({'error': 'Not found'}), 404
+        product = MarketplaceProduct.query.get(review.product_id)
+        if not product or product.seller_id != user_id:
+            return jsonify({'error': 'Forbidden — only the product seller can reply'}), 403
+        data = request.get_json() or {}
+        review.seller_reply = data.get('reply', '').strip()[:1000]
+        db.session.commit()
+        return jsonify(review.to_dict()), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@marketplace_bp.route('/admin/reviews/<review_id>/moderate', methods=['POST'])
+@jwt_required()
+def admin_moderate_review(review_id):
+    """Admin: hide (moderate) or restore a review."""
+    try:
+        user_id = get_jwt_identity()
+        from app.models.models import User as UserModel
+        user = UserModel.query.get(user_id)
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin only'}), 403
+        review = MarketplaceReview.query.get(review_id)
+        if not review:
+            return jsonify({'error': 'Not found'}), 404
+        data = request.get_json() or {}
+        review.is_moderated = bool(data.get('moderate', True))
+        db.session.commit()
+        return jsonify({'message': 'Updated', 'is_moderated': review.is_moderated}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@marketplace_bp.route('/admin/products/<product_id>/approve', methods=['POST'])
+@jwt_required()
+def admin_approve_product(product_id):
+    """Admin: approve or reject a product listing."""
+    try:
+        user_id = get_jwt_identity()
+        from app.models.models import User as UserModel
+        user = UserModel.query.get(user_id)
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin only'}), 403
+        product = MarketplaceProduct.query.get(product_id)
+        if not product:
+            return jsonify({'error': 'Not found'}), 404
+        data = request.get_json() or {}
+        approved = bool(data.get('approved', True))
+        product.is_approved = approved
+        if not approved:
+            product.is_active = False
+        db.session.commit()
+        return jsonify({'message': 'Updated', 'is_approved': approved}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@marketplace_bp.route('/products/<product_id>/boost', methods=['POST'])
+@jwt_required()
+def boost_product(product_id):
+    """Seller: boost their product (paid feature via Stripe or PayPal)."""
+    try:
+        user_id = get_jwt_identity()
+        product = MarketplaceProduct.query.get(product_id)
+        if not product or product.seller_id != user_id:
+            return jsonify({'error': 'Forbidden'}), 403
+
+        data = request.get_json() or {}
+        payment_provider = data.get('payment_provider', 'stripe')
+        boost_days = int(data.get('days', 7))
+        boost_price = 4.99 * (boost_days / 7)
+
+        if payment_provider == 'paypal':
+            paypal_id = current_app.config.get('PAYPAL_CLIENT_ID', '').strip()
+            paypal_secret = current_app.config.get('PAYPAL_CLIENT_SECRET', '').strip()
+            if not paypal_id or not paypal_secret:
+                return jsonify({'error': 'PayPal not configured'}), 503
+            from app.services.monetization import PayPalPaymentProcessor
+            from app.models.models import Payment
+            sandbox = current_app.config.get('PAYPAL_SANDBOX', 'false').lower() == 'true'
+            pp = PayPalPaymentProcessor(paypal_id, paypal_secret, sandbox=sandbox)
+            base_url = request.host_url.rstrip('/')
+            result = pp.create_order(
+                amount=round(boost_price, 2),
+                currency='USD',
+                description=f'Product Boost — {boost_days} days for "{product.title}"',
+                return_url=f'{base_url}/marketplace?boost_success={product_id}',
+                cancel_url=f'{base_url}/marketplace?boost_cancel=1',
+            )
+            payment = Payment()
+            payment.user_id = user_id
+            payment.provider = 'paypal'
+            payment.amount = round(boost_price, 2)
+            payment.currency = 'USD'
+            payment.status = 'pending'
+            payment.tier = 'boost'
+            payment.provider_payment_id = result['order_id']
+            import json as _json
+            payment.metadata_json = _json.dumps({
+                'purpose': 'boost', 'product_id': product_id, 'boost_days': boost_days,
+            })
+            db.session.add(payment)
+            db.session.commit()
+            return jsonify({
+                'order_id': result['order_id'],
+                'approve_url': result['approve_url'],
+                'payment_id': payment.id,
+                'boost_days': boost_days,
+                'amount': round(boost_price, 2),
+            }), 200
+
+        # Stripe fallback
+        import stripe
+        stripe.api_key = current_app.config.get('STRIPE_SECRET_KEY', '')
+        if not stripe.api_key:
+            return jsonify({'error': 'Payment not configured'}), 503
+        base_url = request.host_url.rstrip('/')
+        session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'usd',
+                    'product_data': {'name': f'Product Boost — {boost_days} days'},
+                    'unit_amount': int(boost_price * 100),
+                },
+                'quantity': 1,
+            }],
+            mode='payment',
+            success_url=f'{base_url}/marketplace?boost_success={product_id}',
+            cancel_url=f'{base_url}/marketplace?boost_cancel=1',
+            metadata={'type': 'boost', 'product_id': product_id,
+                      'boost_days': str(boost_days), 'seller_id': user_id},
+        )
+        return jsonify({'checkout_url': session.url, 'boost_days': boost_days}), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
