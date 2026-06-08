@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   FiArrowLeft, FiLock, FiBell, FiDownload, FiDatabase,
   FiHelpCircle, FiInfo, FiChevronRight,
-  FiCheck, FiShield, FiSend,
+  FiCheck, FiShield, FiSend, FiSmartphone, FiZap, FiShoppingBag,
 } from 'react-icons/fi';
 import { subscribeToPush, unsubscribeFromPush } from '../services/pushService';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import { useAuthStore } from '../services/store';
 import GetVerifiedModal from '../components/GetVerifiedModal';
 import { VerifiedBadgeInline } from '../components/VerifiedBadge';
+import DeviceSessionsModal from '../components/DeviceSessionsModal';
 
 function Toggle({ value, onChange }) {
   return (
@@ -109,6 +110,7 @@ const PRIVACY_OPTIONS = [
 
 const TABS = [
   { id: 'general', label: 'General' },
+  { id: 'security', label: 'Security' },
   { id: 'verification', label: 'Verification' },
 ];
 
@@ -272,6 +274,7 @@ export default function SettingsPage() {
   const [searchParams] = useSearchParams();
   const { user, setUser } = useAuthStore();
   const [activeTab, setActiveTab] = useState('general');
+  const [showDeviceSessions, setShowDeviceSessions] = useState(false);
   const [settings, setSettings] = useState({
     read_receipts: true,
     last_seen_privacy: 'everyone',
@@ -536,6 +539,39 @@ export default function SettingsPage() {
                 <p className="text-xs text-gray-300 mt-0.5">Your messages are protected with industry-standard encryption</p>
               </div>
             </motion.div>
+          ) : activeTab === 'security' ? (
+            <motion.div key="security" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              {/* Active Devices */}
+              <div className="mx-4 mt-4 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <SectionHeader icon={FiShield} title="Active Devices" desc="Manage sessions and linked devices" />
+                <ActionRow label="Linked Devices" sub="View and manage all active sessions"
+                  icon={FiSmartphone} iconBg="bg-blue-50" iconColor="text-blue-500"
+                  onClick={() => setShowDeviceSessions(true)} />
+              </div>
+
+              {/* Account */}
+              <div className="mx-4 mt-4 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <SectionHeader icon={FiZap} title="Account & Billing" desc="Subscription and marketplace" />
+                <ActionRow label="Subscription Plan" sub="Upgrade to Pro or Business"
+                  icon={FiZap} iconBg="bg-amber-50" iconColor="text-amber-500"
+                  onClick={() => navigate('/subscription')} />
+                <ActionRow label="Marketplace" sub="Browse, sell, and manage products"
+                  icon={FiShoppingBag} iconBg="bg-purple-50" iconColor="text-purple-500"
+                  onClick={() => navigate('/marketplace')} />
+              </div>
+
+              {/* Security info */}
+              <div className="mx-4 mt-4 mb-8 bg-gradient-to-r from-[#075E54] to-[#128C7E] rounded-2xl p-5">
+                <div className="flex items-center gap-3 mb-3">
+                  <FiShield size={20} className="text-white" />
+                  <p className="font-bold text-white">End-to-End Encrypted</p>
+                </div>
+                <p className="text-white/70 text-sm">
+                  All your messages are protected with industry-standard end-to-end encryption.
+                  No one — not even VipChat — can read your messages.
+                </p>
+              </div>
+            </motion.div>
           ) : (
             <motion.div key="verification" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <VerificationTab user={user} />
@@ -544,6 +580,10 @@ export default function SettingsPage() {
           )}
         </AnimatePresence>
       </div>
+
+      {showDeviceSessions && (
+        <DeviceSessionsModal onClose={() => setShowDeviceSessions(false)} />
+      )}
 
     </div>
   );

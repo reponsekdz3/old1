@@ -1,12 +1,15 @@
 {
-  "name": "Bitese",
-  "short_name": "Bitese",
-  "description": "Bitese - Real-time encrypted messaging, calls, and more",
+  "name": "VipChat - Secure Messaging",
+  "short_name": "VipChat",
+  "description": "VipChat — Real-time encrypted messaging, HD calls, marketplace, and more",
   "start_url": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "background_color": "#075E54",
   "theme_color": "#075E54",
-  "orientation": "portrait-primary",
+  "orientation": "any",
+  "lang": "en",
+  "scope": "/",
   "icons": [
     {
       "src": "/logo192.png",
@@ -21,5 +24,22 @@
       "purpose": "maskable any"
     }
   ],
-  "categories": ["social", "communication"]
+  "categories": ["social", "communication", "productivity"],
+  "shortcuts": [
+    {
+      "name": "New Chat",
+      "short_name": "Chat",
+      "description": "Start a new conversation",
+      "url": "/?new_chat=1",
+      "icons": [{"src": "/logo192.png", "sizes": "192x192"}]
+    },
+    {
+      "name": "Marketplace",
+      "short_name": "Market",
+      "description": "Browse the marketplace",
+      "url": "/marketplace",
+      "icons": [{"src": "/logo192.png", "sizes": "192x192"}]
+    }
+  ],
+  "prefer_related_applications": false
 }

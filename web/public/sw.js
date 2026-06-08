@@ -1,7 +1,12 @@
-/* VipChat Service Worker — push notifications + offline caching */
-const CACHE_NAME = 'vipchat-v3';
-const STATIC_ASSETS = ['/', '/index.html', '/logo192.png', '/manifest.json'];
+/* VipChat Service Worker — offline caching + push notifications + background sync */
+const CACHE_NAME = 'vipchat-v5';
+const OFFLINE_PAGE = '/index.html';
+const STATIC_ASSETS = [
+  '/', '/index.html', '/logo192.png', '/logo512.png', '/manifest.json',
+  '/favicon.ico',
+];
 
+// ── Install ────────────────────────────────────────────────────────────────────
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
@@ -9,6 +14,7 @@ self.addEventListener('install', (event) => {
   );
 });
 
+// ── Activate ───────────────────────────────────────────────────────────────────
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
@@ -17,25 +23,119 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// ── Fetch — Network-first for API, Cache-first for static ─────────────────────
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  const url = new URL(event.request.url);
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/uploads/')) return;
 
-  event.respondWith(
-    fetch(event.request)
-      .then((resp) => {
-        if (resp && resp.status === 200 && resp.type === 'basic') {
+  const url = new URL(event.request.url);
+
+  // Skip WebSocket and non-http
+  if (!url.protocol.startsWith('http')) return;
+
+  // API calls: network only, no cache
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io/')) return;
+
+  // Uploads: network first, cache fallback
+  if (url.pathname.startsWith('/uploads/')) {
+    event.respondWith(
+      fetch(event.request).then(resp => {
+        if (resp && resp.status === 200) {
           const cloned = resp.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
+          caches.open(CACHE_NAME).then(c => c.put(event.request, cloned));
         }
         return resp;
-      })
-      .catch(() => caches.match(event.request).then(r => r || caches.match('/index.html')))
+      }).catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // HTML navigation: network first, cache fallback → offline page
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then(resp => {
+          if (resp && resp.status === 200) {
+            const cloned = resp.clone();
+            caches.open(CACHE_NAME).then(c => c.put(event.request, cloned));
+          }
+          return resp;
+        })
+        .catch(() => caches.match(event.request)
+          .then(r => r || caches.match(OFFLINE_PAGE))
+        )
+    );
+    return;
+  }
+
+  // JS/CSS/Images: stale-while-revalidate
+  event.respondWith(
+    caches.match(event.request).then(cached => {
+      const networkFetch = fetch(event.request).then(resp => {
+        if (resp && resp.status === 200 && resp.type === 'basic') {
+          const cloned = resp.clone();
+          caches.open(CACHE_NAME).then(c => c.put(event.request, cloned));
+        }
+        return resp;
+      }).catch(() => null);
+      return cached || networkFetch;
+    })
   );
 });
 
-// ── Push Notifications ────────────────────────────────────────────────────────
+// ── Background Sync (offline message queue) ────────────────────────────────────
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-messages') {
+    event.waitUntil(syncPendingMessages());
+  }
+});
+
+async function syncPendingMessages() {
+  try {
+    const db = await openDB();
+    const messages = await getAllPending(db);
+    for (const msg of messages) {
+      try {
+        const resp = await fetch('/api/messages/send', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${msg.token}`,
+          },
+          body: JSON.stringify(msg.data),
+        });
+        if (resp.ok) await deletePending(db, msg.id);
+      } catch {}
+    }
+  } catch {}
+}
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('vipchat-offline', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('pending', { keyPath: 'id', autoIncrement: true });
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function getAllPending(db) {
+  return new Promise((resolve) => {
+    const tx = db.transaction('pending', 'readonly');
+    const req = tx.objectStore('pending').getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => resolve([]);
+  });
+}
+
+function deletePending(db, id) {
+  return new Promise((resolve) => {
+    const tx = db.transaction('pending', 'readwrite');
+    tx.objectStore('pending').delete(id);
+    tx.oncomplete = resolve;
+  });
+}
+
+// ── Push Notifications ─────────────────────────────────────────────────────────
 self.addEventListener('push', (event) => {
   let payload = {};
   try { payload = event.data ? event.data.json() : {}; } catch {}
@@ -59,8 +159,8 @@ self.addEventListener('push', (event) => {
       silent: false,
       data,
       actions: [
-        { action: 'open',    title: '💬 Open Chat' },
-        { action: 'dismiss', title: '✕ Dismiss' },
+        { action: 'reply', title: 'Reply' },
+        { action: 'dismiss', title: 'Dismiss' },
       ],
     })
   );
@@ -68,29 +168,45 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  if (event.action === 'dismiss') return;
+  const action = event.action;
+  if (action === 'dismiss') return;
 
-  const targetUrl = event.notification.data?.url || '/';
-
+  const url = event.notification.data?.url || '/';
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      const existing = clients.find(c => c.url.startsWith(self.location.origin));
-      if (existing) {
-        existing.focus();
-        existing.postMessage({ type: 'PUSH_CLICK', url: targetUrl, data: event.notification.data });
-        return;
+      for (const client of clients) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          client.focus();
+          client.postMessage({ type: 'navigate', url });
+          return;
+        }
       }
-      return self.clients.openWindow(targetUrl);
+      return self.clients.openWindow(url);
     })
   );
 });
 
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'vipchat-sync-messages') {
-    event.waitUntil(
-      self.clients.matchAll().then(clients =>
-        clients.forEach(c => c.postMessage({ type: 'BACKGROUND_SYNC' }))
-      )
-    );
+// ── Periodic background updates ────────────────────────────────────────────────
+self.addEventListener('periodicsync', (event) => {
+  if (event.tag === 'update-cache') {
+    event.waitUntil(updateStaticCache());
+  }
+});
+
+async function updateStaticCache() {
+  const cache = await caches.open(CACHE_NAME);
+  await Promise.allSettled(STATIC_ASSETS.map(url => cache.add(url).catch(() => {})));
+}
+
+// ── Message from main thread ───────────────────────────────────────────────────
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'skip-waiting') {
+    self.skipWaiting();
+  }
+  if (event.data?.type === 'queue-message') {
+    openDB().then(db => {
+      const tx = db.transaction('pending', 'readwrite');
+      tx.objectStore('pending').add(event.data.payload);
+    }).catch(() => {});
   }
 });

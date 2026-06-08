@@ -225,6 +225,15 @@ def create_app(config_name='development'):
     except Exception as e:
         logger.warning(f"⚠ WebRTC E2EE routes not available: {e}")
 
+    try:
+        from app.routes.marketplace import marketplace_bp, MarketplaceProduct, MarketplacePurchase, MarketplaceReview, MarketplaceMessage
+        app.register_blueprint(marketplace_bp)
+        with app.app_context():
+            db.create_all()
+        logger.info("✓ Marketplace routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ Marketplace routes not available: {e}")
+
     # ── JWT token blocklist ────────────────────────────────────────────────
     @jwt.token_in_blocklist_loader
     def _check_token_revoked(jwt_header, jwt_payload):

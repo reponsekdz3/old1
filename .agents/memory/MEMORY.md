@@ -1,0 +1,1 @@
+- [VipChat architecture](vipchat-arch.md) — Flask+SQLAlchemy backend port 8000, React+Tailwind frontend port 5000, two workflows required

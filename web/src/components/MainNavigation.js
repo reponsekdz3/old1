@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   FiUsers, FiRadio, FiPhone, FiSettings,
   FiLogOut, FiUser, FiCircle, FiShield, FiStar,
+  FiShoppingBag, FiZap,
 } from 'react-icons/fi';
 import { MdOutlineMessage } from 'react-icons/md';
 import ChatsTab from './ChatsTab';
@@ -38,6 +39,8 @@ function MainNavigation({ socket, onChatSelect, onNewChat, onProfileClick, onLog
   const menuItems = [
     { icon: FiUser, label: 'Profile', action: () => { setShowUserMenu(false); onProfileClick?.(); } },
     { icon: FiStar, label: 'Starred Messages', action: () => { setShowUserMenu(false); navigate('/starred'); } },
+    { icon: FiShoppingBag, label: 'Marketplace', action: () => { setShowUserMenu(false); navigate('/marketplace'); } },
+    { icon: FiZap, label: 'Subscription', action: () => { setShowUserMenu(false); navigate('/subscription'); } },
     { icon: FiSettings, label: 'Settings', action: () => { setShowUserMenu(false); navigate('/settings'); } },
     ...(isAdmin ? [{ icon: FiShield, label: 'Admin Panel', action: () => { setShowUserMenu(false); navigate('/admin'); } }] : []),
     { icon: FiLogOut, label: 'Log out', action: () => { setShowUserMenu(false); onLogout?.(); }, danger: true },

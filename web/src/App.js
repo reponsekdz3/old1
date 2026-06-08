@@ -11,6 +11,10 @@ import AdminPage from './pages/AdminPage';
 import ApiPlatformPage from './pages/ApiPlatformPage';
 import AccountVerificationPage from './pages/AccountVerificationPage';
 import DownloadPage from './pages/DownloadPage';
+import MarketplacePage from './pages/MarketplacePage';
+import SubscriptionPage from './pages/SubscriptionPage';
+import OfflineIndicator from './components/OfflineIndicator';
+import PWAInstallBanner from './components/PWAInstallBanner';
 import { Toaster } from 'react-hot-toast';
 import { registerServiceWorker, subscribeToPush, listenForPushMessages } from './services/pushService';
 import './App.css';
@@ -76,6 +80,8 @@ function App() {
 
   return (
     <>
+      <OfflineIndicator />
+      <PWAInstallBanner />
       <Toaster
         position="top-center"
         toastOptions={{
@@ -107,6 +113,10 @@ function App() {
           } />
           <Route path="/api-platform" element={
             <ProtectedRoute user={user}><ApiPlatformPage /></ProtectedRoute>
+          } />
+          <Route path="/marketplace" element={<MarketplacePage />} />
+          <Route path="/subscription" element={
+            <ProtectedRoute user={user}><SubscriptionPage onBack={() => window.history.back()} /></ProtectedRoute>
           } />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
