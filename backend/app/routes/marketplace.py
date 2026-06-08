@@ -182,6 +182,140 @@ class MarketplaceMessage(db.Model):
         }
 
 
+class MarketplaceDownloadToken(db.Model):
+    __tablename__ = 'marketplace_download_tokens'
+    __table_args__ = {'extend_existing': True}
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    token = Column(String(128), unique=True, nullable=False)
+    purchase_id = Column(String(36), ForeignKey('marketplace_purchases.id'), nullable=False)
+    product_id = Column(String(36), ForeignKey('marketplace_products.id'), nullable=False)
+    buyer_id = Column(String(36), ForeignKey('users.id'), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    download_limit = Column(Integer, default=3)
+    download_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    product = relationship('MarketplaceProduct', foreign_keys=[product_id])
+    buyer = relationship('User', foreign_keys=[buyer_id])
+
+    def is_valid(self):
+        return self.download_count < self.download_limit and datetime.utcnow() < self.expires_at
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'token': self.token,
+            'product_id': self.product_id,
+            'expires_at': self.expires_at.isoformat(),
+            'downloads_remaining': max(0, self.download_limit - self.download_count),
+            'created_at': self.created_at.isoformat(),
+        }
+
+
+class MarketplaceDispute(db.Model):
+    __tablename__ = 'marketplace_disputes'
+    __table_args__ = {'extend_existing': True}
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    buyer_id = Column(String(36), ForeignKey('users.id'), nullable=False)
+    seller_id = Column(String(36), ForeignKey('users.id'), nullable=False)
+    product_id = Column(String(36), ForeignKey('marketplace_products.id'), nullable=False)
+    purchase_id = Column(String(36), ForeignKey('marketplace_purchases.id'), nullable=False)
+    reason = Column(Text, nullable=False)
+    buyer_statement = Column(Text, nullable=True)
+    seller_statement = Column(Text, nullable=True)
+    status = Column(String(30), default='open')  # open | seller_responded | resolved | closed
+    resolution = Column(Text, nullable=True)
+    resolved_by = Column(String(36), ForeignKey('users.id'), nullable=True)
+    seller_respond_by = Column(DateTime, nullable=True)  # 48h deadline
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    buyer = relationship('User', foreign_keys=[buyer_id])
+    seller = relationship('User', foreign_keys=[seller_id])
+    product = relationship('MarketplaceProduct', foreign_keys=[product_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'buyer_id': self.buyer_id,
+            'buyer_name': self.buyer.full_name if self.buyer else None,
+            'seller_id': self.seller_id,
+            'seller_name': self.seller.full_name if self.seller else None,
+            'product_id': self.product_id,
+            'product_title': self.product.title if self.product else None,
+            'purchase_id': self.purchase_id,
+            'reason': self.reason,
+            'buyer_statement': self.buyer_statement,
+            'seller_statement': self.seller_statement,
+            'status': self.status,
+            'resolution': self.resolution,
+            'seller_respond_by': self.seller_respond_by.isoformat() if self.seller_respond_by else None,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
+        }
+
+
+def _generate_download_token(purchase_id: str, product_id: str) -> str:
+    """Generate a signed HMAC-SHA256 download token."""
+    import hmac as hmac_mod
+    import hashlib
+    import os
+    secret = os.environ.get('SECRET_KEY', 'vipchat-dev-secret')
+    expiry = int((datetime.utcnow() + __import__('datetime').timedelta(hours=24)).timestamp())
+    msg = f'{purchase_id}:{product_id}:{expiry}'
+    sig = hmac_mod.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
+    return f'{expiry}.{sig}'
+
+
+def _deliver_purchase_async(purchase_id: str):
+    """Create download token and notify buyer. Called in the same request context."""
+    try:
+        purchase = MarketplacePurchase.query.get(purchase_id)
+        if not purchase or not purchase.product:
+            return
+        product = purchase.product
+        if not product.file_url:
+            return
+
+        token_str = _generate_download_token(purchase_id, product.id)
+        from datetime import timedelta
+        dl_token = MarketplaceDownloadToken(
+            token=token_str,
+            purchase_id=purchase_id,
+            product_id=product.id,
+            buyer_id=purchase.buyer_id,
+            expires_at=datetime.utcnow() + timedelta(hours=24),
+            download_limit=3,
+        )
+        db.session.add(dl_token)
+        db.session.commit()
+
+        # Send in-app message
+        try:
+            from app.models.models import Message
+            from app.models.models import MessageStatus
+            system_msg = Message()
+            system_msg.sender_id = purchase.product.seller_id
+            system_msg.receiver_id = purchase.buyer_id
+            system_msg.content = (
+                f'🎉 Your purchase is ready!\n\n'
+                f'**{product.title}**\n\n'
+                f'Download link (valid 24h, 3 downloads):\n'
+                f'/api/marketplace/download/{token_str}\n\n'
+                f'Enjoy your purchase!'
+            )
+            system_msg.status = MessageStatus.SENT
+            db.session.add(system_msg)
+            db.session.commit()
+        except Exception:
+            pass
+
+    except Exception:
+        logger.exception('_deliver_purchase_async error')
+
+
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
 @marketplace_bp.route('/categories', methods=['GET'])
@@ -358,6 +492,270 @@ def delete_product(product_id):
         return jsonify({'error': str(e)}), 500
 
 
+@marketplace_bp.route('/download/<token>', methods=['GET'])
+def download_by_token(token):
+    """Validate signed download token and serve or redirect to file."""
+    try:
+        dl = MarketplaceDownloadToken.query.filter_by(token=token).first()
+        if not dl:
+            return jsonify({'error': 'Invalid download token'}), 404
+        if not dl.is_valid():
+            return jsonify({'error': 'Download link expired or exhausted'}), 410
+
+        dl.download_count += 1
+        db.session.commit()
+
+        product = dl.product
+        if not product or not product.file_url:
+            return jsonify({'error': 'File not available'}), 404
+
+        # Serve file directly if it's a local upload path
+        if product.file_url.startswith('/uploads/'):
+            import os
+            file_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                product.file_url.lstrip('/')
+            )
+            if os.path.exists(file_path):
+                from flask import send_file
+                return send_file(file_path, as_attachment=True,
+                                 download_name=f'{product.title}.{product.file_type or "bin"}')
+
+        from flask import redirect
+        return redirect(product.file_url)
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@marketplace_bp.route('/purchases/<purchase_id>/dispute', methods=['POST'])
+@jwt_required()
+def open_dispute(purchase_id):
+    """Open a buyer protection dispute on a purchase."""
+    try:
+        user_id = get_jwt_identity()
+        purchase = MarketplacePurchase.query.get(purchase_id)
+        if not purchase:
+            return jsonify({'error': 'Purchase not found'}), 404
+        if purchase.buyer_id != user_id:
+            return jsonify({'error': 'Forbidden'}), 403
+        if purchase.status != 'completed':
+            return jsonify({'error': 'Can only dispute completed purchases'}), 400
+
+        from datetime import timedelta
+        existing = MarketplaceDispute.query.filter_by(purchase_id=purchase_id).first()
+        if existing:
+            return jsonify({'error': 'Dispute already open', 'dispute': existing.to_dict()}), 409
+
+        data = request.get_json() or {}
+        reason = data.get('reason', '').strip()
+        if not reason:
+            return jsonify({'error': 'Reason is required'}), 400
+
+        product = MarketplaceProduct.query.get(purchase.product_id)
+        if not product:
+            return jsonify({'error': 'Product not found'}), 404
+
+        dispute = MarketplaceDispute(
+            buyer_id=user_id,
+            seller_id=product.seller_id,
+            product_id=product.id,
+            purchase_id=purchase_id,
+            reason=reason[:1000],
+            buyer_statement=data.get('statement', '').strip()[:2000],
+            status='open',
+            seller_respond_by=datetime.utcnow() + timedelta(hours=48),
+        )
+        db.session.add(dispute)
+        db.session.commit()
+        return jsonify({'dispute': dispute.to_dict()}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@marketplace_bp.route('/disputes', methods=['GET'])
+@jwt_required()
+def list_disputes():
+    """List disputes involving the current user (as buyer or seller)."""
+    try:
+        user_id = get_jwt_identity()
+        role = request.args.get('role', 'buyer')
+        if role == 'seller':
+            disputes = MarketplaceDispute.query.filter_by(seller_id=user_id).order_by(MarketplaceDispute.created_at.desc()).all()
+        else:
+            disputes = MarketplaceDispute.query.filter_by(buyer_id=user_id).order_by(MarketplaceDispute.created_at.desc()).all()
+        return jsonify({'disputes': [d.to_dict() for d in disputes]}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@marketplace_bp.route('/disputes/<dispute_id>/respond', methods=['POST'])
+@jwt_required()
+def respond_dispute(dispute_id):
+    """Seller responds to a dispute."""
+    try:
+        user_id = get_jwt_identity()
+        dispute = MarketplaceDispute.query.get(dispute_id)
+        if not dispute:
+            return jsonify({'error': 'Not found'}), 404
+        if dispute.seller_id != user_id:
+            return jsonify({'error': 'Forbidden'}), 403
+
+        data = request.get_json() or {}
+        dispute.seller_statement = data.get('statement', '').strip()[:2000]
+        dispute.status = 'seller_responded'
+        db.session.commit()
+        return jsonify({'dispute': dispute.to_dict()}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@marketplace_bp.route('/disputes/<dispute_id>/resolve', methods=['POST'])
+@jwt_required()
+def resolve_dispute(dispute_id):
+    """Admin: resolve a dispute."""
+    try:
+        user_id = get_jwt_identity()
+        from app.models.models import User as UserModel
+        user = UserModel.query.get(user_id)
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin only'}), 403
+
+        dispute = MarketplaceDispute.query.get(dispute_id)
+        if not dispute:
+            return jsonify({'error': 'Not found'}), 404
+
+        data = request.get_json() or {}
+        dispute.resolution = data.get('resolution', '').strip()[:2000]
+        dispute.status = 'resolved'
+        dispute.resolved_by = user_id
+        db.session.commit()
+        return jsonify({'dispute': dispute.to_dict()}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@marketplace_bp.route('/admin/disputes', methods=['GET'])
+@jwt_required()
+def admin_list_disputes():
+    """Admin: list all disputes."""
+    try:
+        user_id = get_jwt_identity()
+        from app.models.models import User as UserModel
+        user = UserModel.query.get(user_id)
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin only'}), 403
+
+        status = request.args.get('status', '')
+        q = MarketplaceDispute.query
+        if status:
+            q = q.filter_by(status=status)
+        disputes = q.order_by(MarketplaceDispute.created_at.desc()).limit(100).all()
+        return jsonify({'disputes': [d.to_dict() for d in disputes]}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@marketplace_bp.route('/admin/products', methods=['GET'])
+@jwt_required()
+def admin_list_products():
+    """Admin: list all products with approval capability."""
+    try:
+        user_id = get_jwt_identity()
+        from app.models.models import User as UserModel
+        user = UserModel.query.get(user_id)
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin only'}), 403
+
+        page = int(request.args.get('page', 1))
+        per_page = min(int(request.args.get('per_page', 25)), 100)
+        q = MarketplaceProduct.query.order_by(MarketplaceProduct.created_at.desc())
+        paginated = q.paginate(page=page, per_page=per_page, error_out=False)
+        return jsonify({
+            'products': [p.to_dict(include_file=True) for p in paginated.items],
+            'total': paginated.total,
+            'pages': paginated.pages,
+            'page': page,
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@marketplace_bp.route('/admin/products/<product_id>/feature', methods=['POST'])
+@jwt_required()
+def admin_feature_product(product_id):
+    """Admin: feature or unfeature a product."""
+    try:
+        user_id = get_jwt_identity()
+        from app.models.models import User as UserModel
+        user = UserModel.query.get(user_id)
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin only'}), 403
+
+        product = MarketplaceProduct.query.get(product_id)
+        if not product:
+            return jsonify({'error': 'Not found'}), 404
+        data = request.get_json() or {}
+        featured = bool(data.get('featured', True))
+        if not hasattr(product, 'is_featured'):
+            return jsonify({'error': 'is_featured column not yet migrated'}), 500
+        product.is_featured = featured
+        db.session.commit()
+        return jsonify({'message': 'Updated', 'is_featured': featured}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@marketplace_bp.route('/my-purchases/<purchase_id>/download-token', methods=['POST'])
+@jwt_required()
+def get_download_token(purchase_id):
+    """Get or create a download token for a completed purchase."""
+    try:
+        user_id = get_jwt_identity()
+        purchase = MarketplacePurchase.query.get(purchase_id)
+        if not purchase or purchase.buyer_id != user_id or purchase.status != 'completed':
+            return jsonify({'error': 'Purchase not found or not completed'}), 404
+
+        from datetime import timedelta
+        existing = MarketplaceDownloadToken.query.filter_by(
+            purchase_id=purchase_id, buyer_id=user_id
+        ).filter(
+            MarketplaceDownloadToken.expires_at > datetime.utcnow(),
+            MarketplaceDownloadToken.download_count < MarketplaceDownloadToken.download_limit,
+        ).first()
+
+        if existing:
+            return jsonify({'token': existing.to_dict()}), 200
+
+        product = purchase.product
+        if not product or not product.file_url:
+            return jsonify({'error': 'No file available for this product'}), 404
+
+        token_str = _generate_download_token(purchase_id, product.id)
+        dl = MarketplaceDownloadToken(
+            token=token_str,
+            purchase_id=purchase_id,
+            product_id=product.id,
+            buyer_id=user_id,
+            expires_at=datetime.utcnow() + timedelta(hours=24),
+            download_limit=3,
+        )
+        db.session.add(dl)
+        db.session.commit()
+        return jsonify({'token': dl.to_dict()}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
 @marketplace_bp.route('/products/<product_id>/purchase', methods=['POST'])
 @jwt_required()
 def purchase_product(product_id):
@@ -442,6 +840,31 @@ def purchase_product(product_id):
             except Exception as stripe_err:
                 db.session.rollback()
                 return jsonify({'error': f'Payment error: {str(stripe_err)}'}), 500
+
+        if payment_provider == 'paypal':
+            from flask import current_app
+            paypal_client_id = current_app.config.get('PAYPAL_CLIENT_ID', '')
+            if not paypal_client_id:
+                return jsonify({'error': 'PayPal not configured on this server'}), 503
+
+            purchase = MarketplacePurchase()
+            purchase.buyer_id = user_id
+            purchase.product_id = product_id
+            purchase.amount_paid = product.price
+            purchase.currency = product.currency
+            purchase.payment_provider = 'paypal'
+            purchase.status = 'pending'
+            db.session.add(purchase)
+            db.session.commit()
+
+            return jsonify({
+                'payment_provider': 'paypal',
+                'purchase_id': purchase.id,
+                'amount': product.price,
+                'currency': product.currency,
+                'product_title': product.title,
+                'paypal_client_id': paypal_client_id,
+            }), 200
 
         return jsonify({'error': 'Unsupported payment provider'}), 400
 
@@ -662,12 +1085,13 @@ def stripe_webhook():
             if meta.get('type') == 'marketplace':
                 purchase_id = meta.get('purchase_id')
                 purchase = MarketplacePurchase.query.get(purchase_id)
-                if purchase:
+                if purchase and purchase.status != 'completed':
                     purchase.status = 'completed'
                     purchase.payment_ref = session_obj.get('id')
                     if purchase.product:
                         purchase.product.download_count = (purchase.product.download_count or 0) + 1
                     db.session.commit()
+                    _deliver_purchase_async(purchase_id)
 
         return jsonify({'received': True}), 200
     except Exception as e:

@@ -169,25 +169,141 @@ class StripePaymentProcessor:
 
 
 class PayPalPaymentProcessor:
-    """Handle PayPal payments."""
-    
-    def __init__(self, client_id: str, client_secret: str):
+    """Real PayPal Orders v2 REST API integration via OAuth2 client-credentials."""
+
+    LIVE_BASE = 'https://api-m.paypal.com'
+    SANDBOX_BASE = 'https://api-m.sandbox.paypal.com'
+
+    def __init__(self, client_id: str, client_secret: str, sandbox: bool = False):
+        if not client_id or not client_secret:
+            import warnings
+            warnings.warn('PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET are not set; PayPal calls will fail')
         self.client_id = client_id
         self.client_secret = client_secret
-    
-    def create_payment(self, user_id: str, amount: float, currency: str = 'USD') -> Dict:
-        """Create PayPal payment."""
-        # Implementation would integrate with PayPal API
-        # This is a placeholder
+        self.base = self.SANDBOX_BASE if sandbox else self.LIVE_BASE
+        self._token: Optional[str] = None
+        self._token_expires: float = 0
+
+    def _get_access_token(self) -> str:
+        import time
+        import requests as http
+        if self._token and time.time() < self._token_expires - 30:
+            return self._token
+        resp = http.post(
+            f'{self.base}/v1/oauth2/token',
+            data={'grant_type': 'client_credentials'},
+            auth=(self.client_id, self.client_secret),
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        self._token = data['access_token']
+        self._token_expires = time.time() + data.get('expires_in', 3600)
+        return self._token
+
+    def _headers(self) -> Dict:
         return {
-            'payment_id': f'paypal_{user_id}_{int(datetime.utcnow().timestamp())}',
-            'status': 'pending'
+            'Authorization': f'Bearer {self._get_access_token()}',
+            'Content-Type': 'application/json',
         }
-    
-    def execute_payment(self, payment_id: str, payer_id: str) -> bool:
-        """Execute PayPal payment."""
-        # Implementation would call PayPal API
-        return True
+
+    def create_order(self, amount: float, currency: str = 'USD',
+                     description: str = 'VipChat Purchase',
+                     return_url: str = '', cancel_url: str = '') -> Dict:
+        """Create a PayPal order. Returns order_id and approve_url."""
+        import requests as http
+        payload: Dict = {
+            'intent': 'CAPTURE',
+            'purchase_units': [{
+                'amount': {'currency_code': currency, 'value': f'{amount:.2f}'},
+                'description': description[:127],
+            }],
+        }
+        if return_url and cancel_url:
+            payload['application_context'] = {
+                'return_url': return_url,
+                'cancel_url': cancel_url,
+                'brand_name': 'VipChat',
+                'user_action': 'PAY_NOW',
+            }
+        resp = http.post(f'{self.base}/v2/checkout/orders', json=payload,
+                         headers=self._headers(), timeout=20)
+        resp.raise_for_status()
+        data = resp.json()
+        approve_url = next(
+            (l['href'] for l in data.get('links', []) if l.get('rel') == 'approve'), ''
+        )
+        return {'order_id': data['id'], 'approve_url': approve_url, 'status': data['status']}
+
+    def capture_order(self, order_id: str) -> Dict:
+        """Capture a PayPal order. Returns capture details."""
+        import requests as http
+        resp = http.post(
+            f'{self.base}/v2/checkout/orders/{order_id}/capture',
+            headers=self._headers(),
+            json={},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        captures = (data.get('purchase_units', [{}])[0]
+                    .get('payments', {}).get('captures', [{}]))
+        capture = captures[0] if captures else {}
+        return {
+            'order_id': order_id,
+            'capture_id': capture.get('id', ''),
+            'status': data.get('status', ''),
+            'amount': float(capture.get('amount', {}).get('value', 0)),
+            'currency': capture.get('amount', {}).get('currency_code', 'USD'),
+            'payer_email': (data.get('payer', {}).get('email_address', '')),
+        }
+
+    def refund_capture(self, capture_id: str, amount: Optional[float] = None,
+                       currency: str = 'USD') -> Dict:
+        """Issue a full or partial refund on a capture."""
+        import requests as http
+        payload: Dict = {}
+        if amount is not None:
+            payload['amount'] = {'value': f'{amount:.2f}', 'currency_code': currency}
+        resp = http.post(
+            f'{self.base}/v2/payments/captures/{capture_id}/refund',
+            json=payload,
+            headers=self._headers(),
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return {'refund_id': data.get('id', ''), 'status': data.get('status', '')}
+
+    def get_order(self, order_id: str) -> Dict:
+        """Fetch current order status."""
+        import requests as http
+        resp = http.get(f'{self.base}/v2/checkout/orders/{order_id}',
+                        headers=self._headers(), timeout=15)
+        resp.raise_for_status()
+        return resp.json()
+
+    def verify_webhook(self, headers: Dict, body: bytes, webhook_id: str) -> bool:
+        """Verify a PayPal webhook event using PayPal's verification API."""
+        import requests as http
+        payload = {
+            'auth_algo': headers.get('PAYPAL-AUTH-ALGO', ''),
+            'cert_url': headers.get('PAYPAL-CERT-URL', ''),
+            'transmission_id': headers.get('PAYPAL-TRANSMISSION-ID', ''),
+            'transmission_sig': headers.get('PAYPAL-TRANSMISSION-SIG', ''),
+            'transmission_time': headers.get('PAYPAL-TRANSMISSION-TIME', ''),
+            'webhook_id': webhook_id,
+            'webhook_event': body.decode('utf-8') if isinstance(body, bytes) else body,
+        }
+        try:
+            resp = http.post(
+                f'{self.base}/v1/notifications/verify-webhook-signature',
+                json=payload, headers=self._headers(), timeout=15,
+            )
+            resp.raise_for_status()
+            return resp.json().get('verification_status') == 'SUCCESS'
+        except Exception:
+            return False
 
 
 class CryptoPaymentProcessor:

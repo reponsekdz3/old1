@@ -377,6 +377,306 @@ def flutterwave_webhook():
         return jsonify({'error': str(e)}), 500
 
 
+def _get_paypal():
+    """Return a configured PayPalPaymentProcessor or None if credentials missing."""
+    from app.services.monetization import PayPalPaymentProcessor
+    client_id = current_app.config.get('PAYPAL_CLIENT_ID', '').strip()
+    client_secret = current_app.config.get('PAYPAL_CLIENT_SECRET', '').strip()
+    if not client_id or not client_secret:
+        return None
+    sandbox = current_app.config.get('PAYPAL_SANDBOX', 'false').lower() == 'true'
+    return PayPalPaymentProcessor(client_id, client_secret, sandbox=sandbox)
+
+
+@payments_bp.route('/paypal/create-order', methods=['POST'])
+@jwt_required()
+def paypal_create_order():
+    """Create a PayPal order for verification badge or marketplace purchase."""
+    try:
+        pp = _get_paypal()
+        if not pp:
+            return jsonify({'error': 'PayPal is not configured on this server. Please contact support.'}), 503
+
+        user_id = get_jwt_identity()
+        data = request.json or {}
+        purpose = data.get('purpose', 'verification')
+
+        if purpose == 'verification':
+            tier = data.get('tier', 'personal')
+            if tier not in TIERS:
+                return jsonify({'error': 'Invalid tier'}), 400
+            t = TIERS[tier]
+            amount = t['amount_usd']
+            description = f'VipChat {t["label"]} Badge'
+        elif purpose == 'marketplace':
+            from app.routes.marketplace import MarketplaceProduct
+            product_id = data.get('product_id', '')
+            product = MarketplaceProduct.query.get(product_id)
+            if not product or not product.is_active:
+                return jsonify({'error': 'Product not found'}), 404
+            amount = product.price
+            description = product.title[:127]
+            tier = None
+            t = None
+        else:
+            return jsonify({'error': 'Invalid purpose'}), 400
+
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+
+        payment = Payment()
+        payment.user_id = user_id
+        payment.provider = 'paypal'
+        payment.amount = amount
+        payment.currency = 'USD'
+        payment.status = 'pending'
+        if purpose == 'verification':
+            payment.tier = tier
+        payment.metadata_json = json.dumps({'purpose': purpose, **(
+            {'tier': tier} if purpose == 'verification' else {'product_id': data.get('product_id', '')}
+        )})
+        db.session.add(payment)
+        db.session.commit()
+
+        base_url = request.host_url.rstrip('/')
+        result = pp.create_order(
+            amount=amount,
+            currency='USD',
+            description=description,
+            return_url=f'{base_url}/marketplace?paypal_success={payment.id}' if purpose == 'marketplace' else f'{base_url}/settings?paypal_success={payment.id}',
+            cancel_url=f'{base_url}/marketplace?paypal_cancel=1' if purpose == 'marketplace' else f'{base_url}/settings?paypal_cancel=1',
+        )
+        payment.provider_payment_id = result['order_id']
+        db.session.commit()
+
+        return jsonify({
+            'order_id': result['order_id'],
+            'approve_url': result['approve_url'],
+            'payment_id': payment.id,
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@payments_bp.route('/paypal/capture-order', methods=['POST'])
+@jwt_required()
+def paypal_capture_order():
+    """Capture a PayPal order after buyer approval."""
+    try:
+        pp = _get_paypal()
+        if not pp:
+            return jsonify({'error': 'PayPal is not configured'}), 503
+
+        user_id = get_jwt_identity()
+        data = request.json or {}
+        order_id = data.get('order_id', '').strip()
+        payment_id = data.get('payment_id', '').strip()
+
+        if not order_id:
+            return jsonify({'error': 'order_id required'}), 400
+
+        payment = Payment.query.get(payment_id) if payment_id else None
+        if payment and payment.user_id != user_id:
+            return jsonify({'error': 'Forbidden'}), 403
+        if payment and payment.status == 'completed':
+            return jsonify({'error': 'Already captured', 'payment': payment.to_dict()}), 200
+
+        capture = pp.capture_order(order_id)
+        if capture['status'] != 'COMPLETED':
+            return jsonify({'error': f'Capture failed: {capture["status"]}'}), 400
+
+        if payment:
+            payment.status = 'completed'
+            payment.provider_payment_id = capture['capture_id']
+            payment.metadata_json = json.dumps({
+                'order_id': order_id,
+                'capture_id': capture['capture_id'],
+                'payer_email': capture.get('payer_email', ''),
+                'amount': capture['amount'],
+                'purpose': json.loads(payment.metadata_json or '{}').get('purpose', 'verification'),
+            })
+            db.session.commit()
+            meta = json.loads(payment.metadata_json)
+            purpose = meta.get('purpose', 'verification')
+        else:
+            purpose = data.get('purpose', 'verification')
+
+        if purpose == 'verification' and payment:
+            tier = payment.tier or json.loads(payment.metadata_json or '{}').get('tier', 'personal')
+            _mark_user_verified(user_id, tier, capture['capture_id'])
+
+        elif purpose == 'marketplace' and payment:
+            from app.routes.marketplace import MarketplacePurchase, _deliver_purchase_async
+            meta = json.loads(payment.metadata_json or '{}')
+            product_id = meta.get('product_id', '')
+            existing = MarketplacePurchase.query.filter_by(
+                buyer_id=user_id, product_id=product_id, status='completed'
+            ).first()
+            if not existing:
+                purchase = MarketplacePurchase()
+                purchase.buyer_id = user_id
+                purchase.product_id = product_id
+                purchase.amount_paid = capture['amount']
+                purchase.currency = capture.get('currency', 'USD')
+                purchase.payment_provider = 'paypal'
+                purchase.payment_ref = capture['capture_id']
+                purchase.status = 'completed'
+                db.session.add(purchase)
+                db.session.commit()
+                _deliver_purchase_async(purchase.id)
+
+        return jsonify({'captured': True, 'capture_id': capture['capture_id']}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        import logging
+        logging.getLogger(__name__).exception('paypal_capture_order error')
+        return jsonify({'error': str(e)}), 500
+
+
+@payments_bp.route('/paypal/webhook', methods=['POST'])
+def paypal_webhook():
+    """Verify and process PayPal webhook events."""
+    try:
+        from flask import current_app
+        client_id = current_app.config.get('PAYPAL_CLIENT_ID', '')
+        client_secret = current_app.config.get('PAYPAL_CLIENT_SECRET', '')
+        webhook_id = current_app.config.get('PAYPAL_WEBHOOK_ID', '')
+
+        if not client_id or not client_secret:
+            return jsonify({'error': 'PayPal not configured'}), 503
+
+        payload = request.get_data()
+        if webhook_id:
+            from app.services.monetization import PayPalPaymentProcessor
+            sandbox = current_app.config.get('PAYPAL_SANDBOX', 'false').lower() == 'true'
+            pp = PayPalPaymentProcessor(client_id, client_secret, sandbox=sandbox)
+            if not pp.verify_webhook(dict(request.headers), payload, webhook_id):
+                return jsonify({'error': 'Invalid webhook signature'}), 400
+
+        event = json.loads(payload)
+        event_type = event.get('event_type', '')
+        resource = event.get('resource', {})
+
+        if event_type == 'PAYMENT.CAPTURE.COMPLETED':
+            capture_id = resource.get('id', '')
+            order_id = resource.get('supplementary_data', {}).get(
+                'related_ids', {}).get('order_id', '')
+            amount = float(resource.get('amount', {}).get('value', 0))
+
+            payment = Payment.query.filter_by(provider_payment_id=capture_id).first()
+            if not payment:
+                payment = Payment.query.filter_by(provider_payment_id=order_id).first()
+
+            if payment and payment.status == 'pending':
+                payment.status = 'completed'
+                payment.provider_payment_id = capture_id
+                db.session.commit()
+
+                meta = json.loads(payment.metadata_json or '{}')
+                purpose = meta.get('purpose', 'verification')
+                if purpose == 'verification':
+                    tier = payment.tier or meta.get('tier', 'personal')
+                    _mark_user_verified(payment.user_id, tier, capture_id)
+                elif purpose == 'marketplace':
+                    from app.routes.marketplace import MarketplacePurchase, _deliver_purchase_async
+                    product_id = meta.get('product_id', '')
+                    existing = MarketplacePurchase.query.filter_by(
+                        buyer_id=payment.user_id, product_id=product_id, status='completed'
+                    ).first()
+                    if not existing and product_id:
+                        purchase = MarketplacePurchase()
+                        purchase.buyer_id = payment.user_id
+                        purchase.product_id = product_id
+                        purchase.amount_paid = amount
+                        purchase.currency = 'USD'
+                        purchase.payment_provider = 'paypal'
+                        purchase.payment_ref = capture_id
+                        purchase.status = 'completed'
+                        db.session.add(purchase)
+                        db.session.commit()
+                        _deliver_purchase_async(purchase.id)
+
+        return jsonify({'received': True}), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@payments_bp.route('/paypal/transactions', methods=['GET'])
+@jwt_required()
+def paypal_transactions():
+    """Admin: list all PayPal transactions with optional refund capability."""
+    try:
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin only'}), 403
+
+        page = int(request.args.get('page', 1))
+        per_page = min(int(request.args.get('per_page', 25)), 100)
+
+        q = Payment.query.filter_by(provider='paypal').order_by(Payment.created_at.desc())
+        paginated = q.paginate(page=page, per_page=per_page, error_out=False)
+
+        payments_data = []
+        for p in paginated.items:
+            d = p.to_dict()
+            payer = User.query.get(p.user_id)
+            d['user_name'] = payer.full_name if payer else None
+            d['user_phone'] = payer.phone_number if payer else None
+            payments_data.append(d)
+
+        return jsonify({
+            'transactions': payments_data,
+            'total': paginated.total,
+            'pages': paginated.pages,
+            'page': page,
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@payments_bp.route('/paypal/refund', methods=['POST'])
+@jwt_required()
+def paypal_refund():
+    """Admin: issue a PayPal refund on a capture."""
+    try:
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin only'}), 403
+
+        pp = _get_paypal()
+        if not pp:
+            return jsonify({'error': 'PayPal not configured'}), 503
+
+        data = request.json or {}
+        payment_id = data.get('payment_id', '')
+        payment = Payment.query.get(payment_id)
+        if not payment or payment.provider != 'paypal':
+            return jsonify({'error': 'PayPal payment not found'}), 404
+        if payment.status != 'completed':
+            return jsonify({'error': 'Payment not completed'}), 400
+
+        capture_id = payment.provider_payment_id
+        amount = data.get('amount')
+        result = pp.refund_capture(capture_id, amount=amount)
+
+        payment.status = 'refunded'
+        db.session.commit()
+
+        return jsonify({'refund_id': result['refund_id'], 'status': result['status']}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
 @payments_bp.route('/my-verification', methods=['GET'])
 @jwt_required()
 def my_verification():

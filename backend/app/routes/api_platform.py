@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from app.models.models import db, User, ApiClient, ApiSubscription, ApiUsageLog
+from app.models.models import db, User, ApiClient, ApiClientSubscription, ApiUsageLog
 from datetime import datetime, timedelta
 from functools import wraps
 import secrets
@@ -123,7 +123,7 @@ def get_my_client():
     client = ApiClient.query.filter_by(user_id=user_id).first()
     if not client:
         return jsonify({'error': 'No API client found'}), 404
-    sub = ApiSubscription.query.filter_by(client_id=client.id, status='active').first()
+    sub = ApiClientSubscription.query.filter_by(client_id=client.id, status='active').first()
     return jsonify({
         'client': client.to_dict(),
         'subscription': sub.to_dict() if sub else None,
@@ -243,7 +243,7 @@ def subscribe():
     stripe_key = current_app.config.get('STRIPE_SECRET_KEY', '')
     if not stripe_key:
         client.tier = tier
-        sub = ApiSubscription()
+        sub = ApiClientSubscription()
         sub.client_id = client.id
         sub.tier = tier
         sub.status = 'active'
@@ -305,7 +305,7 @@ def stripe_webhook():
             client = ApiClient.query.get(client_id)
             if client:
                 client.tier = tier if status == 'active' else 'starter'
-                existing = ApiSubscription.query.filter_by(
+                existing = ApiClientSubscription.query.filter_by(
                     client_id=client_id,
                     stripe_subscription_id=sub_data['id'],
                 ).first()
@@ -315,7 +315,7 @@ def stripe_webhook():
                     if period_end:
                         existing.current_period_end = datetime.utcfromtimestamp(period_end)
                 else:
-                    new_sub = ApiSubscription()
+                    new_sub = ApiClientSubscription()
                     new_sub.client_id = client_id
                     new_sub.stripe_subscription_id = sub_data['id']
                     new_sub.tier = tier
@@ -331,7 +331,7 @@ def stripe_webhook():
             client = ApiClient.query.get(client_id)
             if client:
                 client.tier = 'starter'
-                ApiSubscription.query.filter_by(
+                ApiClientSubscription.query.filter_by(
                     client_id=client_id,
                     stripe_subscription_id=sub_data['id'],
                 ).update({'status': 'canceled'})
@@ -424,8 +424,8 @@ def billing_portal():
     if not client:
         return jsonify({'error': 'No API client found'}), 404
 
-    sub = ApiSubscription.query.filter_by(client_id=client.id, status='active').order_by(
-        ApiSubscription.created_at.desc()
+    sub = ApiClientSubscription.query.filter_by(client_id=client.id, status='active').order_by(
+        ApiClientSubscription.created_at.desc()
     ).first()
 
     stripe_key = current_app.config.get('STRIPE_SECRET_KEY', '')
@@ -636,7 +636,7 @@ def sandbox_promote():
         client.api_key_prefix = raw_key[:20] + '...'
         client.tier = tier
 
-        sub = ApiSubscription()
+        sub = ApiClientSubscription()
         sub.client_id = client.id
         sub.tier = tier
         sub.status = 'active'

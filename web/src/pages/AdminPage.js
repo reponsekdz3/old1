@@ -11,7 +11,8 @@ import {
   FiGrid, FiList, FiMoreVertical, FiSend, FiX, FiEye,
   FiToggleLeft, FiToggleRight, FiDownload, FiFilter,
   FiCode, FiZap, FiWifi, FiLock, FiServer, FiClock,
-  FiDollarSign, FiMousePointer,
+  FiDollarSign, FiMousePointer, FiShoppingBag, FiCreditCard,
+  FiPackage, FiAlertCircle,
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -190,6 +191,8 @@ const TABS = [
   { id: 'activity', label: 'Activity', icon: FiActivity },
   { id: 'api_clients', label: 'API Clients', icon: FiCode },
   { id: 'ads', label: 'Ads', icon: FiZap },
+  { id: 'marketplace', label: 'Marketplace', icon: FiShoppingBag },
+  { id: 'paypal', label: 'PayPal', icon: FiCreditCard },
 ];
 
 function AdminPage() {
@@ -233,6 +236,23 @@ function AdminPage() {
   const [adReports, setAdReports] = useState([]);
   const [adTab, setAdTab] = useState('campaigns');
 
+  // Marketplace admin state
+  const [adminProducts, setAdminProducts] = useState([]);
+  const [adminProductsLoading, setAdminProductsLoading] = useState(false);
+  const [adminDisputes, setAdminDisputes] = useState([]);
+  const [adminDisputesLoading, setAdminDisputesLoading] = useState(false);
+  const [marketplaceSubTab, setMarketplaceSubTab] = useState('products');
+  const [disputeResolution, setDisputeResolution] = useState({});
+  const [resolvingDispute, setResolvingDispute] = useState(null);
+
+  // PayPal admin state
+  const [paypalTxns, setPaypalTxns] = useState([]);
+  const [paypalLoading, setPaypalLoading] = useState(false);
+  const [paypalPage, setPaypalPage] = useState(1);
+  const [paypalTotalPages, setPaypalTotalPages] = useState(1);
+  const [paypalTotal, setPaypalTotal] = useState(0);
+  const [refundingPaypal, setRefundingPaypal] = useState(null);
+
   useEffect(() => {
     checkAdminAccess();
   }, []);
@@ -247,6 +267,14 @@ function AdminPage() {
     return () => clearInterval(liveIntervalRef.current);
   }, [activeTab, isAdmin]);
 
+  useEffect(() => {
+    if (activeTab === 'marketplace' && isAdmin) fetchAdminMarketplace();
+  }, [activeTab, isAdmin]);
+
+  useEffect(() => {
+    if (activeTab === 'paypal' && isAdmin) fetchPaypalTxns(1);
+  }, [activeTab, isAdmin]);
+
   const fetchLive = async () => {
     setLiveLoading(true);
     try {
@@ -254,6 +282,64 @@ function AdminPage() {
       setLiveData(data);
     } catch {}
     finally { setLiveLoading(false); }
+  };
+
+  const fetchAdminMarketplace = async () => {
+    setAdminProductsLoading(true);
+    setAdminDisputesLoading(true);
+    try {
+      const [prodR, dispR] = await Promise.all([
+        api.get('/marketplace/admin/products?per_page=25'),
+        api.get('/marketplace/admin/disputes'),
+      ]);
+      setAdminProducts(prodR.data.products || []);
+      setAdminDisputes(dispR.data.disputes || []);
+    } catch (e) { toast.error('Failed to load marketplace data'); }
+    finally { setAdminProductsLoading(false); setAdminDisputesLoading(false); }
+  };
+
+  const fetchPaypalTxns = async (page = 1) => {
+    setPaypalLoading(true);
+    try {
+      const r = await api.get(`/payments/paypal/transactions?page=${page}&per_page=25`);
+      setPaypalTxns(r.data.transactions || []);
+      setPaypalTotalPages(r.data.pages || 1);
+      setPaypalTotal(r.data.total || 0);
+      setPaypalPage(page);
+    } catch (e) { toast.error('Failed to load PayPal transactions'); }
+    finally { setPaypalLoading(false); }
+  };
+
+  const handleResolveDispute = async (disputeId) => {
+    const resolution = disputeResolution[disputeId];
+    if (!resolution?.trim()) { toast.error('Enter a resolution'); return; }
+    setResolvingDispute(disputeId);
+    try {
+      await api.post(`/marketplace/disputes/${disputeId}/resolve`, { resolution });
+      toast.success('Dispute resolved');
+      setDisputeResolution(d => { const n = {...d}; delete n[disputeId]; return n; });
+      fetchAdminMarketplace();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+    finally { setResolvingDispute(null); }
+  };
+
+  const handlePaypalRefund = async (payment) => {
+    if (!window.confirm(`Issue full refund of $${payment.amount} to ${payment.user_name}?`)) return;
+    setRefundingPaypal(payment.id);
+    try {
+      await api.post('/payments/paypal/refund', { payment_id: payment.id });
+      toast.success('Refund issued successfully');
+      fetchPaypalTxns(paypalPage);
+    } catch (e) { toast.error(e.response?.data?.error || 'Refund failed'); }
+    finally { setRefundingPaypal(null); }
+  };
+
+  const handleToggleProduct = async (productId, active) => {
+    try {
+      await api.put(`/marketplace/products/${productId}`, { is_active: !active });
+      setAdminProducts(ps => ps.map(p => p.id === productId ? { ...p, is_active: !active } : p));
+      toast.success(active ? 'Product hidden' : 'Product visible');
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
   };
 
   const checkAdminAccess = async () => {
@@ -1483,6 +1569,163 @@ function AdminPage() {
                           ))}
                         </div>
                       )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── MARKETPLACE ── */}
+              {activeTab === 'marketplace' && (
+                <div className="space-y-5">
+                  <div className="flex gap-2 bg-gray-100 rounded-2xl p-1">
+                    {[
+                      { id: 'products', label: 'Products' },
+                      { id: 'disputes', label: `Disputes${adminDisputes.filter(d => d.status === 'open' || d.status === 'seller_responded').length > 0 ? ` (${adminDisputes.filter(d => d.status === 'open' || d.status === 'seller_responded').length})` : ''}` },
+                    ].map(t => (
+                      <button key={t.id} onClick={() => setMarketplaceSubTab(t.id)}
+                        className={`flex-1 py-2 rounded-xl text-sm font-semibold transition ${marketplaceSubTab === t.id ? 'bg-white shadow text-[#075E54]' : 'text-gray-500'}`}>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {marketplaceSubTab === 'products' && (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                      {adminProductsLoading ? (
+                        <div className="flex items-center justify-center py-12"><div className="w-7 h-7 border-2 border-[#25D366] border-t-transparent rounded-full animate-spin" /></div>
+                      ) : adminProducts.length === 0 ? (
+                        <div className="py-16 text-center text-gray-400"><FiPackage size={36} className="mx-auto mb-2 opacity-30" /><p>No products yet</p></div>
+                      ) : (
+                        <div className="divide-y divide-gray-50">
+                          {adminProducts.map(p => (
+                            <div key={p.id} className="flex items-center gap-4 px-5 py-4">
+                              <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                {p.thumbnail_url ? <img src={p.thumbnail_url} alt="" className="w-full h-full object-cover" /> : <FiPackage size={18} className="text-gray-400" />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-sm text-gray-900 truncate">{p.title}</p>
+                                <p className="text-xs text-gray-400">{p.category} · {p.is_free ? 'Free' : `$${p.price}`} · {p.download_count || 0} sales</p>
+                              </div>
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${p.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                {p.is_active ? 'Active' : 'Hidden'}
+                              </span>
+                              <button onClick={() => handleToggleProduct(p.id, p.is_active)}
+                                className={`text-xs px-3 py-1.5 rounded-xl font-medium transition ${p.is_active ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}>
+                                {p.is_active ? 'Hide' : 'Show'}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {marketplaceSubTab === 'disputes' && (
+                    <div className="space-y-3">
+                      {adminDisputesLoading ? (
+                        <div className="flex items-center justify-center py-12"><div className="w-7 h-7 border-2 border-red-400 border-t-transparent rounded-full animate-spin" /></div>
+                      ) : adminDisputes.length === 0 ? (
+                        <div className="bg-white rounded-2xl border border-gray-100 py-16 text-center text-gray-400">
+                          <FiAlertCircle size={36} className="mx-auto mb-2 opacity-30" />
+                          <p>No disputes</p>
+                        </div>
+                      ) : adminDisputes.map(d => (
+                        <div key={d.id} className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1">
+                              <p className="font-semibold text-sm text-gray-900">{d.product_title}</p>
+                              <p className="text-xs text-gray-400 mt-0.5">Buyer: {d.buyer_name} vs Seller: {d.seller_name}</p>
+                              <p className="text-sm text-gray-700 mt-2">{d.reason}</p>
+                              {d.buyer_statement && <p className="text-xs text-blue-700 bg-blue-50 rounded-lg px-2 py-1.5 mt-2">Buyer: {d.buyer_statement}</p>}
+                              {d.seller_statement && <p className="text-xs text-green-700 bg-green-50 rounded-lg px-2 py-1.5 mt-1">Seller: {d.seller_statement}</p>}
+                            </div>
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${d.status === 'resolved' ? 'bg-green-100 text-green-700' : d.status === 'seller_responded' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
+                              {d.status.replace('_', ' ')}
+                            </span>
+                          </div>
+                          {d.status !== 'resolved' && (
+                            <div className="flex gap-2">
+                              <input
+                                value={disputeResolution[d.id] || ''}
+                                onChange={e => setDisputeResolution(r => ({ ...r, [d.id]: e.target.value }))}
+                                placeholder="Resolution details..."
+                                className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#25D366]"
+                              />
+                              <button
+                                onClick={() => handleResolveDispute(d.id)}
+                                disabled={resolvingDispute === d.id}
+                                className="bg-[#075E54] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#128C7E] transition flex items-center gap-1 disabled:opacity-50">
+                                {resolvingDispute === d.id ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Resolve'}
+                              </button>
+                            </div>
+                          )}
+                          {d.resolution && <p className="text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2">Resolution: {d.resolution}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── PAYPAL ── */}
+              {activeTab === 'paypal' && (
+                <div className="space-y-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-gray-900">PayPal Transactions</h3>
+                      <p className="text-sm text-gray-400">{paypalTotal.toLocaleString()} total</p>
+                    </div>
+                    <button onClick={() => fetchPaypalTxns(paypalPage)} className="flex items-center gap-1 text-sm text-gray-500 border border-gray-200 px-3 py-1.5 rounded-xl hover:bg-gray-50 transition">
+                      <FiRefreshCw size={13} />Refresh
+                    </button>
+                  </div>
+
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    {paypalLoading ? (
+                      <div className="flex items-center justify-center py-12"><div className="w-7 h-7 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" /></div>
+                    ) : paypalTxns.length === 0 ? (
+                      <div className="py-16 text-center text-gray-400">
+                        <FiCreditCard size={36} className="mx-auto mb-2 opacity-30" />
+                        <p>No PayPal transactions yet</p>
+                        <p className="text-xs mt-1">Transactions appear here once PayPal credentials are configured</p>
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-gray-50">
+                        {paypalTxns.map(txn => (
+                          <div key={txn.id} className="flex items-center gap-4 px-5 py-4">
+                            <div className="w-10 h-10 rounded-xl bg-[#FFC439]/20 flex items-center justify-center flex-shrink-0">
+                              <FiCreditCard size={18} className="text-[#003087]" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-sm text-gray-900">{txn.user_name || 'Unknown'}</p>
+                              <p className="text-xs text-gray-400">{txn.user_phone} · {new Date(txn.created_at).toLocaleString()}</p>
+                              <p className="text-xs text-gray-500 truncate">Capture: {txn.provider_payment_id}</p>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <p className="font-bold text-gray-900">${Number(txn.amount || 0).toFixed(2)}</p>
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${txn.status === 'completed' ? 'bg-green-100 text-green-700' : txn.status === 'refunded' ? 'bg-gray-100 text-gray-500' : 'bg-amber-100 text-amber-700'}`}>
+                                {txn.status}
+                              </span>
+                            </div>
+                            {txn.status === 'completed' && (
+                              <button
+                                onClick={() => handlePaypalRefund(txn)}
+                                disabled={refundingPaypal === txn.id}
+                                className="text-xs text-red-500 border border-red-200 px-3 py-1.5 rounded-xl hover:bg-red-50 transition disabled:opacity-50 flex items-center gap-1">
+                                {refundingPaypal === txn.id ? <div className="w-3 h-3 border-2 border-red-400 border-t-transparent rounded-full animate-spin" /> : 'Refund'}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {paypalTotalPages > 1 && (
+                    <div className="flex items-center justify-center gap-2">
+                      <button onClick={() => fetchPaypalTxns(paypalPage - 1)} disabled={paypalPage <= 1} className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 disabled:opacity-40"><FiChevronLeft size={14} /></button>
+                      <span className="text-sm text-gray-600">Page {paypalPage} of {paypalTotalPages}</span>
+                      <button onClick={() => fetchPaypalTxns(paypalPage + 1)} disabled={paypalPage >= paypalTotalPages} className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 disabled:opacity-40"><FiChevronRight size={14} /></button>
                     </div>
                   )}
                 </div>

@@ -8,7 +8,9 @@ import {
   FiBarChart2, FiZap, FiBriefcase, FiLayers, FiRefreshCw,
   FiAward, FiAlertCircle, FiRadio, FiTarget, FiClock,
   FiGlobe, FiBox, FiActivity, FiUsers, FiPercent, FiChevronDown,
+  FiShield, FiLink,
 } from 'react-icons/fi';
+import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
 import api from '../services/api';
 import { useAuthStore } from '../services/store';
 import toast from 'react-hot-toast';
@@ -26,6 +28,7 @@ const SORTS = [
 const TABS = [
   { id: 'discover', label: 'Discover', icon: FiGrid },
   { id: 'b2b', label: 'B2B Trade', icon: FiBriefcase },
+  { id: 'purchases', label: 'Purchases', icon: FiDownload },
   { id: 'mystore', label: 'My Store', icon: FiPackage },
   { id: 'analytics', label: 'Analytics', icon: FiBarChart2 },
   { id: 'ads', label: 'Ad Campaigns', icon: FiRadio },
@@ -231,9 +234,114 @@ function B2BCard({ listing, onView }) {
   );
 }
 
+// ── Seller respond to dispute ─────────────────────────────────────────────────
+function SellerRespondToDispute({ dispute, onResponded }) {
+  const [statement, setStatement] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [show, setShow] = useState(false);
+
+  const submit = async () => {
+    if (!statement.trim()) { toast.error('Statement required'); return; }
+    setSubmitting(true);
+    try {
+      await api.post(`/marketplace/disputes/${dispute.id}/respond`, { statement });
+      toast.success('Response submitted!');
+      setShow(false);
+      onResponded();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed');
+    } finally { setSubmitting(false); }
+  };
+
+  if (!show) return (
+    <button onClick={() => setShow(true)} className="mt-2 w-full text-xs text-blue-600 border border-blue-200 py-1.5 rounded-xl hover:bg-blue-50 transition">
+      Respond to Dispute
+    </button>
+  );
+
+  return (
+    <div className="mt-2 space-y-2">
+      <textarea value={statement} onChange={e => setStatement(e.target.value)} rows={3}
+        placeholder="Explain your side to the buyer and admin..."
+        className="w-full border border-gray-200 rounded-xl p-2 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      <div className="flex gap-2">
+        <button onClick={submit} disabled={submitting}
+          className="flex-1 bg-blue-600 text-white text-xs font-semibold py-1.5 rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-1">
+          {submitting ? <Spinner /> : 'Submit Response'}
+        </button>
+        <button onClick={() => setShow(false)} className="text-xs text-gray-400 px-3 py-1.5 rounded-xl hover:bg-gray-100 transition">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// ── PayPal Checkout wrapper ───────────────────────────────────────────────────
+function PayPalCheckout({ product, user, onSuccess }) {
+  const [paypalClientId, setPaypalClientId] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [purchaseId, setPurchaseId] = useState(null);
+  const [orderId, setOrderId] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.post('/marketplace/products/' + product.id + '/purchase', { payment_provider: 'paypal' });
+        setPaypalClientId(r.data.paypal_client_id);
+        setPurchaseId(r.data.purchase_id);
+      } catch (e) {
+        setError(e.response?.data?.error || 'PayPal unavailable');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [product.id]);
+
+  const createOrder = async () => {
+    const r = await api.post('/payments/paypal/create-order', {
+      purpose: 'marketplace',
+      product_id: product.id,
+    });
+    setOrderId(r.data.order_id);
+    return r.data.order_id;
+  };
+
+  const onApprove = async (data) => {
+    try {
+      await api.post('/payments/paypal/capture-order', {
+        order_id: data.orderID,
+        payment_id: null,
+        purpose: 'marketplace',
+        product_id: product.id,
+        purchase_id: purchaseId,
+      });
+      toast.success('Payment complete! Check Purchases tab for your download.');
+      onSuccess();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Capture failed');
+    }
+  };
+
+  if (loading) return <div className="flex justify-center py-3"><div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" /></div>;
+  if (error) return <div className="text-xs text-red-500 text-center py-2">{error}</div>;
+  if (!paypalClientId) return null;
+
+  return (
+    <PayPalScriptProvider options={{ 'client-id': paypalClientId, currency: 'USD', intent: 'capture' }}>
+      <PayPalButtons
+        style={{ layout: 'horizontal', height: 40, label: 'pay', tagline: false }}
+        createOrder={createOrder}
+        onApprove={onApprove}
+        onError={(err) => toast.error('PayPal error: ' + (err.message || 'Unknown'))}
+      />
+    </PayPalScriptProvider>
+  );
+}
+
 // ── Product Detail Modal ───────────────────────────────────────────────────────
 function ProductModal({ product, onClose, user }) {
   const [buying, setBuying] = useState(false);
+  const [showPayPal, setShowPayPal] = useState(false);
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
@@ -325,17 +433,33 @@ function ProductModal({ product, onClose, user }) {
           )}
 
           {/* Purchase */}
-          <div className="flex items-center justify-between bg-gradient-to-r from-[#075E54] to-[#25D366] rounded-2xl p-4">
-            <div>
-              <div className="text-white font-bold text-xl">
-                {product.is_free ? 'Free' : fmtMoney(product.price)}
+          <div className="bg-gradient-to-r from-[#075E54] to-[#25D366] rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-white font-bold text-xl">
+                  {product.is_free ? 'Free' : fmtMoney(product.price)}
+                </div>
+                <div className="text-green-100 text-xs">{product.currency || 'USD'}</div>
               </div>
-              <div className="text-green-100 text-xs">{product.currency || 'USD'}</div>
+              <button onClick={handleBuy} disabled={buying}
+                className="bg-white text-[#075E54] font-bold px-6 py-2.5 rounded-xl hover:bg-green-50 transition flex items-center gap-2">
+                {buying ? <Spinner /> : product.is_free ? <><FiDownload size={16} />Download</> : <><FiDollarSign size={16} />Stripe</>}
+              </button>
             </div>
-            <button onClick={handleBuy} disabled={buying}
-              className="bg-white text-[#075E54] font-bold px-6 py-2.5 rounded-xl hover:bg-green-50 transition flex items-center gap-2">
-              {buying ? <Spinner /> : product.is_free ? <><FiDownload size={16} />Download</> : <><FiDollarSign size={16} />Buy Now</>}
-            </button>
+            {!product.is_free && user && (
+              <div>
+                {!showPayPal ? (
+                  <button onClick={() => setShowPayPal(true)}
+                    className="w-full bg-[#FFC439] text-[#003087] font-bold py-2 rounded-xl text-sm flex items-center justify-center gap-2 hover:bg-yellow-300 transition">
+                    <span className="font-bold">Pay</span><span className="font-light">Pal</span>
+                  </button>
+                ) : (
+                  <div className="bg-white rounded-xl p-2">
+                    <PayPalCheckout product={product} user={user} onSuccess={onClose} />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Reviews */}
@@ -774,6 +898,17 @@ export default function MarketplacePage() {
   const [showCreateAd, setShowCreateAd] = useState(false);
   const [loadingAds, setLoadingAds] = useState(false);
 
+  // Purchases + Disputes state
+  const [myPurchases, setMyPurchases] = useState([]);
+  const [loadingPurchases, setLoadingPurchases] = useState(false);
+  const [myDisputes, setMyDisputes] = useState([]);
+  const [sellerDisputes, setSellerDisputes] = useState([]);
+  const [showDisputeModal, setShowDisputeModal] = useState(null); // purchase object
+  const [disputeReason, setDisputeReason] = useState('');
+  const [disputeStatement, setDisputeStatement] = useState('');
+  const [submittingDispute, setSubmittingDispute] = useState(false);
+  const [downloadingId, setDownloadingId] = useState(null);
+
   // ── Data fetchers ─────────────────────────────────────────────────────────
   const fetchProducts = useCallback(async (p = 1, cat = category, s = search, so = sort) => {
     setLoading(true);
@@ -867,6 +1002,61 @@ export default function MarketplacePage() {
     } catch {}
   };
 
+  const fetchMyPurchases = async () => {
+    if (!user) return;
+    setLoadingPurchases(true);
+    try {
+      const r = await api.get('/marketplace/my-purchases');
+      setMyPurchases(r.data.purchases || []);
+    } catch {}
+    finally { setLoadingPurchases(false); }
+  };
+
+  const fetchMyDisputes = async () => {
+    if (!user) return;
+    try {
+      const [buyerR, sellerR] = await Promise.all([
+        api.get('/marketplace/disputes?role=buyer'),
+        api.get('/marketplace/disputes?role=seller'),
+      ]);
+      setMyDisputes(buyerR.data.disputes || []);
+      setSellerDisputes(sellerR.data.disputes || []);
+    } catch {}
+  };
+
+  const handleGetDownload = async (purchaseId) => {
+    setDownloadingId(purchaseId);
+    try {
+      const r = await api.post(`/marketplace/my-purchases/${purchaseId}/download-token`);
+      const token = r.data.token?.token;
+      if (token) {
+        window.open(`/api/marketplace/download/${token}`, '_blank');
+      } else {
+        toast.error('Download token unavailable');
+      }
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to get download link');
+    } finally { setDownloadingId(null); }
+  };
+
+  const submitDispute = async () => {
+    if (!disputeReason.trim()) { toast.error('Please describe the issue'); return; }
+    setSubmittingDispute(true);
+    try {
+      await api.post(`/marketplace/purchases/${showDisputeModal.id}/dispute`, {
+        reason: disputeReason,
+        statement: disputeStatement,
+      });
+      toast.success('Dispute opened! The seller has 48 hours to respond.');
+      setShowDisputeModal(null);
+      setDisputeReason('');
+      setDisputeStatement('');
+      fetchMyDisputes();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to open dispute');
+    } finally { setSubmittingDispute(false); }
+  };
+
   const fetchInquiries = async () => {
     if (!user) return;
     try {
@@ -889,9 +1079,10 @@ export default function MarketplacePage() {
   }, []);
 
   useEffect(() => { if (tab === 'b2b') { fetchB2bListings(1); fetchMyB2bListings(); fetchInquiries(); } }, [tab]);
-  useEffect(() => { if (tab === 'mystore') fetchMyProducts(); }, [tab]);
+  useEffect(() => { if (tab === 'mystore') { fetchMyProducts(); fetchMyDisputes(); } }, [tab]);
   useEffect(() => { if (tab === 'analytics') fetchAnalytics(); }, [tab]);
   useEffect(() => { if (tab === 'ads') fetchMyAds(); }, [tab]);
+  useEffect(() => { if (tab === 'purchases') { fetchMyPurchases(); fetchMyDisputes(); } }, [tab]);
 
   const handleSearch = e => {
     const v = e.target.value;
@@ -1225,6 +1416,114 @@ export default function MarketplacePage() {
     );
   };
 
+  const renderPurchases = () => {
+    if (loadingPurchases) return <div className="flex items-center justify-center py-16"><div className="w-8 h-8 border-2 border-[#25D366] border-t-transparent rounded-full animate-spin" /></div>;
+    return (
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-gray-900">My Purchases ({myPurchases.length})</h3>
+          <button onClick={fetchMyPurchases} className="text-xs text-gray-400 flex items-center gap-1 hover:text-gray-600"><FiRefreshCw size={12} />Refresh</button>
+        </div>
+
+        {/* Buyer Disputes */}
+        {myDisputes.length > 0 && (
+          <div className="bg-red-50 border border-red-100 rounded-2xl p-4 space-y-2">
+            <div className="font-semibold text-red-800 text-sm flex items-center gap-2"><FiAlertCircle size={14} />Open Disputes ({myDisputes.length})</div>
+            {myDisputes.map(d => (
+              <div key={d.id} className="bg-white rounded-xl p-3 border border-red-100">
+                <div className="flex items-center justify-between">
+                  <div className="font-medium text-sm text-gray-900 truncate">{d.product_title}</div>
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${d.status === 'resolved' ? 'bg-green-100 text-green-700' : d.status === 'seller_responded' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>{d.status.replace('_', ' ')}</span>
+                </div>
+                <div className="text-xs text-gray-500 mt-1">{d.reason}</div>
+                {d.resolution && <div className="text-xs text-green-700 bg-green-50 rounded-lg p-2 mt-2">Resolution: {d.resolution}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {myPurchases.length === 0 ? (
+          <div className="text-center py-16 text-gray-400">
+            <FiShoppingBag size={40} className="mx-auto mb-3 opacity-30" />
+            <div className="font-medium">No purchases yet</div>
+            <div className="text-sm mt-1">Browse the marketplace to find digital products</div>
+            <button onClick={() => setTab('discover')} className="mt-3 bg-[#075E54] text-white text-sm font-medium px-4 py-2 rounded-xl hover:bg-[#128C7E] transition">Explore Marketplace</button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {myPurchases.map(p => {
+              const hasDispute = myDisputes.some(d => d.purchase_id === p.id);
+              const prod = p.product;
+              return (
+                <div key={p.id} className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
+                  <div className="flex gap-3">
+                    <div className="w-14 h-14 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      {prod?.thumbnail_url ? <img src={prod.thumbnail_url} alt="" className="w-full h-full object-cover rounded-xl" /> : <FiPackage size={22} className="text-gray-300" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm text-gray-900 truncate">{prod?.title || 'Product'}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">{prod?.category} · {fmtMoney(p.amount_paid)}</div>
+                      <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
+                        <FiClock size={10} />{new Date(p.created_at).toLocaleDateString()}
+                        {p.payment_provider && <span className="ml-1 capitalize">via {p.payment_provider}</span>}
+                      </div>
+                    </div>
+                    <span className="flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700 h-fit">Purchased</span>
+                  </div>
+                  <div className="flex gap-2">
+                    {prod?.file_url && (
+                      <button
+                        onClick={() => handleGetDownload(p.id)}
+                        disabled={downloadingId === p.id}
+                        className="flex-1 flex items-center justify-center gap-1.5 bg-[#075E54] text-white text-xs font-semibold py-2 rounded-xl hover:bg-[#128C7E] transition">
+                        {downloadingId === p.id ? <Spinner /> : <><FiDownload size={13} />Download File</>}
+                      </button>
+                    )}
+                    {!hasDispute && (
+                      <button
+                        onClick={() => setShowDisputeModal(p)}
+                        className="flex items-center gap-1 text-xs text-red-500 border border-red-200 px-3 py-2 rounded-xl hover:bg-red-50 transition">
+                        <FiShield size={12} />Dispute
+                      </button>
+                    )}
+                    {hasDispute && (
+                      <div className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-xl"><FiAlertCircle size={12} />Dispute open</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Seller disputes panel */}
+        {sellerDisputes.length > 0 && (
+          <div className="border-t pt-4">
+            <div className="font-semibold text-gray-900 mb-3 text-sm flex items-center gap-2"><FiShield size={14} className="text-amber-500" />Disputes on My Products ({sellerDisputes.length})</div>
+            <div className="space-y-3">
+              {sellerDisputes.map(d => (
+                <div key={d.id} className="bg-amber-50 border border-amber-100 rounded-xl p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="font-medium text-sm text-gray-900">{d.product_title}</div>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${d.status === 'open' ? 'bg-red-100 text-red-700' : d.status === 'seller_responded' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>{d.status.replace('_', ' ')}</span>
+                  </div>
+                  <div className="text-xs text-gray-600 mb-1">From: {d.buyer_name}</div>
+                  <div className="text-xs text-gray-700">{d.reason}</div>
+                  {d.seller_respond_by && d.status === 'open' && (
+                    <div className="text-xs text-red-600 mt-1 flex items-center gap-1"><FiClock size={10} />Respond by: {new Date(d.seller_respond_by).toLocaleString()}</div>
+                  )}
+                  {d.status === 'open' && (
+                    <SellerRespondToDispute dispute={d} onResponded={fetchMyDisputes} />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderAds = () => (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -1315,6 +1614,7 @@ export default function MarketplacePage() {
           <motion.div key={tab} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}>
             {tab === 'discover' && renderDiscover()}
             {tab === 'b2b' && renderB2B()}
+            {tab === 'purchases' && renderPurchases()}
             {tab === 'mystore' && renderMyStore()}
             {tab === 'analytics' && renderAnalytics()}
             {tab === 'ads' && renderAds()}
@@ -1329,6 +1629,47 @@ export default function MarketplacePage() {
         {showUpload && <UploadModal onClose={() => setShowUpload(false)} onSuccess={() => { fetchProducts(1); fetchMyProducts(); }} />}
         {showCreateAd && <CreateAdModal myProducts={myProducts} onClose={() => setShowCreateAd(false)} onSuccess={fetchMyAds} />}
         {showCreateB2b && <CreateB2BModal onClose={() => setShowCreateB2b(false)} onSuccess={() => { fetchB2bListings(1); fetchMyB2bListings(); }} />}
+
+        {/* Dispute open modal */}
+        {showDisputeModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 40 }}
+              className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-lg max-h-[92vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b flex items-center justify-between px-4 py-3 z-10">
+                <div className="font-bold text-gray-900 flex items-center gap-2"><FiShield size={16} className="text-red-500" />Open Buyer Dispute</div>
+                <button onClick={() => setShowDisputeModal(null)} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100"><FiX size={16} /></button>
+              </div>
+              <div className="p-4 space-y-4">
+                <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-700">
+                  <strong>Buyer Protection</strong> — disputes are reviewed by our team within 72 hours. Seller has 48 hours to respond.
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Issue Type *</label>
+                  <select value={disputeReason} onChange={e => setDisputeReason(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400">
+                    <option value="">Select a reason</option>
+                    <option value="Item not received">Item not received</option>
+                    <option value="File not working or corrupted">File not working or corrupted</option>
+                    <option value="Not as described">Not as described</option>
+                    <option value="Unauthorized purchase">Unauthorized purchase</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Describe the issue</label>
+                  <textarea value={disputeStatement} onChange={e => setDisputeStatement(e.target.value)}
+                    rows={4} placeholder="Provide details about your issue..."
+                    className="w-full border border-gray-200 rounded-xl p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-400" />
+                </div>
+                <button onClick={submitDispute} disabled={submittingDispute || !disputeReason}
+                  className="w-full bg-red-500 text-white font-semibold py-3 rounded-xl hover:bg-red-600 transition flex items-center justify-center gap-2 disabled:opacity-50">
+                  {submittingDispute ? <Spinner /> : <><FiShield size={16} />Open Dispute</>}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   );

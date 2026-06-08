@@ -682,7 +682,7 @@ class ApiClient(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship('User', backref=db.backref('api_client', uselist=False))
-    subscriptions = db.relationship('ApiSubscription', backref='client', lazy=True, cascade='all, delete-orphan')
+    subscriptions = db.relationship('ApiClientSubscription', backref='client', lazy=True, cascade='all, delete-orphan')
     usage_logs = db.relationship('ApiUsageLog', backref='client', lazy=True, cascade='all, delete-orphan')
 
     def to_dict(self, admin=False):
@@ -701,8 +701,8 @@ class ApiClient(db.Model):
         return d
 
 
-class ApiSubscription(db.Model):
-    __tablename__ = 'api_subscriptions'
+class ApiClientSubscription(db.Model):
+    __tablename__ = 'api_client_subscriptions'
 
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     client_id = db.Column(db.String(36), db.ForeignKey('api_clients.id'), nullable=False)
