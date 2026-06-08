@@ -55,8 +55,12 @@ class MarketplaceProduct(db.Model):
     tags = Column(Text, nullable=True)
     download_count = Column(Integer, default=0)
     view_count = Column(Integer, default=0)
+    wishlist_count = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
     is_free = Column(Boolean, default=False)
+    is_featured = Column(Boolean, default=False)
+    is_boosted = Column(Boolean, default=False)
+    boost_expires_at = Column(DateTime, nullable=True)
     license_type = Column(String(50), default='standard')
     file_size = Column(Integer, nullable=True)
     file_type = Column(String(50), nullable=True)
@@ -89,6 +93,9 @@ class MarketplaceProduct(db.Model):
             'view_count': self.view_count,
             'is_active': self.is_active,
             'is_free': self.is_free,
+            'is_featured': self.is_featured,
+            'is_boosted': self.is_boosted,
+            'wishlist_count': self.wishlist_count,
             'license_type': self.license_type,
             'file_size': self.file_size,
             'file_type': self.file_type,
@@ -455,7 +462,8 @@ def update_product(product_id):
         product = MarketplaceProduct.query.get(product_id)
         if not product:
             return jsonify({'error': 'Not found'}), 404
-        if product.seller_id != user_id:
+        user = User.query.get(user_id)
+        if product.seller_id != user_id and not (user and user.is_admin):
             return jsonify({'error': 'Forbidden'}), 403
 
         data = request.get_json() or {}
@@ -705,8 +713,6 @@ def admin_feature_product(product_id):
             return jsonify({'error': 'Not found'}), 404
         data = request.get_json() or {}
         featured = bool(data.get('featured', True))
-        if not hasattr(product, 'is_featured'):
-            return jsonify({'error': 'is_featured column not yet migrated'}), 500
         product.is_featured = featured
         db.session.commit()
         return jsonify({'message': 'Updated', 'is_featured': featured}), 200

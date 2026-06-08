@@ -124,22 +124,16 @@ def get_subscription():
 @api_billing_bp.route('/subscription/upgrade', methods=['POST'])
 @jwt_required()
 def upgrade_subscription():
-    """Upgrade to a paid API plan via Stripe."""
+    """Upgrade to a paid API plan via Stripe or PayPal."""
     try:
         user_id = get_jwt_identity()
         data = request.get_json() or {}
         plan = data.get('plan', 'pro')
+        payment_provider = data.get('payment_provider', 'stripe')
 
         limits = ApiSubscription.PLAN_LIMITS.get(plan)
         if not limits or limits['price'] == 0:
             return jsonify({'error': 'Invalid plan or free plan selected'}), 400
-
-        stripe_key = current_app.config.get('STRIPE_SECRET_KEY', '')
-        if not stripe_key:
-            return jsonify({'error': 'Payment not configured. Add STRIPE_SECRET_KEY.'}), 503
-
-        import stripe
-        stripe.api_key = stripe_key
 
         user = User.query.get(user_id)
         sub = ApiSubscription.query.filter_by(user_id=user_id).first()
@@ -147,6 +141,54 @@ def upgrade_subscription():
             sub = ApiSubscription(user_id=user_id, plan='free', status='active')
             db.session.add(sub)
             db.session.commit()
+
+        # ── PayPal one-time order (subscriptions handled via webhook activation) ──
+        if payment_provider == 'paypal':
+            paypal_id = current_app.config.get('PAYPAL_CLIENT_ID', '').strip()
+            paypal_secret = current_app.config.get('PAYPAL_CLIENT_SECRET', '').strip()
+            if not paypal_id or not paypal_secret:
+                return jsonify({'error': 'PayPal not configured on this server'}), 503
+            from app.services.monetization import PayPalPaymentProcessor
+            sandbox = current_app.config.get('PAYPAL_SANDBOX', 'false').lower() == 'true'
+            pp = PayPalPaymentProcessor(paypal_id, paypal_secret, sandbox=sandbox)
+            base_url = request.host_url.rstrip('/')
+            result = pp.create_order(
+                amount=float(limits['price']),
+                currency='USD',
+                description=f'VipChat API — {plan.title()} Plan (monthly)',
+                return_url=f'{base_url}/api-platform?upgrade_success={plan}',
+                cancel_url=f'{base_url}/api-platform?upgrade_cancel=1',
+            )
+            # Store pending payment record for webhook to activate
+            from app.models.models import Payment
+            payment = Payment()
+            payment.user_id = user_id
+            payment.provider = 'paypal'
+            payment.amount = float(limits['price'])
+            payment.currency = 'USD'
+            payment.status = 'pending'
+            payment.tier = plan
+            payment.provider_payment_id = result['order_id']
+            payment.metadata_json = __import__('json').dumps({
+                'purpose': 'api_subscription', 'plan': plan, 'user_id': user_id,
+            })
+            db.session.add(payment)
+            db.session.commit()
+            return jsonify({
+                'order_id': result['order_id'],
+                'approve_url': result['approve_url'],
+                'payment_id': payment.id,
+                'provider': 'paypal',
+                'plan': plan,
+            }), 200
+
+        # ── Stripe checkout session (default) ──
+        stripe_key = current_app.config.get('STRIPE_SECRET_KEY', '')
+        if not stripe_key:
+            return jsonify({'error': 'Payment not configured. Add STRIPE_SECRET_KEY.'}), 503
+
+        import stripe
+        stripe.api_key = stripe_key
 
         # Create/retrieve Stripe customer
         if not sub.stripe_customer_id:

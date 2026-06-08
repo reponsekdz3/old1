@@ -478,14 +478,31 @@ def paypal_capture_order():
             return jsonify({'error': 'order_id required'}), 400
 
         payment = Payment.query.get(payment_id) if payment_id else None
-        if payment and payment.user_id != user_id:
+        if not payment:
+            return jsonify({'error': 'payment_id required; create-order must be called first'}), 400
+        if payment.user_id != user_id:
             return jsonify({'error': 'Forbidden'}), 403
-        if payment and payment.status == 'completed':
+        if payment.status == 'completed':
             return jsonify({'error': 'Already captured', 'payment': payment.to_dict()}), 200
+
+        # Validate payment record links to the right order
+        stored_order_id = payment.provider_payment_id or ''
+        if stored_order_id and stored_order_id != order_id:
+            return jsonify({'error': 'order_id does not match payment record'}), 400
 
         capture = pp.capture_order(order_id)
         if capture['status'] != 'COMPLETED':
             return jsonify({'error': f'Capture failed: {capture["status"]}'}), 400
+
+        # Validate captured amount matches intended amount (within $0.01 tolerance)
+        captured_amount = float(capture.get('amount', 0))
+        if abs(captured_amount - payment.amount) > 0.01:
+            import logging
+            logging.getLogger(__name__).error(
+                'PayPal amount mismatch: expected %.2f captured %.2f for payment %s',
+                payment.amount, captured_amount, payment.id
+            )
+            return jsonify({'error': 'Captured amount does not match order amount'}), 400
 
         if payment:
             payment.status = 'completed'
@@ -601,6 +618,15 @@ def paypal_webhook():
                         db.session.add(purchase)
                         db.session.commit()
                         _deliver_purchase_async(purchase.id)
+                elif purpose == 'api_subscription':
+                    from app.routes.api_billing import ApiSubscription
+                    plan = meta.get('plan', 'starter')
+                    sub = ApiSubscription.query.filter_by(user_id=payment.user_id).first()
+                    if sub:
+                        sub.plan = plan
+                        sub.status = 'active'
+                        sub.stripe_subscription_id = capture_id
+                        db.session.commit()
 
         return jsonify({'received': True}), 200
 
