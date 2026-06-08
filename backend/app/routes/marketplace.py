@@ -120,11 +120,17 @@ class MarketplacePurchase(db.Model):
     payment_provider = Column(String(50), nullable=True)
     payment_ref = Column(String(255), nullable=True)
     status = Column(String(20), default='completed')
+    payout_status = Column(String(20), default='pending')
+    escrow_released_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     buyer = relationship('User', foreign_keys=[buyer_id], backref='marketplace_purchases')
 
     def to_dict(self):
+        escrow_released = (
+            self.escrow_released_at is not None
+            and self.escrow_released_at <= datetime.utcnow()
+        )
         return {
             'id': self.id,
             'buyer_id': self.buyer_id,
@@ -133,6 +139,8 @@ class MarketplacePurchase(db.Model):
             'currency': self.currency,
             'payment_provider': self.payment_provider,
             'status': self.status,
+            'payout_status': 'available' if escrow_released else self.payout_status,
+            'escrow_released_at': self.escrow_released_at.isoformat() if self.escrow_released_at else None,
             'created_at': self.created_at.isoformat(),
         }
 
@@ -356,7 +364,10 @@ def list_products():
         max_price = request.args.get('max_price', type=float)
         free_only = request.args.get('free', '').lower() == 'true'
 
-        q = MarketplaceProduct.query.filter_by(is_active=True)
+        q = MarketplaceProduct.query.filter(
+            MarketplaceProduct.is_active == True,
+            MarketplaceProduct.is_approved == True,
+        )
 
         if category:
             q = q.filter(MarketplaceProduct.category == category)
@@ -375,12 +386,36 @@ def list_products():
         if max_price is not None:
             q = q.filter(MarketplaceProduct.price <= max_price)
 
+        # Optional rating filter via correlated subquery
+        min_rating = request.args.get('min_rating', type=float)
+        seller_verified_only = request.args.get('verified_seller', '').lower() == 'true'
+        if min_rating is not None:
+            from sqlalchemy import select, func as sqlfunc
+            avg_sq = select(sqlfunc.avg(MarketplaceReview.rating)).where(
+                MarketplaceReview.product_id == MarketplaceProduct.id
+            ).correlate(MarketplaceProduct).scalar_subquery()
+            q = q.filter(avg_sq >= min_rating)
+        if seller_verified_only:
+            q = q.join(User, MarketplaceProduct.seller_id == User.id).filter(User.badge_verified == True)
+
         if sort == 'price_asc':
             q = q.order_by(MarketplaceProduct.price.asc())
         elif sort == 'price_desc':
             q = q.order_by(MarketplaceProduct.price.desc())
-        elif sort == 'popular':
+        elif sort == 'popular' or sort == 'best_seller':
             q = q.order_by(MarketplaceProduct.download_count.desc())
+        elif sort == 'top_rated':
+            from sqlalchemy import select, func as sqlfunc
+            rating_sq = select(sqlfunc.avg(MarketplaceReview.rating)).where(
+                MarketplaceReview.product_id == MarketplaceProduct.id
+            ).correlate(MarketplaceProduct).scalar_subquery()
+            q = q.order_by(rating_sq.desc())
+        elif sort == 'featured':
+            q = q.order_by(
+                MarketplaceProduct.is_boosted.desc(),
+                MarketplaceProduct.is_featured.desc(),
+                MarketplaceProduct.created_at.desc(),
+            )
         else:
             q = q.order_by(MarketplaceProduct.created_at.desc())
 
