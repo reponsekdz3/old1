@@ -11,6 +11,7 @@ import {
   FiGrid, FiList, FiMoreVertical, FiSend, FiX, FiEye,
   FiToggleLeft, FiToggleRight, FiDownload, FiFilter,
   FiCode, FiZap, FiWifi, FiLock, FiServer, FiClock,
+  FiDollarSign, FiMousePointer,
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -188,6 +189,7 @@ const TABS = [
   { id: 'groups', label: 'Groups', icon: FiUsers },
   { id: 'activity', label: 'Activity', icon: FiActivity },
   { id: 'api_clients', label: 'API Clients', icon: FiCode },
+  { id: 'ads', label: 'Ads', icon: FiZap },
 ];
 
 function AdminPage() {
@@ -222,6 +224,14 @@ function AdminPage() {
   const [liveData, setLiveData] = useState(null);
   const [liveLoading, setLiveLoading] = useState(false);
   const liveIntervalRef = React.useRef(null);
+  const [adStats, setAdStats] = useState(null);
+  const [adCampaigns, setAdCampaigns] = useState([]);
+  const [adCampaignsPage, setAdCampaignsPage] = useState(1);
+  const [adCampaignsTotalPages, setAdCampaignsTotalPages] = useState(1);
+  const [adCampaignsTotal, setAdCampaignsTotal] = useState(0);
+  const [adCampaignsFilter, setAdCampaignsFilter] = useState('');
+  const [adReports, setAdReports] = useState([]);
+  const [adTab, setAdTab] = useState('campaigns');
 
   useEffect(() => {
     checkAdminAccess();
@@ -318,6 +328,74 @@ function AdminPage() {
       const { data } = await api.get('/admin/stats/activity?days=14');
       setActivity(data.activity || []);
     } catch {}
+  };
+
+  const loadAdStats = async () => {
+    try {
+      const { data } = await api.get('/ads/admin/stats');
+      setAdStats(data);
+    } catch {}
+  };
+
+  const loadAdCampaigns = useCallback(async (page = 1, status = adCampaignsFilter) => {
+    try {
+      const params = new URLSearchParams({ page, per_page: 20, ...(status ? { status } : {}) });
+      const { data } = await api.get(`/ads/admin/campaigns?${params}`);
+      setAdCampaigns(data.campaigns || []);
+      setAdCampaignsTotalPages(data.pages || 1);
+      setAdCampaignsTotal(data.total || 0);
+      setAdCampaignsPage(page);
+    } catch {}
+  }, [adCampaignsFilter]);
+
+  const loadAdReports = async () => {
+    try {
+      const { data } = await api.get('/ads/admin/reports');
+      setAdReports(data.reports || []);
+    } catch {}
+  };
+
+  const handleApproveCampaign = async (id) => {
+    try {
+      await api.post(`/ads/admin/campaigns/${id}/approve`);
+      toast.success('Campaign approved');
+      loadAdCampaigns(adCampaignsPage);
+      loadAdStats();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
+  const handleRejectCampaign = async (id) => {
+    const reason = window.prompt('Enter rejection reason:');
+    if (reason === null) return;
+    try {
+      await api.post(`/ads/admin/campaigns/${id}/reject`, { reason: reason || 'Does not meet guidelines' });
+      toast.success('Campaign rejected');
+      loadAdCampaigns(adCampaignsPage);
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
+  const handlePauseCampaign = async (id) => {
+    try {
+      await api.post(`/ads/admin/campaigns/${id}/pause`);
+      toast.success('Campaign paused');
+      loadAdCampaigns(adCampaignsPage);
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
+  const handleResumeCampaign = async (id) => {
+    try {
+      await api.post(`/ads/admin/campaigns/${id}/resume`);
+      toast.success('Campaign resumed');
+      loadAdCampaigns(adCampaignsPage);
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
+  const handleResolveReport = async (id) => {
+    try {
+      await api.post(`/ads/admin/reports/${id}/resolve`);
+      toast.success('Report resolved');
+      loadAdReports();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
   };
 
   const refresh = async () => {
@@ -436,6 +514,13 @@ function AdminPage() {
     return () => clearTimeout(delay);
   }, [apiClientsSearch, isAdmin, activeTab]);
 
+  useEffect(() => {
+    if (!isAdmin || activeTab !== 'ads') return;
+    loadAdStats();
+    loadAdCampaigns(1);
+    loadAdReports();
+  }, [activeTab, isAdmin]);
+
   if (checkingAdmin) {
     return (
       <div className="h-screen flex items-center justify-center bg-[#f0f2f5]">
@@ -537,6 +622,7 @@ function AdminPage() {
               {activeTab === 'groups' && 'All groups and communities'}
               {activeTab === 'activity' && 'Usage trends over time'}
               {activeTab === 'api_clients' && `${apiClientsTotal.toLocaleString()} registered API clients`}
+              {activeTab === 'ads' && `${adCampaignsTotal.toLocaleString()} ad campaigns · ${adStats?.pending_campaigns || 0} pending review`}
             </p>
           </div>
           {activeTab === 'users' && (
@@ -1171,6 +1257,219 @@ function AdminPage() {
                         </div>
                       )}
                     </>
+                  )}
+                </div>
+              )}
+              {/* ── ADS ── */}
+              {activeTab === 'ads' && (
+                <div className="space-y-5">
+                  {/* Ad stats row */}
+                  {adStats && (
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      {[
+                        { icon: FiZap, label: 'Active Campaigns', value: adStats.active_campaigns, color: 'bg-[#25D366]' },
+                        { icon: FiClock, label: 'Pending Review', value: adStats.pending_campaigns, color: 'bg-amber-500' },
+                        { icon: FiEye, label: 'Impressions Today', value: adStats.impressions_today, color: 'bg-blue-500' },
+                        { icon: FiDollarSign, label: 'Total Revenue', value: `$${(adStats.total_revenue || 0).toFixed(2)}`, color: 'bg-purple-500' },
+                      ].map(s => (
+                        <motion.div key={s.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+                          className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                          <div className={`w-10 h-10 ${s.color} rounded-xl flex items-center justify-center mb-3`}>
+                            <s.icon size={18} className="text-white" />
+                          </div>
+                          <p className="text-2xl font-bold text-gray-900">{typeof s.value === 'number' ? s.value.toLocaleString() : s.value}</p>
+                          <p className="text-sm text-gray-500 mt-0.5">{s.label}</p>
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Sub-tabs */}
+                  <div className="flex gap-2">
+                    {[
+                      { id: 'campaigns', label: 'Campaigns' },
+                      { id: 'reports', label: `Reports${adReports.length > 0 ? ` (${adReports.length})` : ''}` },
+                      { id: 'leaderboard', label: 'Leaderboard' },
+                    ].map(t => (
+                      <button key={t.id} onClick={() => setAdTab(t.id)}
+                        className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${adTab === t.id ? 'bg-[#075E54] text-white' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Campaigns sub-tab */}
+                  {adTab === 'campaigns' && (
+                    <div className="space-y-3">
+                      {/* Filter */}
+                      <div className="flex gap-2 flex-wrap">
+                        {['', 'pending', 'active', 'paused', 'rejected', 'completed'].map(s => (
+                          <button key={s} onClick={() => { setAdCampaignsFilter(s); loadAdCampaigns(1, s); }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${adCampaignsFilter === s ? 'bg-[#075E54] text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>
+                            {s || 'All'}
+                          </button>
+                        ))}
+                      </div>
+
+                      {adCampaigns.length === 0 ? (
+                        <div className="bg-white rounded-2xl p-16 text-center border border-gray-100">
+                          <FiZap size={40} className="text-gray-300 mx-auto mb-3" />
+                          <p className="text-gray-400">No campaigns found</p>
+                        </div>
+                      ) : (
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                          <table className="w-full text-sm">
+                            <thead className="bg-gray-50 border-b border-gray-100">
+                              <tr className="text-left text-xs text-gray-400 font-semibold uppercase tracking-wider">
+                                <th className="px-4 py-3">Campaign</th>
+                                <th className="px-4 py-3">Sponsor</th>
+                                <th className="px-4 py-3">Budget</th>
+                                <th className="px-4 py-3">Stats</th>
+                                <th className="px-4 py-3">Status</th>
+                                <th className="px-4 py-3">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                              {adCampaigns.map(c => {
+                                const ctr = c.impressions > 0 ? ((c.clicks / c.impressions) * 100).toFixed(1) : '0.0';
+                                return (
+                                  <tr key={c.id} className="hover:bg-gray-50 transition-colors">
+                                    <td className="px-4 py-3">
+                                      <p className="font-semibold text-gray-900 text-sm truncate max-w-[150px]">{c.title}</p>
+                                      <p className="text-xs text-gray-400 truncate max-w-[150px]">{c.ad_copy}</p>
+                                    </td>
+                                    <td className="px-4 py-3 text-xs text-gray-600">{c.sponsor_name}</td>
+                                    <td className="px-4 py-3">
+                                      <p className="text-xs font-semibold text-gray-900">${(c.budget_spent || 0).toFixed(2)} / ${c.budget_total}</p>
+                                      <div className="w-16 h-1 bg-gray-100 rounded-full mt-1">
+                                        <div className="h-full bg-[#25D366] rounded-full"
+                                          style={{ width: `${Math.min(100, ((c.budget_spent || 0) / c.budget_total) * 100)}%` }} />
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <div className="flex items-center gap-3 text-xs">
+                                        <span className="flex items-center gap-1 text-gray-600"><FiEye size={11} />{(c.impressions || 0).toLocaleString()}</span>
+                                        <span className="flex items-center gap-1 text-gray-600"><FiMousePointer size={11} />{c.clicks || 0}</span>
+                                        <span className="text-[#25D366] font-semibold">{ctr}%</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                        c.status === 'active' ? 'bg-green-100 text-green-700' :
+                                        c.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                                        c.status === 'rejected' ? 'bg-red-100 text-red-600' :
+                                        'bg-gray-100 text-gray-500'
+                                      }`}>{c.status}</span>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <div className="flex gap-1">
+                                        {c.status === 'pending' && (
+                                          <>
+                                            <button onClick={() => handleApproveCampaign(c.id)}
+                                              className="text-xs bg-green-50 hover:bg-green-100 text-green-700 px-2 py-1 rounded-lg font-semibold transition">
+                                              Approve
+                                            </button>
+                                            <button onClick={() => handleRejectCampaign(c.id)}
+                                              className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-2 py-1 rounded-lg font-semibold transition">
+                                              Reject
+                                            </button>
+                                          </>
+                                        )}
+                                        {c.status === 'active' && (
+                                          <button onClick={() => handlePauseCampaign(c.id)}
+                                            className="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 px-2 py-1 rounded-lg font-semibold transition">
+                                            Pause
+                                          </button>
+                                        )}
+                                        {c.status === 'paused' && c.is_approved && (
+                                          <button onClick={() => handleResumeCampaign(c.id)}
+                                            className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 px-2 py-1 rounded-lg font-semibold transition">
+                                            Resume
+                                          </button>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                          {adCampaignsTotalPages > 1 && (
+                            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+                              <p className="text-xs text-gray-500">Page {adCampaignsPage} of {adCampaignsTotalPages}</p>
+                              <div className="flex gap-1">
+                                <button onClick={() => loadAdCampaigns(adCampaignsPage - 1)} disabled={adCampaignsPage === 1}
+                                  className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-30 transition"><FiChevronLeft size={16} /></button>
+                                <button onClick={() => loadAdCampaigns(adCampaignsPage + 1)} disabled={adCampaignsPage === adCampaignsTotalPages}
+                                  className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-30 transition"><FiChevronRight size={16} /></button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Reports sub-tab */}
+                  {adTab === 'reports' && (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                      {adReports.length === 0 ? (
+                        <div className="py-16 text-center text-gray-400">
+                          <FiCheckCircle size={36} className="mx-auto mb-2 opacity-30" />
+                          <p>No pending ad reports</p>
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-gray-50">
+                          {adReports.map(r => (
+                            <div key={r.id} className="px-5 py-4 flex items-start gap-4 hover:bg-gray-50">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-sm text-gray-900">{r.campaign_title || 'Unknown Campaign'}</p>
+                                <p className="text-xs text-gray-500 mt-0.5">Reported by {r.reporter_name} · <span className="capitalize font-medium text-red-600">{r.reason}</span></p>
+                                {r.notes && <p className="text-xs text-gray-400 mt-1 italic">"{r.notes}"</p>}
+                                <p className="text-xs text-gray-400 mt-1">{formatDistanceToNow(new Date(r.created_at), { addSuffix: true })}</p>
+                              </div>
+                              <button onClick={() => handleResolveReport(r.id)}
+                                className="flex-shrink-0 text-xs bg-green-50 hover:bg-green-100 text-green-700 px-3 py-1.5 rounded-lg font-semibold transition">
+                                Resolve
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Leaderboard sub-tab */}
+                  {adTab === 'leaderboard' && (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                      {!adStats?.spend_leaderboard?.length ? (
+                        <div className="py-16 text-center text-gray-400">
+                          <FiTrendingUp size={36} className="mx-auto mb-2 opacity-30" />
+                          <p>No spend data yet</p>
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-gray-50">
+                          {adStats.spend_leaderboard.map((s, i) => (
+                            <div key={s.user_id} className="flex items-center gap-4 px-5 py-4">
+                              <span className={`text-lg font-black w-7 text-center ${i === 0 ? 'text-yellow-500' : i === 1 ? 'text-gray-400' : i === 2 ? 'text-amber-600' : 'text-gray-300'}`}>
+                                #{i + 1}
+                              </span>
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#075E54] to-[#25D366] flex items-center justify-center text-white font-bold text-sm flex-shrink-0 overflow-hidden">
+                                {s.avatar ? <img src={s.avatar} alt="" className="w-full h-full object-cover" /> : s.name?.[0]}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-sm text-gray-900 truncate">{s.name}</p>
+                                <p className="text-xs text-gray-400">{(s.total_impressions || 0).toLocaleString()} impressions</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-bold text-gray-900">${s.total_spend.toFixed(2)}</p>
+                                <p className="text-xs text-gray-400">total spend</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               )}

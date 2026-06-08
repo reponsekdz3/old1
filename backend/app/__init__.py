@@ -259,6 +259,15 @@ def create_app(config_name='development'):
     except Exception as e:
         logger.warning(f"⚠ API Billing routes not available: {e}")
 
+    try:
+        from app.routes.ads import ads_bp
+        app.register_blueprint(ads_bp)
+        with app.app_context():
+            db.create_all()
+        logger.info("✓ Status Ads routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ Status Ads routes not available: {e}")
+
     # ── JWT token blocklist ────────────────────────────────────────────────
     @jwt.token_in_blocklist_loader
     def _check_token_revoked(jwt_header, jwt_payload):

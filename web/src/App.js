@@ -13,6 +13,7 @@ import AccountVerificationPage from './pages/AccountVerificationPage';
 import DownloadPage from './pages/DownloadPage';
 import MarketplacePage from './pages/MarketplacePage';
 import SubscriptionPage from './pages/SubscriptionPage';
+import AdvertisePage from './pages/AdvertisePage';
 import OfflineIndicator from './components/OfflineIndicator';
 import PWAInstallBanner from './components/PWAInstallBanner';
 import { Toaster } from 'react-hot-toast';
@@ -117,6 +118,9 @@ function App() {
           <Route path="/marketplace" element={<MarketplacePage />} />
           <Route path="/subscription" element={
             <ProtectedRoute user={user}><SubscriptionPage onBack={() => window.history.back()} /></ProtectedRoute>
+          } />
+          <Route path="/advertise" element={
+            <ProtectedRoute user={user}><AdvertisePage /></ProtectedRoute>
           } />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
