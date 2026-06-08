@@ -267,7 +267,7 @@ function CallsTab({ onStartCall }) {
           </span>
           <button
             onClick={() => {
-              if (confirm('Clear all call history?')) {
+              if (window.confirm('Clear all call history?')) {
                 clearHistory();
               }
             }}

@@ -686,6 +686,10 @@ def update_participant_media(call_id: str):
             'message': 'Media state updated',
             'participant': participant.to_dict()
         }), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"[CALL_MGMT] Error updating media state: {e}")
+        return jsonify({'error': 'Failed to update media state'}), 500
 
 
 @call_mgmt_bp.route('/<call_id>/convert-to-group', methods=['POST'])

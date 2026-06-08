@@ -14,5 +14,325 @@ from email.mime.multipart import MIMEMultipart
 
 logger = logging.getLogger(__name__)
 
-# Celery app configuration
-celery_app = Celery('vipchat')\n\n@celery_app.task(bind=True, max_retries=3)\ndef send_push_notification(self, user_id: str, notification_data: Dict):\n    \"\"\"Send push notification to user\"\"\"\n    try:\n        from app.models.models import User, PushSubscription\n        from app.services.push_notifications import send_notification\n        \n        # Get user's push subscriptions\n        user = User.query.get(user_id)\n        if not user:\n            logger.warning(f\"[Push] User not found: {user_id}\")\n            return\n        \n        subscriptions = PushSubscription.query.filter_by(\n            user_id=user_id, \n            active=True\n        ).all()\n        \n        if not subscriptions:\n            logger.info(f\"[Push] No active subscriptions for user: {user_id}\")\n            return\n        \n        # Send to each subscription\n        success_count = 0\n        for subscription in subscriptions:\n            try:\n                send_notification(\n                    subscription.endpoint,\n                    subscription.p256dh,\n                    subscription.auth,\n                    notification_data\n                )\n                success_count += 1\n            except Exception as e:\n                logger.error(f\"[Push] Failed to send to subscription {subscription.id}: {e}\")\n                # Mark subscription as inactive if it fails consistently\n                subscription.active = False\n        \n        logger.info(f\"[Push] Sent notifications to {success_count}/{len(subscriptions)} devices for user {user_id}\")\n        \n    except Exception as exc:\n        logger.error(f\"[Push] Task failed: {exc}\")\n        raise self.retry(countdown=60, exc=exc)\n\n@celery_app.task(bind=True, max_retries=5)\ndef process_offline_message(self, message_data: Dict):\n    \"\"\"Process message for offline user delivery\"\"\"\n    try:\n        from app.models.models import User, Message\n        from app.services.message_queue import message_queue\n        \n        receiver_id = message_data.get('receiver_id')\n        if not receiver_id:\n            logger.error(\"[OfflineMessage] No receiver_id provided\")\n            return\n        \n        # Check if user is currently online\n        # This would integrate with your socket connection tracking\n        user_online = check_user_online_status(receiver_id)\n        \n        if not user_online:\n            # Queue for offline delivery\n            message_queue.queue_offline_delivery(receiver_id, message_data)\n            \n            # Send push notification\n            notification = {\n                'title': message_data.get('sender_name', 'VipChat'),\n                'body': message_data.get('content', 'New message')[:100],\n                'icon': '/icon-192.png',\n                'data': {\n                    'message_id': message_data.get('id'),\n                    'sender_id': message_data.get('sender_id'),\n                    'type': 'message'\n                }\n            }\n            \n            send_push_notification.delay(receiver_id, notification)\n        \n        logger.info(f\"[OfflineMessage] Processed message for {'offline' if not user_online else 'online'} user {receiver_id}\")\n        \n    except Exception as exc:\n        logger.error(f\"[OfflineMessage] Task failed: {exc}\")\n        raise self.retry(countdown=30, exc=exc)\n\n@celery_app.task(bind=True, max_retries=3)\ndef sync_user_data(self, user_id: str, data_type: str, data: Dict):\n    \"\"\"Sync user data across devices\"\"\"\n    try:\n        from app.models.models import User\n        from app.services.message_queue import message_queue\n        \n        user = User.query.get(user_id)\n        if not user:\n            logger.warning(f\"[Sync] User not found: {user_id}\")\n            return\n        \n        sync_message = {\n            'type': 'sync_data',\n            'user_id': user_id,\n            'data_type': data_type,\n            'data': data,\n            'timestamp': datetime.utcnow().isoformat()\n        }\n        \n        # Send to all user's connected devices via WebSocket\n        # This would integrate with your socket connection manager\n        broadcast_to_user_devices(user_id, 'data_sync', sync_message)\n        \n        logger.info(f\"[Sync] Synced {data_type} data for user {user_id}\")\n        \n    except Exception as exc:\n        logger.error(f\"[Sync] Task failed: {exc}\")\n        raise self.retry(countdown=60, exc=exc)\n\n@celery_app.task(bind=True, max_retries=3)\ndef send_email_notification(self, user_email: str, subject: str, body: str, template: str = None):\n    \"\"\"Send email notification\"\"\"\n    try:\n        # Email configuration (use environment variables in production)\n        smtp_server = \"smtp.gmail.com\"\n        smtp_port = 587\n        sender_email = \"noreply@vipchat.com\"\n        sender_password = \"your-app-password\"\n        \n        # Create message\n        message = MIMEMultipart(\"alternative\")\n        message[\"Subject\"] = subject\n        message[\"From\"] = sender_email\n        message[\"To\"] = user_email\n        \n        # Add body\n        text_part = MIMEText(body, \"plain\")\n        message.attach(text_part)\n        \n        # If template provided, create HTML version\n        if template:\n            html_body = render_email_template(template, {'body': body})\n            html_part = MIMEText(html_body, \"html\")\n            message.attach(html_part)\n        \n        # Send email\n        with smtplib.SMTP(smtp_server, smtp_port) as server:\n            server.starttls()\n            server.login(sender_email, sender_password)\n            server.send_message(message)\n        \n        logger.info(f\"[Email] Sent notification to {user_email}\")\n        \n    except Exception as exc:\n        logger.error(f\"[Email] Task failed: {exc}\")\n        raise self.retry(countdown=300, exc=exc)\n\n@celery_app.task(bind=True)\ndef cleanup_expired_data(self):\n    \"\"\"Cleanup expired data (run periodically)\"\"\"\n    try:\n        from app.models.models import db, Message, CallHistory\n        from app.services.message_queue import message_queue\n        \n        # Delete old messages (if configured)\n        old_message_threshold = datetime.utcnow() - timedelta(days=365)\n        old_messages = Message.query.filter(\n            Message.timestamp < old_message_threshold,\n            Message.is_deleted_sender == True,\n            Message.is_deleted_receiver == True\n        ).all()\n        \n        for message in old_messages:\n            db.session.delete(message)\n        \n        # Delete old call history\n        old_call_threshold = datetime.utcnow() - timedelta(days=90)\n        CallHistory.query.filter(\n            CallHistory.timestamp < old_call_threshold\n        ).delete()\n        \n        # Cleanup expired offline messages\n        offline_keys = message_queue.redis_client.keys(\"offline_queue:*\")\n        for key in offline_keys:\n            user_id = key.split(\":\")[1]\n            message_queue.cleanup_expired_offline_messages(user_id)\n        \n        db.session.commit()\n        \n        logger.info(f\"[Cleanup] Deleted {len(old_messages)} old messages and cleaned offline queues\")\n        \n    except Exception as exc:\n        logger.error(f\"[Cleanup] Task failed: {exc}\")\n        raise\n\n@celery_app.task(bind=True, max_retries=3)\ndef process_media_upload(self, file_path: str, media_type: str, user_id: str):\n    \"\"\"Process uploaded media files\"\"\"\n    try:\n        import os\n        from PIL import Image\n        import subprocess\n        \n        # Generate thumbnails for images\n        if media_type.startswith('image/'):\n            generate_image_thumbnail(file_path)\n        \n        # Generate video thumbnails\n        elif media_type.startswith('video/'):\n            generate_video_thumbnail(file_path)\n        \n        # Compress images\n        if media_type in ['image/jpeg', 'image/png']:\n            compress_image(file_path)\n        \n        logger.info(f\"[Media] Processed {media_type} file: {file_path}\")\n        \n    except Exception as exc:\n        logger.error(f\"[Media] Processing failed: {exc}\")\n        raise self.retry(countdown=60, exc=exc)\n\n@celery_app.task(bind=True)\ndef generate_analytics_report(self, report_type: str, date_range: Dict):\n    \"\"\"Generate analytics reports\"\"\"\n    try:\n        from app.models.models import Message, User, CallHistory\n        \n        start_date = datetime.fromisoformat(date_range['start'])\n        end_date = datetime.fromisoformat(date_range['end'])\n        \n        if report_type == 'message_stats':\n            # Message statistics\n            total_messages = Message.query.filter(\n                Message.timestamp.between(start_date, end_date)\n            ).count()\n            \n            # Group messages by day\n            # Implementation for detailed analytics\n            \n        elif report_type == 'user_activity':\n            # User activity statistics\n            active_users = User.query.filter(\n                User.last_seen.between(start_date, end_date)\n            ).count()\n            \n        logger.info(f\"[Analytics] Generated {report_type} report for {date_range}\")\n        \n    except Exception as exc:\n        logger.error(f\"[Analytics] Report generation failed: {exc}\")\n        raise\n\n# Helper functions\n\ndef check_user_online_status(user_id: str) -> bool:\n    \"\"\"Check if user is currently online\"\"\"\n    # This would integrate with your socket connection tracking\n    # For now, return False to simulate offline behavior\n    return False\n\ndef broadcast_to_user_devices(user_id: str, event: str, data: Dict):\n    \"\"\"Broadcast message to all user's connected devices\"\"\"\n    # This would integrate with your WebSocket manager\n    pass\n\ndef render_email_template(template_name: str, context: Dict) -> str:\n    \"\"\"Render email template with context\"\"\"\n    # Simple template rendering (use Jinja2 in production)\n    templates = {\n        'notification': '''\n        <html>\n        <body>\n            <h2>VipChat Notification</h2>\n            <p>{body}</p>\n            <p>Best regards,<br>VipChat Team</p>\n        </body>\n        </html>\n        '''\n    }\n    \n    template = templates.get(template_name, templates['notification'])\n    return template.format(**context)\n\ndef generate_image_thumbnail(file_path: str):\n    \"\"\"Generate thumbnail for image\"\"\"\n    try:\n        from PIL import Image\n        \n        with Image.open(file_path) as img:\n            # Create thumbnail\n            img.thumbnail((200, 200), Image.Resampling.LANCZOS)\n            \n            # Save thumbnail\n            thumb_path = file_path.replace('.', '_thumb.')\n            img.save(thumb_path, optimize=True, quality=85)\n            \n    except Exception as e:\n        logger.error(f\"[Thumbnail] Failed to generate image thumbnail: {e}\")\n\ndef generate_video_thumbnail(file_path: str):\n    \"\"\"Generate thumbnail for video\"\"\"\n    try:\n        import subprocess\n        \n        thumb_path = file_path.replace('.mp4', '_thumb.jpg')\n        \n        # Use ffmpeg to extract frame\n        subprocess.run([\n            'ffmpeg', '-i', file_path, \n            '-vframes', '1', \n            '-an', '-s', '200x200', \n            '-y', thumb_path\n        ], check=True, capture_output=True)\n        \n    except Exception as e:\n        logger.error(f\"[Thumbnail] Failed to generate video thumbnail: {e}\")\n\ndef compress_image(file_path: str):\n    \"\"\"Compress image file\"\"\"\n    try:\n        from PIL import Image\n        \n        with Image.open(file_path) as img:\n            # Compress and save\n            img.save(file_path, optimize=True, quality=85)\n            \n    except Exception as e:\n        logger.error(f\"[Compress] Failed to compress image: {e}\")\n\n# Periodic tasks configuration\nfrom celery.schedules import crontab\n\ncelery_app.conf.beat_schedule = {\n    'cleanup-expired-data': {\n        'task': 'vipchat.cleanup_expired_data',\n        'schedule': crontab(hour=2, minute=0),  # Daily at 2 AM\n    },\n    'generate-daily-analytics': {\n        'task': 'vipchat.generate_analytics_report',\n        'schedule': crontab(hour=1, minute=0),  # Daily at 1 AM\n        'args': ('daily_stats', {\n            'start': (datetime.utcnow() - timedelta(days=1)).isoformat(),\n            'end': datetime.utcnow().isoformat()\n        })\n    },\n}\n\ncelery_app.conf.timezone = 'UTC'\n\nlogger.info(\"[Celery] Background tasks loaded\")
+celery_app = Celery('vipchat')
+
+
+@celery_app.task(bind=True, max_retries=3)
+def send_push_notification(self, user_id: str, notification_data: Dict):
+    """Send push notification to user"""
+    try:
+        from app.models.models import User, PushSubscription
+        from app.services.push_notifications import send_notification
+
+        user = User.query.get(user_id)
+        if not user:
+            logger.warning(f"[Push] User not found: {user_id}")
+            return
+
+        subscriptions = PushSubscription.query.filter_by(
+            user_id=user_id,
+            active=True
+        ).all()
+
+        if not subscriptions:
+            logger.info(f"[Push] No active subscriptions for user: {user_id}")
+            return
+
+        success_count = 0
+        for subscription in subscriptions:
+            try:
+                send_notification(
+                    subscription.endpoint,
+                    subscription.p256dh,
+                    subscription.auth,
+                    notification_data
+                )
+                success_count += 1
+            except Exception as e:
+                logger.error(f"[Push] Failed to send to subscription {subscription.id}: {e}")
+                subscription.active = False
+
+        logger.info(f"[Push] Sent notifications to {success_count}/{len(subscriptions)} devices for user {user_id}")
+
+    except Exception as exc:
+        logger.error(f"[Push] Task failed: {exc}")
+        raise self.retry(countdown=60, exc=exc)
+
+
+@celery_app.task(bind=True, max_retries=5)
+def process_offline_message(self, message_data: Dict):
+    """Process message for offline user delivery"""
+    try:
+        from app.models.models import User, Message
+        from app.services.message_queue import message_queue
+
+        receiver_id = message_data.get('receiver_id')
+        if not receiver_id:
+            logger.error("[OfflineMessage] No receiver_id provided")
+            return
+
+        user_online = check_user_online_status(receiver_id)
+
+        if not user_online:
+            message_queue.queue_offline_delivery(receiver_id, message_data)
+
+            notification = {
+                'title': message_data.get('sender_name', 'VipChat'),
+                'body': message_data.get('content', 'New message')[:100],
+                'icon': '/icon-192.png',
+                'data': {
+                    'message_id': message_data.get('id'),
+                    'sender_id': message_data.get('sender_id'),
+                    'type': 'message'
+                }
+            }
+
+            send_push_notification.delay(receiver_id, notification)
+
+        logger.info(f"[OfflineMessage] Processed message for {'offline' if not user_online else 'online'} user {receiver_id}")
+
+    except Exception as exc:
+        logger.error(f"[OfflineMessage] Task failed: {exc}")
+        raise self.retry(countdown=30, exc=exc)
+
+
+@celery_app.task(bind=True, max_retries=3)
+def sync_user_data(self, user_id: str, data_type: str, data: Dict):
+    """Sync user data across devices"""
+    try:
+        from app.models.models import User
+        from app.services.message_queue import message_queue
+
+        user = User.query.get(user_id)
+        if not user:
+            logger.warning(f"[Sync] User not found: {user_id}")
+            return
+
+        sync_message = {
+            'type': 'sync_data',
+            'user_id': user_id,
+            'data_type': data_type,
+            'data': data,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+
+        broadcast_to_user_devices(user_id, 'data_sync', sync_message)
+
+        logger.info(f"[Sync] Synced {data_type} data for user {user_id}")
+
+    except Exception as exc:
+        logger.error(f"[Sync] Task failed: {exc}")
+        raise self.retry(countdown=60, exc=exc)
+
+
+@celery_app.task(bind=True, max_retries=3)
+def send_email_notification(self, user_email: str, subject: str, body: str, template: str = None):
+    """Send email notification"""
+    try:
+        smtp_server = "smtp.gmail.com"
+        smtp_port = 587
+        sender_email = "noreply@vipchat.com"
+        sender_password = "your-app-password"
+
+        message = MIMEMultipart("alternative")
+        message["Subject"] = subject
+        message["From"] = sender_email
+        message["To"] = user_email
+
+        text_part = MIMEText(body, "plain")
+        message.attach(text_part)
+
+        if template:
+            html_body = render_email_template(template, {'body': body})
+            html_part = MIMEText(html_body, "html")
+            message.attach(html_part)
+
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.send_message(message)
+
+        logger.info(f"[Email] Sent notification to {user_email}")
+
+    except Exception as exc:
+        logger.error(f"[Email] Task failed: {exc}")
+        raise self.retry(countdown=300, exc=exc)
+
+
+@celery_app.task(bind=True)
+def cleanup_expired_data(self):
+    """Cleanup expired data (run periodically)"""
+    try:
+        from app.models.models import db, Message, CallHistory
+        from app.services.message_queue import message_queue
+
+        old_message_threshold = datetime.utcnow() - timedelta(days=365)
+        old_messages = Message.query.filter(
+            Message.timestamp < old_message_threshold,
+            Message.is_deleted_sender == True,
+            Message.is_deleted_receiver == True
+        ).all()
+
+        for message in old_messages:
+            db.session.delete(message)
+
+        old_call_threshold = datetime.utcnow() - timedelta(days=90)
+        CallHistory.query.filter(
+            CallHistory.timestamp < old_call_threshold
+        ).delete()
+
+        offline_keys = message_queue.redis_client.keys("offline_queue:*")
+        for key in offline_keys:
+            user_id = key.split(":")[1]
+            message_queue.cleanup_expired_offline_messages(user_id)
+
+        db.session.commit()
+
+        logger.info(f"[Cleanup] Deleted {len(old_messages)} old messages and cleaned offline queues")
+
+    except Exception as exc:
+        logger.error(f"[Cleanup] Task failed: {exc}")
+        raise
+
+
+@celery_app.task(bind=True, max_retries=3)
+def process_media_upload(self, file_path: str, media_type: str, user_id: str):
+    """Process uploaded media files"""
+    try:
+        import os
+        from PIL import Image
+        import subprocess
+
+        if media_type.startswith('image/'):
+            generate_image_thumbnail(file_path)
+        elif media_type.startswith('video/'):
+            generate_video_thumbnail(file_path)
+
+        if media_type in ['image/jpeg', 'image/png']:
+            compress_image(file_path)
+
+        logger.info(f"[Media] Processed {media_type} file: {file_path}")
+
+    except Exception as exc:
+        logger.error(f"[Media] Processing failed: {exc}")
+        raise self.retry(countdown=60, exc=exc)
+
+
+@celery_app.task(bind=True)
+def generate_analytics_report(self, report_type: str, date_range: Dict):
+    """Generate analytics reports"""
+    try:
+        from app.models.models import Message, User, CallHistory
+
+        start_date = datetime.fromisoformat(date_range['start'])
+        end_date = datetime.fromisoformat(date_range['end'])
+
+        if report_type == 'message_stats':
+            total_messages = Message.query.filter(
+                Message.timestamp.between(start_date, end_date)
+            ).count()
+
+        elif report_type == 'user_activity':
+            active_users = User.query.filter(
+                User.last_seen.between(start_date, end_date)
+            ).count()
+
+        logger.info(f"[Analytics] Generated {report_type} report for {date_range}")
+
+    except Exception as exc:
+        logger.error(f"[Analytics] Report generation failed: {exc}")
+        raise
+
+
+def check_user_online_status(user_id: str) -> bool:
+    """Check if user is currently online"""
+    return False
+
+
+def broadcast_to_user_devices(user_id: str, event: str, data: Dict):
+    """Broadcast message to all user's connected devices"""
+    pass
+
+
+def render_email_template(template_name: str, context: Dict) -> str:
+    """Render email template with context"""
+    templates = {
+        'notification': '''
+        <html>
+        <body>
+            <h2>VipChat Notification</h2>
+            <p>{body}</p>
+            <p>Best regards,<br>VipChat Team</p>
+        </body>
+        </html>
+        '''
+    }
+
+    template = templates.get(template_name, templates['notification'])
+    return template.format(**context)
+
+
+def generate_image_thumbnail(file_path: str):
+    """Generate thumbnail for image"""
+    try:
+        from PIL import Image
+
+        with Image.open(file_path) as img:
+            img.thumbnail((200, 200), Image.Resampling.LANCZOS)
+            thumb_path = file_path.replace('.', '_thumb.')
+            img.save(thumb_path, optimize=True, quality=85)
+
+    except Exception as e:
+        logger.error(f"[Thumbnail] Failed to generate image thumbnail: {e}")
+
+
+def generate_video_thumbnail(file_path: str):
+    """Generate thumbnail for video"""
+    try:
+        import subprocess
+
+        thumb_path = file_path.replace('.mp4', '_thumb.jpg')
+
+        subprocess.run([
+            'ffmpeg', '-i', file_path,
+            '-vframes', '1',
+            '-an', '-s', '200x200',
+            '-y', thumb_path
+        ], check=True, capture_output=True)
+
+    except Exception as e:
+        logger.error(f"[Thumbnail] Failed to generate video thumbnail: {e}")
+
+
+def compress_image(file_path: str):
+    """Compress image file"""
+    try:
+        from PIL import Image
+
+        with Image.open(file_path) as img:
+            img.save(file_path, optimize=True, quality=85)
+
+    except Exception as e:
+        logger.error(f"[Compress] Failed to compress image: {e}")
+
+
+from celery.schedules import crontab
+
+celery_app.conf.beat_schedule = {
+    'cleanup-expired-data': {
+        'task': 'vipchat.cleanup_expired_data',
+        'schedule': crontab(hour=2, minute=0),
+    },
+    'generate-daily-analytics': {
+        'task': 'vipchat.generate_analytics_report',
+        'schedule': crontab(hour=1, minute=0),
+        'args': ('daily_stats', {
+            'start': (datetime.utcnow() - timedelta(days=1)).isoformat(),
+            'end': datetime.utcnow().isoformat()
+        })
+    },
+}
+
+celery_app.conf.timezone = 'UTC'
+
+logger.info("[Celery] Background tasks loaded")

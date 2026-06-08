@@ -37,17 +37,8 @@ DOCS_CONTENT = {
                     'description': 'Use your API key to authenticate requests',
                     'code_example': {
                         'bash': 'curl -X GET "https://api.vipchat.com/api/test/connection" \\\n  -H "X-API-Key: your_api_key"',
-                        'javascript': `const response = await fetch('https://api.vipchat.com/api/test/connection', {
-  headers: { 'X-API-Key': 'your_api_key' }
-});
-const data = await response.json();`,
-                        'python': `import requests
-
-response = requests.get(
-    'https://api.vipchat.com/api/test/connection',
-    headers={'X-API-Key': 'your_api_key'}
-)
-print(response.json())`,
+                        'javascript': "const response = await fetch('https://api.vipchat.com/api/test/connection', {\n  headers: { 'X-API-Key': 'your_api_key' }\n});\nconst data = await response.json();",
+                        'python': "import requests\n\nresponse = requests.get(\n    'https://api.vipchat.com/api/test/connection',\n    headers={'X-API-Key': 'your_api_key'}\n)\nprint(response.json())",
                     }
                 }
             ]
@@ -348,42 +339,21 @@ print(response.json())`,
                     'name': 'JavaScript/Node.js',
                     'icon': 'javascript',
                     'install': 'npm install @vipchat/sdk',
-                    'example': `import { VipChat } from '@vipchat/sdk';
-
-const client = new VipChat('your_api_key');
-
-const messages = await client.messages.list('chat_123');
-await client.messages.send({
-  receiver_id: '456',
-  content: 'Hello!'
-});`,
+                    'example': "import { VipChat } from '@vipchat/sdk';\n\nconst client = new VipChat('your_api_key');\n\nconst messages = await client.messages.list('chat_123');\nawait client.messages.send({\n  receiver_id: '456',\n  content: 'Hello!'\n});",
                     'docs_link': '/docs/sdk/javascript'
                 },
                 {
                     'name': 'Python',
                     'icon': 'python',
                     'install': 'pip install vipchat-sdk',
-                    'example': `from vipchat import VipChat
-
-client = VipChat('your_api_key')
-
-messages = client.messages.list('chat_123')
-client.messages.send(receiver_id='456', content='Hello!')`,
+                    'example': "from vipchat import VipChat\n\nclient = VipChat('your_api_key')\n\nmessages = client.messages.list('chat_123')\nclient.messages.send(receiver_id='456', content='Hello!')",
                     'docs_link': '/docs/sdk/python'
                 },
                 {
                     'name': 'React Native',
                     'icon': 'react',
                     'install': 'npx expo install vipchat-rn',
-                    'example': `import { VipChatProvider, useVipChat } from 'vipchat-rn';
-
-function App() {
-  return (
-    <VipChatProvider apiKey="your_key">
-      <ChatScreen />
-    </VipChatProvider>
-  );
-}`,
+                    'example': "import { VipChatProvider, useVipChat } from 'vipchat-rn';\n\nfunction App() {\n  return (\n    <VipChatProvider apiKey=\"your_key\">\n      <ChatScreen />\n    </VipChatProvider>\n  );\n}",
                     'docs_link': '/docs/sdk/react-native'
                 }
             ]
@@ -532,7 +502,7 @@ API_VERSIONS = [
         'Core messaging',
         'Voice calls',
         'Contacts & groups'
-    }]
+    ]},
 ]
 
 
