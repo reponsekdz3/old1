@@ -361,17 +361,17 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
     setMyReaction(emoji);
     setShowReactions(false);
     try {
-      await api.post(`/status/${current.id}/react`, { emoji });
+      await api.post(`/status/${current?.id}/react`, { emoji });
     } catch { }
     reactionTimeoutRef.current = setTimeout(advance, 700);
   };
 
   const sendReply = async () => {
-    if (!replyText.trim() || !statusGroup?.owner_id) return;
+    if (!replyText.trim() || !statusGroup?.user_id) return;
     setReplySending(true);
     try {
       await api.post('/messages', {
-        receiver_id: statusGroup.owner_id,
+        receiver_id: statusGroup.user_id,
         content: `↩ Re: status\n"${current?.content?.slice(0, 60) || '📸 Photo'}"\n\n${replyText.trim()}`,
       });
       toast.success('Reply sent!');
@@ -824,7 +824,7 @@ function StatusTab() {
   const openMyStatus = () => {
     if (myStatuses.length > 0) {
       openStatusGroup(
-        { owner_name: user?.full_name || 'Me', owner_avatar: user?.avatar_url, owner_id: user?.id, statuses: myStatuses },
+        { owner_name: user?.full_name || 'Me', owner_avatar: user?.avatar_url, user_id: user?.id, statuses: myStatuses },
         -1,
         true,
       );
@@ -905,11 +905,11 @@ function StatusTab() {
               {statuses.map((group, gIdx) => {
                 const latest = group.statuses?.[0];
                 const hasImage = latest?.media_url && (latest?.media_type === 'image' || /\.(jpg|jpeg|png|gif|webp)/i.test(latest?.media_url || ''));
-                const unviewed = group.statuses?.some(s => !s.viewed_by_me);
+                const unviewed = group.statuses?.some(s => !s.viewed);
                 return (
-                  <div key={group.owner_id}
+                  <div key={group.user_id}
                     className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 px-4 py-3 transition-colors"
-                    onClick={() => openStatusGroup(group, gIdx, false)}
+                    onClick={() => openStatusGroup({ ...group, user_id: group.user_id }, gIdx, false)}
                   >
                     <div className={`w-14 h-14 rounded-full p-0.5 flex-shrink-0 ${unviewed ? 'bg-gradient-to-br from-green-400 to-teal-600' : 'bg-gray-200'}`}>
                       <div className="w-full h-full rounded-full overflow-hidden border-2 border-white bg-gray-100">
@@ -964,7 +964,7 @@ function StatusTab() {
       <AnimatePresence>
         {viewingGroup && (
           <StatusViewer
-            key={viewingGroup.owner_id || 'own'}
+            key={viewingGroup.user_id || 'own'}
             statusGroup={viewingGroup}
             onClose={() => setViewingGroup(null)}
             isOwn={viewingOwn}

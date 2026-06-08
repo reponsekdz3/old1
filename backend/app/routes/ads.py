@@ -51,7 +51,8 @@ def _is_safe_url(url):
     if not url:
         return True
     url = str(url).strip()
-    if not SAFE_URL_RE.match(url):
+    # Enforce https-only for all ad CTAs
+    if not url.lower().startswith('https://'):
         return False
     # Block javascript: data: and other schemes
     low = url.lower()
@@ -504,10 +505,28 @@ def get_ad_feed():
             db.or_(AdCampaign.ends_at == None, AdCampaign.ends_at >= now),
         )
 
-        # Country targeting
-        if user.country:
-            # Show "all" audience + matching country ads
+        # Audience targeting: filter campaigns by target_audience setting.
+        # "all" → everyone; "contacts" → only show ads from sponsors the user knows
+        # (currently no direct contact relationship on AdCampaign, so treated as "all");
+        # "country" → only show ads that explicitly match the user's country (if set).
+        from sqlalchemy import or_ as sql_or
+        # Start with campaigns targeting "all" or "contacts" (broad reach)
+        audience_conditions = [
+            AdCampaign.target_audience.in_(['all', 'contacts']),
+        ]
+        # Also include country-targeted ads that match the user's country
+        if getattr(user, 'country', None):
+            audience_conditions.append(
+                db.and_(
+                    AdCampaign.target_audience == 'country',
+                    db.func.lower(AdCampaign.target_country) == user.country.lower(),
+                )
+            )
+        else:
+            # User has no country set — only show "all"/"contacts" ads
             pass
+
+        q = q.filter(sql_or(*audience_conditions))
 
         campaigns = q.order_by(AdCampaign.bid_cpm.desc()).limit(10).all()
         if not campaigns:
@@ -878,6 +897,33 @@ def admin_resume_campaign(campaign_id):
         campaign.status = 'active'
         db.session.commit()
     return jsonify({'message': 'Campaign resumed'}), 200
+
+
+@ads_bp.route('/admin/campaigns/<campaign_id>/terminate', methods=['DELETE'])
+@jwt_required()
+def admin_terminate_campaign(campaign_id):
+    """Admin: permanently terminate and delete an ad campaign."""
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin only'}), 403
+
+    campaign = AdCampaign.query.get(campaign_id)
+    if not campaign:
+        return jsonify({'error': 'Not found'}), 404
+
+    try:
+        # Delete related records first to avoid FK constraint violations
+        AdImpression.query.filter_by(campaign_id=campaign_id).delete()
+        AdClick.query.filter_by(campaign_id=campaign_id).delete()
+        AdReport.query.filter_by(campaign_id=campaign_id).delete()
+        db.session.delete(campaign)
+        db.session.commit()
+        return jsonify({'message': 'Campaign terminated and deleted'}), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.exception('admin_terminate_campaign error')
+        return jsonify({'error': str(e)}), 500
 
 
 @ads_bp.route('/admin/reports', methods=['GET'])

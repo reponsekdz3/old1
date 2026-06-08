@@ -398,6 +398,16 @@ function AdminPage() {
     } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
   };
 
+  const handleTerminateCampaign = async (id) => {
+    if (!window.confirm('Permanently terminate and delete this campaign? This cannot be undone.')) return;
+    try {
+      await api.delete(`/ads/admin/campaigns/${id}/terminate`);
+      toast.success('Campaign terminated');
+      loadAdCampaigns(adCampaignsPage);
+      loadAdStats();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
   const refresh = async () => {
     setRefreshing(true);
     await loadAll();
@@ -1387,6 +1397,10 @@ function AdminPage() {
                                             Resume
                                           </button>
                                         )}
+                                        <button onClick={() => handleTerminateCampaign(c.id)}
+                                          className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-2 py-1 rounded-lg font-semibold transition">
+                                          Delete
+                                        </button>
                                       </div>
                                     </td>
                                   </tr>

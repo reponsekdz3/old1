@@ -367,3 +367,56 @@ def delete_status(status_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+
+
+@status_bp.route('/<status_id>/viewers', methods=['GET'])
+@jwt_required()
+def get_status_viewers(status_id):
+    """Return the list of users who have viewed a status (owner only)."""
+    try:
+        user_id = get_jwt_identity()
+        status = Status.query.get(status_id)
+        if not status:
+            return jsonify({'error': 'Status not found'}), 404
+        if status.user_id != user_id:
+            return jsonify({'error': 'Forbidden'}), 403
+        viewers = []
+        for v in status.viewers:
+            viewers.append({
+                'id': v.id,
+                'full_name': v.full_name,
+                'avatar_url': v.avatar_url,
+                'viewed_at': None,  # viewers M2M doesn't store timestamp
+            })
+        return jsonify({'viewers': viewers, 'count': len(viewers)}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@status_bp.route('/<status_id>/react', methods=['POST'])
+@jwt_required()
+def react_to_status(status_id):
+    """
+    Record a reaction emoji to a status.
+    Reactions are stored as a view + meta; the response DM is handled client-side.
+    Currently marks the status as viewed by the reactor and returns success.
+    """
+    try:
+        user_id = get_jwt_identity()
+        status = Status.query.get(status_id)
+        if not status:
+            return jsonify({'error': 'Status not found'}), 404
+        data = request.get_json() or {}
+        emoji = data.get('emoji', '❤️')
+        allowed = ['❤️', '😂', '😮', '😢', '😡', '👍']
+        if emoji not in allowed:
+            emoji = '❤️'
+        # Mark as viewed if not already
+        viewer = User.query.get(user_id)
+        if viewer and viewer not in status.viewers:
+            status.viewers.append(viewer)
+            db.session.commit()
+        return jsonify({'ok': True, 'emoji': emoji}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
