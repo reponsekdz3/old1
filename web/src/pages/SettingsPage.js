@@ -3,6 +3,7 @@ import {
   FiArrowLeft, FiLock, FiBell, FiDownload, FiDatabase,
   FiHelpCircle, FiInfo, FiChevronRight,
   FiCheck, FiShield, FiSend, FiSmartphone, FiZap, FiShoppingBag,
+  FiSearch, FiBriefcase,
 } from 'react-icons/fi';
 import { subscribeToPush, unsubscribeFromPush } from '../services/pushService';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -218,13 +219,18 @@ function VerificationTab({ user }) {
         <div className="mx-4 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <SectionHeader icon={FiShield} title="Why get verified?" desc="Benefits of a verified account" />
           {[
-            { emoji: '✅', title: 'Trusted badge', desc: 'A verified badge next to your name in all chats' },
-            { emoji: '🔎', title: 'Stand out', desc: 'Verified profiles appear first in search results' },
-            { emoji: '🔒', title: 'Permanent', desc: 'One-time fee — your badge never expires' },
-            { emoji: '💼', title: 'Business tier', desc: 'Business plan available for brands and professionals' },
+            { iconComp: 'check', title: 'Trusted badge', desc: 'A verified badge next to your name in all chats', color: 'text-green-500 bg-green-50' },
+            { iconComp: 'search', title: 'Stand out', desc: 'Verified profiles appear first in search results', color: 'text-blue-500 bg-blue-50' },
+            { iconComp: 'lock', title: 'Permanent', desc: 'One-time fee — your badge never expires', color: 'text-purple-500 bg-purple-50' },
+            { iconComp: 'briefcase', title: 'Business tier', desc: 'Business plan available for brands and professionals', color: 'text-orange-500 bg-orange-50' },
           ].map(item => (
             <div key={item.title} className="flex items-start gap-3 px-5 py-3.5 border-b border-gray-50">
-              <span className="text-xl flex-shrink-0">{item.emoji}</span>
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${item.color}`}>
+                {item.iconComp === 'check' && <FiCheck size={15} />}
+                {item.iconComp === 'search' && <FiSearch size={15} />}
+                {item.iconComp === 'lock' && <FiLock size={15} />}
+                {item.iconComp === 'briefcase' && <FiBriefcase size={15} />}
+              </div>
               <div>
                 <p className="text-sm font-semibold text-gray-800">{item.title}</p>
                 <p className="text-xs text-gray-400 mt-0.5">{item.desc}</p>

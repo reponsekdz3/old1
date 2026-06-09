@@ -1,0 +1,5 @@
+- [VipChat architecture](vipchat-arch.md) — Flask+SocketIO backend (port 8000), React+Tailwind frontend (port 5000), Expo mobile; proxy /api to backend.
+- [MainNavigation icon rail](mainnav-icon-rail.md) — Discord-style 60px dark rail (#111b21) with NavBtn+Tooltip+Divider pattern; hidden sm:flex so only desktop shows rail, mobile gets tab bar + discover row.
+- [Emoji removal pattern](emoji-removal.md) — All UI emojis replaced with react-icons/fi or react-icons/si; demo message text in LoginPage CONTACTS/BUBBLES intentionally kept as user-typed content simulation.
+- [Mobile tab layout](mobile-tabs.md) — Expo Router tabs: Chats, Updates, Trends, Wallet, Calls (5 visible); Contacts hidden via tabBarButton:null. Trends+Wallet screens in mobile/app/(tabs)/.
+- [DB config pattern](db-config.md) — MySQL-first, PostgreSQL via DATABASE_URL, SQLite dev-only with RuntimeWarning; no SQLite in production.

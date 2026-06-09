@@ -2,7 +2,6 @@ import { Tabs, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { Platform, TouchableOpacity, View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore, useChatStore } from '../../services/store';
 import { initializeSocket } from '../../services/socket';
 import { COLORS } from '../../config';
@@ -35,7 +34,7 @@ export default function TabsLayout() {
     : (isSmall ? 58 : 62);
   const tabBarPbIos = isShortDevice ? 10 : 24;
   const iconSize = isSmall ? 22 : 24;
-  const labelSize = isSmall ? 10 : 11;
+  const labelSize = isSmall ? 9 : 10;
 
   const totalUnread = Object.values(unreadCounts || {}).reduce((s, n) => s + (n || 0), 0);
 
@@ -50,23 +49,23 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: '#fff',
-        tabBarInactiveTintColor: 'rgba(255,255,255,0.5)',
+        tabBarInactiveTintColor: 'rgba(255,255,255,0.45)',
         tabBarStyle: {
           backgroundColor: COLORS.primary,
           borderTopWidth: 0,
           height: tabBarH,
           paddingBottom: Platform.OS === 'ios' ? tabBarPbIos : 8,
           paddingTop: 6,
-          elevation: 10,
+          elevation: 12,
           shadowColor: '#000',
-          shadowOpacity: 0.22,
-          shadowRadius: 10,
+          shadowOpacity: 0.25,
+          shadowRadius: 12,
           shadowOffset: { width: 0, height: -3 },
         },
         tabBarLabelStyle: {
           fontSize: labelSize,
           fontWeight: '700',
-          letterSpacing: 0.1,
+          letterSpacing: 0.2,
           marginTop: -2,
         },
         tabBarItemStyle: { paddingTop: 2 },
@@ -87,6 +86,7 @@ export default function TabsLayout() {
         headerTitleAlign: 'left',
       }}
     >
+      {/* ── Chats ── */}
       <Tabs.Screen
         name="index"
         options={{
@@ -121,31 +121,7 @@ export default function TabsLayout() {
         }}
       />
 
-      <Tabs.Screen
-        name="contacts"
-        options={{
-          title: 'Contacts',
-          tabBarLabel: 'Contacts',
-          tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon
-              name={focused ? 'people' : 'people-outline'}
-              focused={focused}
-              color={color}
-              badgeCount={0}
-            />
-          ),
-          headerRight: () => (
-            <TouchableOpacity
-              style={[styles.headerBtn, { padding: headerBtnPad, marginRight: 4 }]}
-              onPress={() => router.push('/qr')}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            >
-              <Ionicons name="qr-code-outline" size={headerIconSize} color="#fff" />
-            </TouchableOpacity>
-          ),
-        }}
-      />
-
+      {/* ── Updates ── */}
       <Tabs.Screen
         name="status"
         options={{
@@ -171,6 +147,51 @@ export default function TabsLayout() {
         }}
       />
 
+      {/* ── Trends ── */}
+      <Tabs.Screen
+        name="trends"
+        options={{
+          title: 'Trends',
+          tabBarLabel: 'Trends',
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon
+              name={focused ? 'trending-up' : 'trending-up-outline'}
+              focused={focused}
+              color={color}
+              badgeCount={0}
+            />
+          ),
+          headerShown: false,
+        }}
+      />
+
+      {/* ── Wallet ── */}
+      <Tabs.Screen
+        name="wallet"
+        options={{
+          title: 'Wallet',
+          tabBarLabel: 'Wallet',
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon
+              name={focused ? 'wallet' : 'wallet-outline'}
+              focused={focused}
+              color={color}
+              badgeCount={0}
+            />
+          ),
+          headerRight: () => (
+            <TouchableOpacity
+              style={[styles.headerBtn, { padding: headerBtnPad, marginRight: 4 }]}
+              onPress={() => {}}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Ionicons name="add-circle-outline" size={headerIconSize + 2} color="#fff" />
+            </TouchableOpacity>
+          ),
+        }}
+      />
+
+      {/* ── Calls ── */}
       <Tabs.Screen
         name="calls"
         options={{
@@ -191,6 +212,24 @@ export default function TabsLayout() {
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
               <Ionicons name="add" size={headerIconSize + 4} color="#fff" />
+            </TouchableOpacity>
+          ),
+        }}
+      />
+
+      {/* ── Contacts (hidden from tab bar but accessible) ── */}
+      <Tabs.Screen
+        name="contacts"
+        options={{
+          title: 'Contacts',
+          tabBarButton: () => null,
+          headerRight: () => (
+            <TouchableOpacity
+              style={[styles.headerBtn, { padding: headerBtnPad, marginRight: 4 }]}
+              onPress={() => router.push('/qr')}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Ionicons name="qr-code-outline" size={headerIconSize} color="#fff" />
             </TouchableOpacity>
           ),
         }}

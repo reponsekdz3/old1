@@ -8,7 +8,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import {
   FiLock, FiArrowRight, FiEye, FiEyeOff,
   FiMic, FiVideo, FiPhone, FiImage, FiFile, FiMapPin,
-  FiCheck, FiSmartphone, FiMonitor, FiRefreshCw,
+  FiCheck, FiSmartphone, FiMonitor, FiRefreshCw, FiCamera,
 } from 'react-icons/fi';
 import PhoneInput from '../components/PhoneInput';
 import { registerPushNotifications } from '../services/pushNotifications';
@@ -250,7 +250,7 @@ function QRLoginPanel() {
         {status === 'scanning' && (
           <motion.p animate={{ opacity: [1, 0.5, 1] }} transition={{ duration: 1, repeat: Infinity }}
             className="text-sm font-semibold text-blue-500">
-            📱 Confirming login on your phone…
+            Confirming login on your phone…
           </motion.p>
         )}
         {status === 'confirmed' && (
@@ -263,7 +263,7 @@ function QRLoginPanel() {
         <div className="w-full space-y-2 bg-gray-50 rounded-xl p-3 border border-gray-100">
           {[
             { icon: FiSmartphone, text: 'Open VipChat on your phone' },
-            { icon: '📷', text: 'Go to QR tab → Web Login' },
+            { icon: FiCamera, text: 'Go to QR tab → Web Login' },
             { icon: FiMonitor, text: 'Scan this QR to log in instantly' },
           ].map((step, i) => (
             <div key={i} className="flex items-center gap-2.5">
@@ -296,7 +296,7 @@ function DownloadAppBanner({ compact }) {
           <QRCodeSVG value={DOWNLOAD_URL} size={48} level="M" fgColor="#075E54" bgColor="#fff" includeMargin={false} />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-bold text-gray-800 mb-1">📱 Get VipChat on your phone</p>
+          <p className="text-xs font-bold text-gray-800 mb-1 flex items-center gap-1"><FiSmartphone size={12} /> Get VipChat on your phone</p>
           <div className="flex gap-1.5 flex-wrap">
             <a href="https://apps.apple.com/app/vipchat" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1 bg-black text-white rounded-lg px-2 py-1 hover:bg-gray-800 transition text-[10px] font-semibold">
@@ -508,8 +508,8 @@ export default function LoginPage() {
           {/* Login method tabs */}
           <div className="flex rounded-xl border border-gray-200 overflow-hidden mb-6 bg-gray-50">
             {[
-              { key: 'password', label: '🔑 Password Login', icon: FiLock },
-              { key: 'qr', label: '📱 Scan QR Code', icon: null },
+              { key: 'password', label: 'Password Login', icon: FiLock },
+              { key: 'qr', label: 'Scan QR Code', icon: null },
             ].map(tab => (
               <button key={tab.key} onClick={() => setActiveLoginTab(tab.key)}
                 className={`flex-1 py-2.5 text-sm font-semibold transition-all ${

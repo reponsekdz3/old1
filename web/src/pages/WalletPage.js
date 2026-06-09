@@ -3,9 +3,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FiDollarSign, FiArrowUpRight, FiArrowDownLeft, FiSend,
-  FiCreditCard, FiRefreshCw, FiCopy, FiCheck, FiArrowLeft,
+  FiCreditCard, FiRefreshCw, FiCheck, FiArrowLeft,
   FiZap, FiShield, FiPlus, FiMinus, FiClock, FiGlobe,
-  FiX, FiChevronRight, FiAlertCircle,
+  FiX, FiAlertCircle,
 } from 'react-icons/fi';
 import { SiBitcoin, SiEthereum } from 'react-icons/si';
 import api from '../services/api';
@@ -16,22 +16,10 @@ const TOPUP_AMOUNTS = [5, 10, 25, 50, 100, 250];
 
 const PAYMENT_METHODS = [
   { id: 'stripe', label: 'Card (Stripe)', sublabel: 'Visa, Mastercard, Amex', icon: FiCreditCard, color: 'from-indigo-500 to-purple-600' },
-  { id: 'paypal', label: 'PayPal', sublabel: 'Fast & secure', icon: null, emoji: '🅿️', color: 'from-blue-500 to-blue-700' },
+  { id: 'paypal', label: 'PayPal', sublabel: 'Fast & secure', icon: FiZap, color: 'from-blue-500 to-blue-700' },
   { id: 'flutterwave', label: 'Flutterwave', sublabel: 'Africa & global', icon: FiGlobe, color: 'from-orange-400 to-rose-500' },
   { id: 'crypto', label: 'Crypto / Bitcoin', sublabel: 'BTC, ETH, USDC, DAI', icon: SiBitcoin, color: 'from-orange-400 to-yellow-500' },
 ];
-
-function StatCard({ icon: Icon, emoji, label, value, color, sub }) {
-  return (
-    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-      className={`rounded-2xl p-5 text-white bg-gradient-to-br ${color} relative overflow-hidden`}>
-      <div className="text-3xl mb-3">{emoji || (Icon && <Icon size={28} />)}</div>
-      <p className="text-3xl font-black">{value}</p>
-      <p className="text-white/80 font-semibold text-sm mt-0.5">{label}</p>
-      {sub && <p className="text-white/60 text-xs mt-1">{sub}</p>}
-    </motion.div>
-  );
-}
 
 function TxnRow({ txn }) {
   const typeInfo = {
@@ -208,7 +196,7 @@ function TopUpModal({ onClose, onSuccess }) {
                 <button key={pm.id} onClick={() => setMethod(pm.id)}
                   className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition ${method === pm.id ? 'border-[#25D366] bg-green-50' : 'border-gray-200 hover:border-gray-300'}`}>
                   <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${pm.color} flex items-center justify-center flex-shrink-0`}>
-                    {pm.emoji ? <span className="text-lg">{pm.emoji}</span> : pm.icon && <pm.icon size={20} className="text-white" />}
+                    {pm.icon && <pm.icon size={20} className="text-white" />}
                   </div>
                   <div className="text-left flex-1">
                     <p className="text-sm font-bold text-gray-900">{pm.label}</p>
@@ -306,7 +294,7 @@ function WithdrawModal({ balance, onClose, onSuccess }) {
     if (amt > balance) return toast.error('Insufficient balance');
     setLoading(true);
     try {
-      const { data } = await api.post('/wallet/withdraw', { amount: amt, method, destination: destination.trim() });
+      await api.post('/wallet/withdraw', { amount: amt, method, destination: destination.trim() });
       toast.success('Withdrawal request submitted! Processed within 1-3 business days.');
       onSuccess?.();
       onClose();
@@ -374,7 +362,7 @@ function WithdrawModal({ balance, onClose, onSuccess }) {
 export default function WalletPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user } = useAuthStore();
+  useAuthStore();
   const [wallet, setWallet] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -484,17 +472,17 @@ export default function WalletPage() {
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Accepted Payments</p>
           <div className="grid grid-cols-4 gap-3">
             {[
-              { label: 'Card', emoji: '💳' },
-              { label: 'PayPal', emoji: '🅿️' },
-              { label: 'Flutterwave', emoji: '🌍' },
-              { label: 'Bitcoin', emoji: '₿' },
-              { label: 'Ethereum', emoji: '⟠' },
-              { label: 'USDC', emoji: '💵' },
-              { label: 'DAI', emoji: '🔷' },
-              { label: 'Mobile', emoji: '📱' },
+              { label: 'Card', bg: 'bg-blue-100', color: 'text-blue-600', icon: <FiCreditCard size={16} /> },
+              { label: 'PayPal', bg: 'bg-sky-100', color: 'text-sky-600', icon: <FiZap size={16} /> },
+              { label: 'Flutterwave', bg: 'bg-orange-100', color: 'text-orange-600', icon: <FiGlobe size={16} /> },
+              { label: 'Bitcoin', bg: 'bg-amber-100', color: 'text-amber-600', icon: <SiBitcoin size={16} /> },
+              { label: 'Ethereum', bg: 'bg-purple-100', color: 'text-purple-600', icon: <SiEthereum size={16} /> },
+              { label: 'USDC', bg: 'bg-green-100', color: 'text-green-600', icon: <FiDollarSign size={16} /> },
+              { label: 'DAI', bg: 'bg-yellow-100', color: 'text-yellow-600', icon: <FiShield size={16} /> },
+              { label: 'Mobile', bg: 'bg-teal-100', color: 'text-teal-600', icon: <FiZap size={16} /> },
             ].map(c => (
               <div key={c.label} className="flex flex-col items-center gap-1 p-2 bg-gray-50 rounded-xl">
-                <span className="text-xl">{c.emoji}</span>
+                <div className={`w-8 h-8 rounded-lg ${c.bg} ${c.color} flex items-center justify-center`}>{c.icon}</div>
                 <span className="text-[10px] text-gray-500 font-semibold text-center">{c.label}</span>
               </div>
             ))}
@@ -533,7 +521,7 @@ export default function WalletPage() {
 
         {/* Send money quick note */}
         <div className="bg-gradient-to-r from-[#25D366]/10 to-teal-50 rounded-2xl p-4 border border-[#25D366]/20">
-          <p className="text-sm font-bold text-[#075E54]">💸 Send to anyone on VipChat</p>
+          <p className="text-sm font-bold text-[#075E54] flex items-center gap-1.5"><FiSend size={14} /> Send to anyone on VipChat</p>
           <p className="text-xs text-gray-600 mt-1">Send money instantly using their phone number. Only 2% platform fee.</p>
         </div>
       </div>

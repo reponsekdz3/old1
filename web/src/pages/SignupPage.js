@@ -7,7 +7,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   FiUser, FiArrowRight, FiEye, FiEyeOff,
   FiCheck, FiMail, FiMapPin, FiCalendar, FiGlobe, FiHome,
-  FiShield, FiAlertCircle, FiLock,
+  FiShield, FiAlertCircle, FiLock, FiSmartphone, FiPlay,
+  FiMessageCircle, FiPhone, FiFolder, FiUsers,
 } from 'react-icons/fi';
 import PhoneInput from '../components/PhoneInput';
 import { PHONE_COUNTRIES, getFlag } from '../data/phoneCountries';
@@ -23,10 +24,10 @@ const STEPS = [
 ];
 
 const FEATURES = [
-  { emoji: '💬', title: 'Real-time Messaging', desc: 'Instant delivery, end-to-end encrypted' },
-  { emoji: '📞', title: 'Voice & Video Calls', desc: 'Crystal-clear HD calls worldwide, free' },
-  { emoji: '📁', title: 'File Sharing', desc: 'Images, docs, voice notes up to 100MB' },
-  { emoji: '👥', title: 'Groups & Communities', desc: 'Stay connected with everyone you care about' },
+  { icon: FiMessageCircle, title: 'Real-time Messaging', desc: 'Instant delivery, end-to-end encrypted', color: 'text-green-500' },
+  { icon: FiPhone, title: 'Voice & Video Calls', desc: 'Crystal-clear HD calls worldwide, free', color: 'text-blue-500' },
+  { icon: FiFolder, title: 'File Sharing', desc: 'Images, docs, voice notes up to 100MB', color: 'text-purple-500' },
+  { icon: FiUsers, title: 'Groups & Communities', desc: 'Stay connected with everyone you care about', color: 'text-orange-500' },
 ];
 
 function PasswordStrength({ password }) {
@@ -93,15 +94,17 @@ function SignupDownloadBanner() {
         />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-bold text-gray-800 mb-1">📱 Get VipChat on your phone</p>
+        <p className="text-xs font-bold text-gray-800 mb-1 flex items-center gap-1"><FiSmartphone size={12} /> Get VipChat on your phone</p>
         <div className="flex gap-1.5 flex-wrap">
           <a href="https://apps.apple.com/app/vipchat" target="_blank" rel="noopener noreferrer"
             className="flex items-center gap-1 bg-black text-white rounded-lg px-2 py-1 hover:bg-gray-800 transition text-[10px] font-semibold">
-            🍎 App Store
+            <svg viewBox="0 0 24 24" className="w-3 h-3 fill-current flex-shrink-0"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+            App Store
           </a>
           <a href="https://play.google.com/store/apps/vipchat" target="_blank" rel="noopener noreferrer"
             className="flex items-center gap-1 bg-[#25D366] text-white rounded-lg px-2 py-1 hover:bg-[#1fbd5a] transition text-[10px] font-semibold">
-            ▶ Google Play
+            <svg viewBox="0 0 24 24" className="w-3 h-3 fill-current flex-shrink-0"><path d="M3.18 23.76c.3.17.65.2.98.09l12.35-7.03-2.59-2.59-10.74 9.53zm-1.35-20.39C1.61 3.7 1.5 4.05 1.5 4.43v15.14c0 .38.11.73.33 1.06l.06.06 8.48-8.48v-.2L1.83 3.37l-.0-.0zm19.13 9.09-2.55-1.45-2.84 2.84 2.84 2.84 2.57-1.46c.73-.42.73-1.35-.02-1.77zm-18.2 8.85 10.44-5.94-2.59-2.59-7.85 8.53z"/></svg>
+            Google Play
           </a>
         </div>
       </div>
@@ -256,7 +259,7 @@ export default function SignupPage() {
             {FEATURES.map((f,i) => (
               <motion.div key={i} initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.35+i*0.1 }}
                 className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/15 hover:bg-white/15 transition">
-                <div className="text-2xl mb-2">{f.emoji}</div>
+                <div className="mb-2"><f.icon size={22} className={f.color} /></div>
                 <p className="text-white font-semibold text-sm leading-tight">{f.title}</p>
                 <p className="text-white/50 text-xs mt-1 leading-relaxed">{f.desc}</p>
               </motion.div>
@@ -532,7 +535,7 @@ export default function SignupPage() {
           >
             <div className="rounded-[14px] bg-white/95 backdrop-blur px-4 py-3 flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0 shadow">
-                <span className="text-xl">🎬</span>
+                <FiPlay size={20} className="text-white" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">

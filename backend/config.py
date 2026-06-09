@@ -38,7 +38,15 @@ def _resolve_db_url():
             '?charset=utf8mb4'
         )
 
-    # 4. SQLite fallback
+    # 4. Warn and use SQLite only in dev (no MySQL/PostgreSQL configured)
+    import warnings
+    warnings.warn(
+        "\n\n[VipChat] ⚠️  No MySQL or PostgreSQL database configured.\n"
+        "  Set DATABASE_URL (PostgreSQL) or MYSQL_DATABASE_URL / MYSQL_HOST+MYSQL_USER+MYSQL_PASSWORD\n"
+        "  in your environment secrets for production use.\n"
+        "  Falling back to SQLite (development only — NOT for production).\n",
+        RuntimeWarning, stacklevel=2
+    )
     return 'sqlite:///vipchat.db'
 
 
@@ -64,7 +72,7 @@ _IS_MYSQL = 'mysql' in _DB_URL
 
 
 class Config:
-    """Base configuration — MySQL-first, SQLite fallback."""
+    """Base configuration — MySQL (local) + PostgreSQL (production) first. SQLite dev-only."""
     SECRET_KEY = os.environ.get('SECRET_KEY', 'vipchat-dev-secret-change-in-production')
     JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'vipchat-jwt-secret-change-in-production')
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)

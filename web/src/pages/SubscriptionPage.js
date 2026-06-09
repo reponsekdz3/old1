@@ -5,7 +5,6 @@ import {
   FiGlobe, FiLock, FiAward, FiRepeat,
 } from 'react-icons/fi';
 import api from '../services/api';
-import { useAuthStore } from '../services/store';
 import toast from 'react-hot-toast';
 
 const PLANS = [
@@ -82,11 +81,11 @@ const PLANS = [
 ];
 
 const PAYMENT_METHODS = [
-  { id: 'stripe', label: 'Credit / Debit Card', emoji: '💳', sublabel: 'Visa, Mastercard, Amex' },
-  { id: 'paypal', label: 'PayPal', emoji: '🅿️', sublabel: 'Fast & secure' },
-  { id: 'flutterwave', label: 'Flutterwave', emoji: '🌍', sublabel: 'Africa & global markets' },
-  { id: 'crypto', label: 'Crypto / Bitcoin', emoji: '₿', sublabel: 'BTC, ETH, USDC, DAI' },
-  { id: 'wallet', label: 'VipChat Wallet', emoji: '👛', sublabel: 'Instant — use your balance' },
+  { id: 'stripe', label: 'Credit / Debit Card', iconName: 'card', sublabel: 'Visa, Mastercard, Amex', color: 'bg-blue-500' },
+  { id: 'paypal', label: 'PayPal', iconName: 'paypal', sublabel: 'Fast & secure', color: 'bg-sky-500' },
+  { id: 'flutterwave', label: 'Flutterwave', iconName: 'globe', sublabel: 'Africa & global markets', color: 'bg-orange-500' },
+  { id: 'crypto', label: 'Crypto / Bitcoin', iconName: 'bitcoin', sublabel: 'BTC, ETH, USDC, DAI', color: 'bg-amber-500' },
+  { id: 'wallet', label: 'VipChat Wallet', iconName: 'wallet', sublabel: 'Instant — use your balance', color: 'bg-emerald-500' },
 ];
 
 function PlanCard({ plan, current, onUpgrade, loading }) {
@@ -267,7 +266,13 @@ function PaymentModal({ plan, onClose, onSuccess }) {
           {PAYMENT_METHODS.map(pm => (
             <button key={pm.id} onClick={() => setMethod(pm.id)}
               className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition ${method === pm.id ? 'border-[#25D366] bg-green-50' : 'border-gray-200 hover:border-gray-300'}`}>
-              <span className="text-2xl">{pm.emoji}</span>
+              <div className={`w-9 h-9 rounded-xl ${pm.color} flex items-center justify-center flex-shrink-0`}>
+                {pm.iconName === 'card' && <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>}
+                {pm.iconName === 'paypal' && <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M7.076 21.337H2.47a.641.641 0 0 1-.633-.74L4.944.901C5.026.382 5.474 0 5.998 0h7.46c2.57 0 4.578.543 5.69 1.81 1.01 1.15 1.304 2.42 1.012 4.287-.023.143-.047.288-.077.437-.983 5.05-4.349 6.797-8.647 6.797h-2.19c-.524 0-.968.382-1.05.9l-1.12 7.106zm14.146-14.42a3.35 3.35 0 0 0-.607-.541c-.013.076-.026.175-.041.254-.93 4.778-4.005 7.201-9.138 7.201h-2.19a.563.563 0 0 0-.556.479l-1.187 7.527h-.506l-.24 1.516a.56.56 0 0 0 .554.647h3.882c.46 0 .85-.334.922-.788.06-.26.76-4.852.816-5.09a.932.932 0 0 1 .92-.788h.58c3.76 0 6.705-1.528 7.565-5.946.36-1.847.174-3.388-.773-4.471z"/></svg>}
+                {pm.iconName === 'globe' && <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>}
+                {pm.iconName === 'bitcoin' && <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M23.638 14.904c-1.602 6.43-8.113 10.34-14.542 8.736C2.67 22.05-1.244 15.525.362 9.105 1.962 2.67 8.475-1.243 14.9.358c6.43 1.605 10.342 8.115 8.738 14.548v-.002zm-6.35-4.613c.24-1.59-.974-2.45-2.64-3.03l.54-2.153-1.315-.33-.525 2.107c-.345-.087-.705-.167-1.064-.25l.526-2.127-1.32-.33-.54 2.165c-.285-.067-.565-.132-.84-.2l-1.815-.45-.35 1.407s.975.225.955.236c.535.136.63.486.615.766l-1.477 5.92c-.075.166-.24.406-.614.314.015.02-.96-.24-.96-.24l-.66 1.51 1.71.426.93.242-.54 2.19 1.32.327.54-2.17c.36.1.705.19 1.05.273l-.51 2.154 1.32.33.545-2.19c2.24.427 3.93.257 4.64-1.774.57-1.637-.03-2.58-1.217-3.196.854-.193 1.5-.76 1.68-1.93h.01zm-3.01 4.22c-.404 1.64-3.157.75-4.05.53l.72-2.9c.896.23 3.757.67 3.33 2.37zm.41-4.24c-.37 1.49-2.662.735-3.405.55l.654-2.64c.744.18 3.137.524 2.75 2.09z"/></svg>}
+                {pm.iconName === 'wallet' && <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6z"/><circle cx="17" cy="16" r="1" fill="currentColor"/></svg>}
+              </div>
               <div className="text-left flex-1">
                 <p className="text-sm font-bold text-gray-900">{pm.label}</p>
                 <p className="text-xs text-gray-500">{pm.sublabel}
