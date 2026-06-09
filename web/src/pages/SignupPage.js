@@ -524,7 +524,32 @@ export default function SignupPage() {
             )}
           </AnimatePresence>
 
-          <p className="text-center mt-6 text-sm text-gray-500">
+          {/* Watch Trends card */}
+          <motion.div
+            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+            onClick={() => navigate('/trends')}
+            className="mt-5 cursor-pointer rounded-2xl bg-gradient-to-r from-purple-600 via-pink-500 to-rose-500 p-[2px] shadow-lg"
+          >
+            <div className="rounded-[14px] bg-white/95 backdrop-blur px-4 py-3 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0 shadow">
+                <span className="text-xl">🎬</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-gray-800 text-sm">Watch Trends</span>
+                  <span className="px-1.5 py-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold tracking-wide animate-pulse">LIVE</span>
+                </div>
+                <p className="text-xs text-gray-500 truncate">Shorts, reels & videos — no login needed</p>
+              </div>
+              <div className="text-purple-400">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7"/>
+                </svg>
+              </div>
+            </div>
+          </motion.div>
+
+          <p className="text-center mt-4 text-sm text-gray-500">
             Already have an account?{' '}
             <button onClick={() => navigate('/login')} className="text-[#25D366] font-bold hover:underline">Sign in</button>
           </p>

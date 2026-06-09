@@ -3,7 +3,7 @@ import {
   FiUsers, FiRadio, FiPhone, FiSettings,
   FiLogOut, FiUser, FiCircle, FiShield, FiStar,
   FiShoppingBag, FiZap, FiShoppingCart, FiCode, FiVolume2,
-  FiArrowRight, FiPackage,
+  FiArrowRight, FiPackage, FiDollarSign, FiTrendingUp,
 } from 'react-icons/fi';
 import { MdOutlineMessage } from 'react-icons/md';
 import ChatsTab from './ChatsTab';
@@ -75,6 +75,8 @@ function MainNavigation({ socket, onChatSelect, onNewChat, onProfileClick, onLog
     { icon: FiShoppingCart, label: 'Physical Store', action: () => { setShowUserMenu(false); navigate('/store'); } },
     { icon: FiCode, label: 'Business API', action: () => { setShowUserMenu(false); navigate('/business-api'); } },
     { icon: FiVolume2, label: 'Advertise', action: () => { setShowUserMenu(false); navigate('/advertise'); } },
+    { icon: FiDollarSign, label: 'Wallet', action: () => { setShowUserMenu(false); navigate('/wallet'); } },
+    { icon: FiTrendingUp, label: 'Trends', action: () => { setShowUserMenu(false); navigate('/trends'); } },
     { icon: FiZap, label: 'Subscription', action: () => { setShowUserMenu(false); navigate('/subscription'); } },
     { icon: FiSettings, label: 'Settings', action: () => { setShowUserMenu(false); navigate('/settings'); } },
     ...(isAdmin ? [{ icon: FiShield, label: 'Admin Panel', action: () => { setShowUserMenu(false); navigate('/admin'); }, badge: 'Admin' }] : []),

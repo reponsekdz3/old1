@@ -293,6 +293,25 @@ def create_app(config_name='development'):
     except Exception as e:
         logger.warning(f"⚠ Business API Platform routes not available: {e}")
 
+    # ── Wallet & Trends ────────────────────────────────────────────────────
+    try:
+        from app.routes.wallet import wallet_bp
+        app.register_blueprint(wallet_bp)
+        with app.app_context():
+            db.create_all()
+        logger.info("✓ Wallet routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ Wallet routes not available: {e}")
+
+    try:
+        from app.routes.trends import trends_bp
+        app.register_blueprint(trends_bp)
+        with app.app_context():
+            db.create_all()
+        logger.info("✓ Trends routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ Trends routes not available: {e}")
+
     # ── JWT token blocklist ────────────────────────────────────────────────
     @jwt.token_in_blocklist_loader
     def _check_token_revoked(jwt_header, jwt_payload):

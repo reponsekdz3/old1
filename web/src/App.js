@@ -16,6 +16,8 @@ import PhysicalStorePage from './pages/PhysicalStorePage';
 import BusinessAPIPage from './pages/BusinessAPIPage';
 import SubscriptionPage from './pages/SubscriptionPage';
 import AdvertisePage from './pages/AdvertisePage';
+import TrendsPage from './pages/TrendsPage';
+import WalletPage from './pages/WalletPage';
 import OfflineIndicator from './components/OfflineIndicator';
 import PWAInstallBanner from './components/PWAInstallBanner';
 import { Toaster } from 'react-hot-toast';
@@ -129,6 +131,12 @@ function App() {
           } />
           <Route path="/advertise" element={
             <ProtectedRoute user={user}><AdvertisePage /></ProtectedRoute>
+          } />
+          {/* Trends — public, no login required */}
+          <Route path="/trends" element={<TrendsPage />} />
+          {/* Wallet — protected */}
+          <Route path="/wallet" element={
+            <ProtectedRoute user={user}><WalletPage /></ProtectedRoute>
           } />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

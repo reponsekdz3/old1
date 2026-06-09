@@ -594,6 +594,56 @@ export default function LoginPage() {
           </AnimatePresence>
 
         </div>
+        {/* ── Watch Trends Card ── */}
+        <div className="px-8 sm:px-10 pb-3 max-w-md mx-auto w-full">
+          <motion.button
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.99 }}
+            onClick={() => navigate('/trends')}
+            className="w-full rounded-2xl overflow-hidden border border-gray-100 shadow-md hover:shadow-lg transition-all group"
+          >
+            <div className="relative bg-gradient-to-r from-[#0d1117] to-[#1a1f2e] flex items-center gap-4 p-4">
+              {/* Animated gradient background */}
+              <div className="absolute inset-0 bg-gradient-to-r from-[#25D366]/10 via-purple-500/10 to-rose-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+              {/* Thumbnail / icon cluster */}
+              <div className="relative flex-shrink-0 w-16 h-12">
+                <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-rose-500 to-purple-600 flex items-center justify-center shadow-lg">
+                  <FiVideo size={22} className="text-white" />
+                </div>
+                <div className="absolute -bottom-1.5 -right-1.5 w-8 h-6 rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow">
+                  <FiImage size={12} className="text-white" />
+                </div>
+                {/* Live pulse dot */}
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-[#0d1117]">
+                  <span className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-75" />
+                </span>
+              </div>
+              <div className="flex-1 text-left relative z-10">
+                <p className="text-white font-bold text-sm leading-tight flex items-center gap-1.5">
+                  Watch VipTrends
+                  <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">LIVE</span>
+                </p>
+                <p className="text-white/50 text-xs mt-0.5">Shorts · Reels · Videos · No login needed</p>
+                <div className="flex items-center gap-2 mt-1.5">
+                  {['🎵', '🎮', '😂', '🔥'].map((e, i) => (
+                    <motion.span key={i} animate={{ y: [0, -2, 0] }} transition={{ repeat: Infinity, delay: i * 0.2, duration: 1.5 }}
+                      className="text-sm">{e}</motion.span>
+                  ))}
+                  <span className="text-white/30 text-[10px] ml-1">& more</span>
+                </div>
+              </div>
+              <div className="flex-shrink-0 relative z-10">
+                <div className="w-9 h-9 rounded-full bg-white/10 group-hover:bg-[#25D366]/30 flex items-center justify-center transition-colors">
+                  <FiArrowRight size={16} className="text-white group-hover:text-[#25D366] transition-colors" />
+                </div>
+              </div>
+            </div>
+          </motion.button>
+        </div>
+
         {/* Download App Banner — always visible, never scrolls away */}
         <div className="border-t border-gray-100 bg-white px-8 sm:px-10 max-w-md mx-auto w-full flex-shrink-0">
           <DownloadAppBanner compact />
