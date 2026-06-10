@@ -302,13 +302,12 @@ export default function ChatScreen() {
     }
   };
 
-  const handleLongPress = (msg) => {
+  const showMessageOptions = (msg) => {
     const options = ['Cancel', 'Copy'];
-    const cancelIndex = 0;
     if (msg.sender_id === user?.id) options.push('Delete');
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
-        { options, cancelButtonIndex: cancelIndex, destructiveButtonIndex: options.indexOf('Delete') },
+        { options, cancelButtonIndex: 0, destructiveButtonIndex: options.indexOf('Delete') },
         async (idx) => {
           const action = options[idx];
           if (action === 'Copy') {
@@ -322,18 +321,46 @@ export default function ChatScreen() {
           }
         }
       );
+    } else {
+      Alert.alert('Message', 'Choose action', [
+        { text: 'Copy', onPress: async () => {
+          const Clipboard = await import('expo-clipboard');
+          Clipboard.default.setStringAsync(msg.content || '');
+        }},
+        ...(msg.sender_id === user?.id ? [{
+          text: 'Delete', style: 'destructive', onPress: async () => {
+            try {
+              await api.delete(`/messages/${msg.id}/delete`);
+              updateMessage(id, msg.id, { is_deleted: true, content: null });
+            } catch {}
+          },
+        }] : []),
+        { text: 'Cancel', style: 'cancel' },
+      ]);
     }
   };
 
-  const renderMessage = ({ item, index }) => {
+  const handleReact = async (messageId, emoji) => {
+    try {
+      const { data } = await api.post(`/messages/${messageId}/react`, { emoji });
+      updateMessage(id, messageId, { reactions: data.reactions || [] });
+      const socket = getSocket();
+      if (socket) socket.emit('reaction', { message_id: messageId, emoji, receiver_id: id });
+    } catch {
+      Alert.alert('Error', 'Could not send reaction');
+    }
+  };
+
+  const renderMessage = ({ item }) => {
     const isOwn = item.sender_id === user?.id;
     return (
       <MessageBubble
         message={item}
         isOwn={isOwn}
-        onLongPress={() => handleLongPress(item)}
+        onMoreOptions={() => showMessageOptions(item)}
         onImagePress={(uri) => setSelectedImage(uri)}
         onReply={(msg) => setReplyingTo(msg)}
+        onReact={handleReact}
       />
     );
   };

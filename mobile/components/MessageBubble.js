@@ -43,7 +43,7 @@ function DeliveryTicks({ status }) {
 const REACTIONS = ['❤️', '👍', '😂', '😮', '😢', '🙏'];
 const SWIPE_THRESHOLD = 48;
 
-export default function MessageBubble({ message, isOwn, onLongPress, onImagePress, onReply, onReact }) {
+export default function MessageBubble({ message, isOwn, onMoreOptions, onImagePress, onReply, onReact }) {
   const {
     content, media_url, media_type, status, created_at,
     latitude, longitude, location_name,
@@ -90,12 +90,16 @@ export default function MessageBubble({ message, isOwn, onLongPress, onImagePres
 
   const handleLongPress = () => {
     setShowReactionPicker(true);
-    onLongPress?.();
   };
 
   const handleReact = (emoji) => {
     setShowReactionPicker(false);
     onReact?.(message.id, emoji);
+  };
+
+  const handleMoreOptions = () => {
+    setShowReactionPicker(false);
+    onMoreOptions?.();
   };
 
   const renderReplyPreview = () => {
@@ -203,6 +207,9 @@ export default function MessageBubble({ message, isOwn, onLongPress, onImagePres
                   <Text style={styles.reactionEmoji}>{emoji}</Text>
                 </TouchableOpacity>
               ))}
+              <TouchableOpacity onPress={handleMoreOptions} style={[styles.reactionBtn, styles.moreBtn]}>
+                <Ionicons name="ellipsis-horizontal" size={20} color="#555" />
+              </TouchableOpacity>
             </View>
           </Pressable>
         </Modal>
@@ -336,4 +343,9 @@ const styles = StyleSheet.create({
   reactionStripOther: { alignSelf: 'flex-start' },
   reactionBtn: { padding: 4 },
   reactionEmoji: { fontSize: 28 },
+  moreBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#f0f0f0',
+    alignItems: 'center', justifyContent: 'center',
+  },
 });
