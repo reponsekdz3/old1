@@ -9,12 +9,13 @@ import {
   FiBookmark, FiChevronUp, FiChevronDown, FiUpload, FiCheck,
   FiCornerDownRight, FiUsers, FiEye, FiStar,
   FiFilter, FiGlobe, FiHome, FiPause,
-  FiChevronRight,
+  FiChevronRight, FiRadio,
 } from 'react-icons/fi';
 import { MdOutlineLocalFireDepartment, MdOutlineExplore } from 'react-icons/md';
 import api from '../services/api';
 import { useAuthStore } from '../services/store';
 import toast from 'react-hot-toast';
+import LiveStreamViewer, { GoLiveModal } from '../components/LiveStreamViewer';
 
 // ── Category metadata ──────────────────────────────────────────────────────────
 const CATEGORY_META = {
@@ -788,6 +789,13 @@ export default function TrendsPage() {
   const [sidebarLoading, setSidebarLoading] = useState(true);
   const [creatorDrawerId, setCreatorDrawerId] = useState(null);
 
+  // Live streaming state
+  const [activeStreams, setActiveStreams] = useState([]);
+  const [showGoLive, setShowGoLive] = useState(false);
+  const [viewingStream, setViewingStream] = useState(null);
+  const [myLiveStream, setMyLiveStream] = useState(null);
+  const livePollingRef = useRef(null);
+
   const [rightComments, setRightComments] = useState([]);
   const [rightCommentText, setRightCommentText] = useState('');
   const [rightCommentLoading, setRightCommentLoading] = useState(false);
@@ -822,6 +830,25 @@ export default function TrendsPage() {
     if (!user) return;
     api.get('/trends/me/creator-stats').then(r => setMyStats(r.data)).catch(() => {});
   }, [user]);
+
+  // Live stream polling
+  useEffect(() => {
+    const fetchLive = () => {
+      api.get('/livestream/active').then(({ data }) => setActiveStreams(data.streams || [])).catch(() => {});
+    };
+    fetchLive();
+    livePollingRef.current = setInterval(fetchLive, 10000);
+    return () => clearInterval(livePollingRef.current);
+  }, []);
+
+  const handleEndMyStream = async () => {
+    if (!myLiveStream) return;
+    try {
+      await api.post(`/livestream/${myLiveStream.id}/end`);
+      setMyLiveStream(null);
+      toast.success('Stream ended');
+    } catch {}
+  };
 
   // Share token resolution
   useEffect(() => {
@@ -982,6 +1009,26 @@ export default function TrendsPage() {
         {uploadOpen && <UploadModal onClose={() => setUploadOpen(false)} categories={categories} />}
       </AnimatePresence>
 
+      {/* Go Live Modal */}
+      <AnimatePresence>
+        {showGoLive && (
+          <GoLiveModal
+            onClose={() => setShowGoLive(false)}
+            onStarted={stream => { setMyLiveStream(stream); setActiveStreams(prev => [stream, ...prev]); }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Live Stream Viewer */}
+      <AnimatePresence>
+        {viewingStream && (
+          <LiveStreamViewer
+            stream={viewingStream}
+            onClose={() => setViewingStream(null)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Creator Drawer */}
       <AnimatePresence>
         {creatorDrawerId && (
@@ -1073,6 +1120,67 @@ export default function TrendsPage() {
             </button>
           </div>
         )}
+
+        {/* Go Live / Live Streams Section */}
+        <div className="px-4 mb-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-bold text-white/25 uppercase tracking-widest px-1">🔴 Live</p>
+            {activeStreams.length > 0 && <span className="text-[10px] text-red-400 font-bold">{activeStreams.length} LIVE</span>}
+          </div>
+          {/* Active streams list */}
+          {activeStreams.length > 0 && (
+            <div className="space-y-1.5 mb-2">
+              {activeStreams.slice(0, 3).map(stream => (
+                <button key={stream.id} onClick={() => setViewingStream(stream)}
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-white/5 text-left transition group border border-red-500/15 hover:border-red-500/30">
+                  <div className="relative flex-shrink-0">
+                    {stream.host_avatar ? (
+                      <img src={stream.host_avatar} alt="" className="w-8 h-8 rounded-full object-cover border border-red-500" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-white text-xs font-bold border border-red-500">
+                        {stream.host_name?.[0]?.toUpperCase() || '?'}
+                      </div>
+                    )}
+                    <motion.div animate={{ opacity: [1, 0, 1] }} transition={{ duration: 1, repeat: Infinity }}
+                      className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-red-500 border border-[#0d0d0d]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-white/80 truncate">{stream.host_name}</p>
+                    <p className="text-[10px] text-white/35 truncate">{stream.title}</p>
+                  </div>
+                  <div className="flex-shrink-0 flex items-center gap-1 text-white/40">
+                    <FiUsers size={9} />
+                    <span className="text-[10px]">{stream.viewer_count || 0}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          {/* My live stream control */}
+          {myLiveStream && (
+            <div className="flex items-center gap-2 px-2.5 py-2 bg-red-500/10 border border-red-500/30 rounded-xl mb-2">
+              <motion.div animate={{ opacity: [1, 0, 1] }} transition={{ duration: 1, repeat: Infinity }}
+                className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+              <span className="text-xs font-bold text-red-400 flex-1">You are LIVE</span>
+              <button onClick={handleEndMyStream} className="text-[10px] text-red-400 hover:text-red-300 border border-red-500/30 px-2 py-1 rounded-lg transition">End</button>
+            </div>
+          )}
+          {user && !myLiveStream && (
+            <button onClick={() => setShowGoLive(true)}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 rounded-xl text-red-400 text-xs font-bold transition">
+              <FiRadio size={13} />
+              Go Live
+            </button>
+          )}
+          {!user && (
+            <button onClick={() => navigate('/login')}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-white/4 hover:bg-white/8 border border-white/8 rounded-xl text-white/40 text-xs transition">
+              <FiRadio size={12} /> Log in to go live
+            </button>
+          )}
+        </div>
+
+        <div className="h-px bg-white/5 mx-4 mb-3" />
 
         {/* Feed type nav */}
         <div className="px-4 mb-2">

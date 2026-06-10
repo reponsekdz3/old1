@@ -755,3 +755,152 @@ def export_users():
         )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# ── Sub-Admin Role Management ──────────────────────────────────────────────────
+import json
+
+VALID_PERMISSIONS = [
+    'view_users', 'ban_users', 'delete_users', 'make_admin',
+    'view_messages', 'delete_messages',
+    'view_groups', 'delete_groups',
+    'view_marketplace', 'manage_marketplace',
+    'view_ads', 'manage_ads',
+    'view_revenue', 'manage_wallet',
+    'send_broadcast', 'manage_settings',
+    'view_api_clients', 'manage_api_clients',
+]
+
+@admin_bp.route('/roles/permissions', methods=['GET'])
+@admin_required
+def list_permissions():
+    return jsonify({'permissions': VALID_PERMISSIONS}), 200
+
+@admin_bp.route('/users/<user_id>/permissions', methods=['GET'])
+@admin_required
+def get_user_permissions(user_id):
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        perms = {}
+        try:
+            perms = json.loads(getattr(user, 'admin_permissions', None) or '{}')
+        except Exception:
+            perms = {}
+        return jsonify({
+            'user_id': user_id,
+            'full_name': user.full_name,
+            'is_admin': user.is_admin,
+            'permissions': perms,
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@admin_bp.route('/users/<user_id>/permissions', methods=['PUT'])
+@admin_required
+def set_user_permissions(user_id):
+    try:
+        me = get_jwt_identity()
+        if user_id == me:
+            return jsonify({'error': 'Cannot change your own permissions'}), 400
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        data = request.json or {}
+        new_perms = data.get('permissions', {})
+        # Validate
+        for k in new_perms:
+            if k not in VALID_PERMISSIONS:
+                return jsonify({'error': f'Invalid permission: {k}'}), 400
+        # If giving permissions, also make them a sub-admin
+        if new_perms:
+            user.is_admin = True
+        try:
+            user.admin_permissions = json.dumps(new_perms)
+        except Exception:
+            pass
+        db.session.commit()
+        return jsonify({'message': f'Permissions updated for {user.full_name}', 'permissions': new_perms}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@admin_bp.route('/users/<user_id>/permissions/grant', methods=['POST'])
+@admin_required
+def grant_permission(user_id):
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        perm = (request.json or {}).get('permission', '')
+        if perm not in VALID_PERMISSIONS:
+            return jsonify({'error': f'Invalid permission: {perm}'}), 400
+        try:
+            perms = json.loads(getattr(user, 'admin_permissions', None) or '{}')
+        except Exception:
+            perms = {}
+        perms[perm] = True
+        user.admin_permissions = json.dumps(perms)
+        user.is_admin = True
+        db.session.commit()
+        return jsonify({'ok': True, 'permissions': perms}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@admin_bp.route('/users/<user_id>/permissions/revoke', methods=['POST'])
+@admin_required
+def revoke_permission(user_id):
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        perm = (request.json or {}).get('permission', '')
+        try:
+            perms = json.loads(getattr(user, 'admin_permissions', None) or '{}')
+        except Exception:
+            perms = {}
+        perms.pop(perm, None)
+        user.admin_permissions = json.dumps(perms)
+        # If no permissions left and they were only a sub-admin, could remove admin status
+        db.session.commit()
+        return jsonify({'ok': True, 'permissions': perms}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@admin_bp.route('/sub-admins', methods=['GET'])
+@admin_required
+def list_sub_admins():
+    try:
+        admins = User.query.filter_by(is_admin=True).all()
+        me = get_jwt_identity()
+        result = []
+        for u in admins:
+            try:
+                perms = json.loads(getattr(u, 'admin_permissions', None) or '{}')
+            except Exception:
+                perms = {}
+            result.append({
+                'id': u.id,
+                'full_name': u.full_name,
+                'phone_number': getattr(u, 'phone_number', ''),
+                'avatar_url': u.avatar_url,
+                'is_me': u.id == me,
+                'permissions': perms,
+                'permission_count': len(perms),
+                'created_at': u.created_at.isoformat() if u.created_at else None,
+            })
+        return jsonify({'admins': result, 'total': len(result)}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@admin_bp.route('/plan-stats', methods=['GET'])
+@admin_required
+def plan_stats():
+    """Summary of free vs paid users"""
+    try:
+        total = User.query.count()
+        return jsonify({'total_users': total, 'plan_breakdown': {'free': total, 'paid': 0}}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

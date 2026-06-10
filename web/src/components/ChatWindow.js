@@ -7,7 +7,7 @@ import {
   FiArrowLeft, FiSearch, FiX, FiMic, FiImage, FiFile, FiMapPin,
   FiUser, FiStar, FiShare2, FiEdit2, FiTrash2, FiCopy,
   FiCornerUpLeft, FiCheck, FiChevronDown, FiInfo,
-  FiCamera, FiDownload, FiRefreshCw, FiMessageSquare, FiLock, FiLink, FiMusic,
+  FiCamera, FiDownload, FiRefreshCw, FiMessageSquare, FiLock, FiLink, FiMusic, FiClock,
 } from 'react-icons/fi';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, isToday, isYesterday, isSameDay } from 'date-fns';
@@ -18,6 +18,7 @@ import LocationShare from './LocationShare';
 import ForwardModal from './ForwardModal';
 import AttachmentPreviewModal from './AttachmentPreviewModal';
 import { VerifiedBadgeInline } from './VerifiedBadge';
+import ScheduleMessageModal from './ScheduleMessageModal';
 
 const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^[\]`]+)/gi;
 const LINK_PREVIEW_CACHE = new Map();
@@ -499,6 +500,7 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
   const [messageText, setMessageText] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
   const [showAttach, setShowAttach] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showWallpaper, setShowWallpaper] = useState(false);
   const [contactUser, setContactUser] = useState(null);
@@ -1109,6 +1111,15 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
                   )}
                 </AnimatePresence>
               </div>
+              {/* Schedule message button */}
+              <button
+                type="button"
+                onClick={() => setShowSchedule(true)}
+                title="Schedule message"
+                className="p-2 rounded-full transition text-gray-500 hover:bg-gray-200 hover:text-[#25D366]"
+              >
+                <FiClock size={21} />
+              </button>
             </div>
 
             <div className="flex-1 bg-white rounded-xl flex items-center px-3 min-h-[44px] shadow-sm border border-gray-100">
@@ -1126,9 +1137,11 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
             </div>
 
             {messageText.trim() || editingMessage ? (
-              <button type="submit" className="w-11 h-11 bg-[#25D366] text-white rounded-full flex items-center justify-center shadow-lg hover:bg-[#1fbd5a] transition active:scale-95">
-                <FiSend size={20} className="ml-0.5" />
-              </button>
+              <div className="relative group">
+                <button type="submit" className="w-11 h-11 bg-[#25D366] text-white rounded-full flex items-center justify-center shadow-lg hover:bg-[#1fbd5a] transition active:scale-95">
+                  <FiSend size={20} className="ml-0.5" />
+                </button>
+              </div>
             ) : (
               <VoiceRecorder onFinished={(blob) => handleAttach(blob, 'voice')} />
             )}
@@ -1160,6 +1173,18 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
             attachment={pendingAttachment}
             onClose={() => setPendingAttachment(null)}
             onSend={handleSendAttachment}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Schedule Message Modal */}
+      <AnimatePresence>
+        {showSchedule && (
+          <ScheduleMessageModal
+            receiverId={activeChat}
+            receiverName={contactUser?.full_name || chatName}
+            onClose={() => setShowSchedule(false)}
+            onScheduled={() => {}}
           />
         )}
       </AnimatePresence>

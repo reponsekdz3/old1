@@ -34,6 +34,15 @@ def send_message(receiver_id):
         if getattr(receiver, 'is_banned', False):
             return jsonify({'error': 'User unavailable'}), 403
 
+        # ── Free plan daily message limit check ──────────────────────────
+        try:
+            from app.routes.free_plan import check_plan_limit
+            allowed, reason = check_plan_limit(sender_id, 'messages_per_day')
+            if not allowed:
+                return jsonify({'error': reason, 'upgrade_required': True, 'feature': 'messages_per_day'}), 403
+        except Exception:
+            pass  # Never block messages due to plan-check errors
+
         msg = Message()
         msg.sender_id = sender_id
         msg.receiver_id = receiver_id

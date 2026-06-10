@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   FiArrowLeft, FiLock, FiBell, FiDownload, FiDatabase,
   FiHelpCircle, FiInfo, FiChevronRight,
   FiCheck, FiShield, FiSend, FiSmartphone, FiZap, FiShoppingBag,
-  FiSearch, FiBriefcase,
+  FiSearch, FiBriefcase, FiEdit3,
 } from 'react-icons/fi';
 import { subscribeToPush, unsubscribeFromPush } from '../services/pushService';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -101,6 +101,130 @@ function ActionRow({ label, sub, icon: Icon, iconBg = 'bg-gray-100', iconColor =
       </div>
       <FiChevronRight size={14} className={danger ? 'text-red-200' : 'text-gray-200'} />
     </button>
+  );
+}
+
+// ── Rich Text Bio Editor ─────────────────────────────────────────────────────
+function RichBioEditor({ initialValue, onSave }) {
+  const editorRef = useRef(null);
+  const [charCount, setCharCount] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [active, setActive] = useState(false);
+  const MAX_CHARS = 500;
+
+  const EMOJIS = ['😊', '🚀', '🎉', '💪', '🌟', '❤️', '🔥', '✨', '🎵', '📱', '💡', '🌍', '🏆', '💼', '🎯'];
+  const FONT_STYLES = [
+    { label: 'B', command: 'bold', className: 'font-bold', title: 'Bold' },
+    { label: 'I', command: 'italic', className: 'italic', title: 'Italic' },
+    { label: 'U', command: 'underline', className: 'underline', title: 'Underline' },
+  ];
+  const COLORS = [
+    { color: '#25D366', title: 'Green' },
+    { color: '#128C7E', title: 'Teal' },
+    { color: '#075E54', title: 'Dark Teal' },
+    { color: '#000000', title: 'Black' },
+    { color: '#6B7280', title: 'Gray' },
+  ];
+
+  useEffect(() => {
+    if (editorRef.current && initialValue) {
+      editorRef.current.innerHTML = initialValue;
+      setCharCount(editorRef.current.innerText.length);
+    }
+  }, [initialValue]);
+
+  const applyFormat = (command, value) => {
+    document.execCommand(command, false, value || null);
+    editorRef.current?.focus();
+  };
+
+  const insertEmoji = (emoji) => {
+    editorRef.current?.focus();
+    document.execCommand('insertText', false, emoji);
+  };
+
+  const handleInput = () => {
+    const text = editorRef.current?.innerText || '';
+    if (text.length > MAX_CHARS) {
+      document.execCommand('undo');
+    } else {
+      setCharCount(text.length);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    const html = editorRef.current?.innerHTML || '';
+    await onSave(html);
+    setSaving(false);
+    setActive(false);
+  };
+
+  const handleClear = () => {
+    if (editorRef.current) editorRef.current.innerHTML = '';
+    setCharCount(0);
+    editorRef.current?.focus();
+  };
+
+  return (
+    <div className="border border-gray-100 rounded-xl overflow-hidden">
+      {/* Toolbar */}
+      {active && (
+        <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
+          className="flex flex-wrap items-center gap-1 px-3 py-2 bg-gray-50 border-b border-gray-100">
+          {FONT_STYLES.map(s => (
+            <button key={s.command} type="button" title={s.title}
+              onClick={() => applyFormat(s.command)}
+              className="w-7 h-7 rounded-lg hover:bg-white border border-transparent hover:border-gray-200 flex items-center justify-center text-xs transition">
+              <span className={s.className}>{s.label}</span>
+            </button>
+          ))}
+          <div className="w-px h-4 bg-gray-200 mx-1" />
+          {COLORS.map(c => (
+            <button key={c.color} type="button" title={c.title}
+              onClick={() => applyFormat('foreColor', c.color)}
+              className="w-5 h-5 rounded-full border-2 border-white shadow-sm hover:scale-110 transition"
+              style={{ backgroundColor: c.color }} />
+          ))}
+          <div className="w-px h-4 bg-gray-200 mx-1" />
+          <div className="flex flex-wrap gap-1">
+            {EMOJIS.map(emoji => (
+              <button key={emoji} type="button" onClick={() => insertEmoji(emoji)}
+                className="text-base leading-none hover:scale-125 transition cursor-pointer">{emoji}</button>
+            ))}
+          </div>
+          <div className="ml-auto">
+            <button type="button" onClick={handleClear}
+              className="text-xs text-gray-400 hover:text-red-400 transition px-2">Clear</button>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Editor */}
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={handleInput}
+        onFocus={() => setActive(true)}
+        onBlur={() => {}}
+        data-placeholder="Write a bio… (supports bold, italic, colors and emoji)"
+        className="min-h-[80px] px-4 py-3 text-sm text-gray-800 focus:outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-gray-300"
+        style={{ lineHeight: 1.6 }}
+      />
+
+      {/* Footer */}
+      <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-t border-gray-100">
+        <span className={`text-xs ${charCount > MAX_CHARS * 0.9 ? 'text-orange-500' : 'text-gray-400'}`}>
+          {charCount}/{MAX_CHARS}
+        </span>
+        <button type="button" onClick={handleSave} disabled={saving}
+          className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 bg-[#25D366] text-white rounded-full hover:bg-[#1fbd5a] disabled:opacity-50 transition">
+          {saving ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <FiCheck size={12} />}
+          Save Bio
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -299,6 +423,7 @@ export default function SettingsPage() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [bioExpanded, setBioExpanded] = useState(false);
 
   useEffect(() => { loadSettings(); }, []);
 
@@ -383,6 +508,15 @@ export default function SettingsPage() {
     } catch { toast.error('Backup failed'); }
   };
 
+  const handleBioSave = async (html) => {
+    try {
+      await api.put('/settings', { bio: html });
+      setUser({ ...user, bio: html });
+      toast.success('Bio saved!');
+      setBioExpanded(false);
+    } catch { toast.error('Failed to save bio'); }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50">
@@ -450,10 +584,41 @@ export default function SettingsPage() {
                       <VerifiedBadgeInline user={user} size={14} />
                     </p>
                     <p className="text-sm text-gray-400">{user?.phone_number}</p>
-                    {user?.bio && <p className="text-xs text-gray-400 truncate mt-0.5">{user.bio}</p>}
+                    {user?.bio
+                      ? <p className="text-xs text-gray-400 truncate mt-0.5" dangerouslySetInnerHTML={{ __html: user.bio }} />
+                      : <p className="text-xs text-[#25D366] mt-0.5">Add a bio →</p>}
                   </div>
                   <FiChevronRight size={16} className="text-gray-300 flex-shrink-0" />
                 </button>
+
+                {/* Bio editor */}
+                <div className="border-t border-gray-50 px-4 py-3">
+                  <button
+                    onClick={() => setBioExpanded(e => !e)}
+                    className="flex items-center gap-2 text-sm font-semibold text-gray-700 hover:text-[#25D366] transition w-full text-left"
+                  >
+                    <FiEdit3 size={14} className="text-[#25D366]" />
+                    <span>{bioExpanded ? 'Hide bio editor' : 'Edit bio'}</span>
+                    <motion.div animate={{ rotate: bioExpanded ? 90 : 0 }} className="ml-auto">
+                      <FiChevronRight size={14} className="text-gray-300" />
+                    </motion.div>
+                  </button>
+                  <AnimatePresence>
+                    {bioExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="pt-3">
+                          <RichBioEditor initialValue={user?.bio || ''} onSave={handleBioSave} />
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
 
               {/* Verification shortcut */}

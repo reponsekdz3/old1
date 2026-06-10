@@ -1,5 +1,5 @@
-/* VipChat Service Worker — offline caching + push notifications + background sync */
-const CACHE_NAME = 'vipchat-v5';
+/* VipChat Service Worker — offline caching + push notifications + background sync + quick reply */
+const CACHE_NAME = 'vipchat-v6';
 const OFFLINE_PAGE = '/index.html';
 const STATIC_ASSETS = [
   '/', '/index.html', '/logo192.png', '/logo512.png', '/manifest.json',
@@ -26,16 +26,10 @@ self.addEventListener('activate', (event) => {
 // ── Fetch — Network-first for API, Cache-first for static ─────────────────────
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-
   const url = new URL(event.request.url);
-
-  // Skip WebSocket and non-http
   if (!url.protocol.startsWith('http')) return;
-
-  // API calls: network only, no cache
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io/')) return;
 
-  // Uploads: network first, cache fallback
   if (url.pathname.startsWith('/uploads/')) {
     event.respondWith(
       fetch(event.request).then(resp => {
@@ -49,44 +43,36 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // HTML navigation: network first, cache fallback → offline page
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
         .then(resp => {
           if (resp && resp.status === 200) {
-            const cloned = resp.clone();
-            caches.open(CACHE_NAME).then(c => c.put(event.request, cloned));
+            caches.open(CACHE_NAME).then(c => c.put(event.request, resp.clone()));
           }
           return resp;
         })
-        .catch(() => caches.match(event.request)
-          .then(r => r || caches.match(OFFLINE_PAGE))
-        )
+        .catch(() => caches.match(event.request).then(r => r || caches.match(OFFLINE_PAGE)))
     );
     return;
   }
 
-  // JS/CSS/Images: stale-while-revalidate
   event.respondWith(
     caches.match(event.request).then(cached => {
-      const networkFetch = fetch(event.request).then(resp => {
+      const net = fetch(event.request).then(resp => {
         if (resp && resp.status === 200 && resp.type === 'basic') {
-          const cloned = resp.clone();
-          caches.open(CACHE_NAME).then(c => c.put(event.request, cloned));
+          caches.open(CACHE_NAME).then(c => c.put(event.request, resp.clone()));
         }
         return resp;
       }).catch(() => null);
-      return cached || networkFetch;
+      return cached || net;
     })
   );
 });
 
 // ── Background Sync (offline message queue) ────────────────────────────────────
 self.addEventListener('sync', (event) => {
-  if (event.tag === 'sync-messages') {
-    event.waitUntil(syncPendingMessages());
-  }
+  if (event.tag === 'sync-messages') event.waitUntil(syncPendingMessages());
 });
 
 async function syncPendingMessages() {
@@ -95,118 +81,205 @@ async function syncPendingMessages() {
     const messages = await getAllPending(db);
     for (const msg of messages) {
       try {
-        const resp = await fetch('/api/messages/send', {
+        const token = await getStoredToken();
+        const resp = await fetch(`/api/messages/${msg.receiverId}`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${msg.token}`,
-          },
-          body: JSON.stringify(msg.data),
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ content: msg.content }),
         });
-        if (resp.ok) await deletePending(db, msg.id);
+        if (resp.ok) await removePending(db, msg.id);
       } catch {}
     }
   } catch {}
 }
 
+// ── Push notifications ─────────────────────────────────────────────────────────
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data?.json() || {}; } catch {}
+
+  const title = data.title || 'VipChat';
+  const body = data.body || data.message || 'New notification';
+  const icon = data.icon || '/logo192.png';
+  const badge = '/logo192.png';
+  const senderId = data.extra?.sender_id || data.sender_id || '';
+  const senderName = data.extra?.sender_name || data.sender_name || data.title || '';
+  const chatId = data.extra?.chat_id || data.chat_id || senderId;
+  const notifType = data.extra?.type || data.type || 'message';
+  const url = data.url || (chatId ? `/` : '/');
+
+  const actions = [];
+
+  // Quick Reply action (only for message notifications)
+  if (notifType === 'message' && senderId) {
+    actions.push({
+      action: 'reply',
+      title: 'Reply',
+      type: 'text',
+      placeholder: 'Type a reply…',
+    });
+  }
+
+  // Mark as Read action
+  actions.push({ action: 'mark_read', title: 'Mark Read' });
+  // Open action
+  actions.push({ action: 'open', title: 'Open' });
+
+  const options = {
+    body,
+    icon,
+    badge,
+    tag: chatId || 'general',
+    renotify: true,
+    requireInteraction: notifType === 'message',
+    data: { url, senderId, chatId, senderName, notifType, ...data.extra },
+    actions: actions.slice(0, 2), // max 2 on most platforms
+    vibrate: [200, 100, 200],
+    silent: false,
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// ── Notification click — handles reply, mark_read, open ───────────────────────
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const { action, reply } = event;
+  const notifData = event.notification.data || {};
+  const { url, senderId, chatId, notifType } = notifData;
+
+  // Quick Reply
+  if (action === 'reply' && reply && senderId) {
+    event.waitUntil(
+      handleQuickReply(senderId, reply, notifData)
+    );
+    return;
+  }
+
+  // Mark as read — just close, open in background
+  if (action === 'mark_read') {
+    event.waitUntil(markNotificationRead(notifData));
+    return;
+  }
+
+  // Default: open chat
+  const openUrl = url || '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+      const existing = clients.find(c => c.url.includes(openUrl) || c.url.includes('/'));
+      if (existing) {
+        existing.focus();
+        existing.postMessage({ type: 'notification_click', url: openUrl, chatId, senderId });
+        return;
+      }
+      return self.clients.openWindow(openUrl).then(win => {
+        if (win) {
+          win.postMessage({ type: 'notification_click', url: openUrl, chatId, senderId });
+        }
+      });
+    })
+  );
+});
+
+async function handleQuickReply(receiverId, replyText, notifData) {
+  try {
+    const token = await getStoredToken();
+    if (!token) {
+      // Open app so user can log in and reply
+      await self.clients.openWindow('/');
+      return;
+    }
+    const resp = await fetch(`/api/messages/${receiverId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ content: replyText }),
+    });
+    if (resp.ok) {
+      // Show confirmation notification
+      await self.registration.showNotification('Reply sent ✓', {
+        body: replyText,
+        icon: '/logo192.png',
+        badge: '/logo192.png',
+        tag: 'reply_sent',
+        silent: true,
+      });
+      // Notify open clients to refresh
+      const clients = await self.clients.matchAll({ type: 'window' });
+      clients.forEach(c => c.postMessage({ type: 'quick_reply_sent', receiverId, content: replyText }));
+    } else {
+      await self.registration.showNotification('Reply failed', {
+        body: 'Tap to open VipChat and reply manually',
+        icon: '/logo192.png',
+        badge: '/logo192.png',
+        tag: 'reply_failed',
+        data: { url: '/' },
+      });
+    }
+  } catch (e) {
+    console.error('[SW] Quick reply failed:', e);
+  }
+}
+
+async function markNotificationRead(notifData) {
+  try {
+    const token = await getStoredToken();
+    if (!token || !notifData.senderId) return;
+    await fetch(`/api/messages/${notifData.senderId}/read`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+  } catch {}
+}
+
+async function getStoredToken() {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction('keyval', 'readonly');
+      const req = tx.objectStore('keyval').get('access_token');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+// ── IndexedDB helpers ──────────────────────────────────────────────────────────
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('vipchat-offline', 1);
-    req.onupgradeneeded = () => req.result.createObjectStore('pending', { keyPath: 'id', autoIncrement: true });
-    req.onsuccess = () => resolve(req.result);
+    const req = indexedDB.open('vipchat-sw', 2);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('pending_messages')) {
+        db.createObjectStore('pending_messages', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('keyval')) {
+        db.createObjectStore('keyval');
+      }
+    };
+    req.onsuccess = e => resolve(e.target.result);
     req.onerror = () => reject(req.error);
   });
 }
 
 function getAllPending(db) {
-  return new Promise((resolve) => {
-    const tx = db.transaction('pending', 'readonly');
-    const req = tx.objectStore('pending').getAll();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('pending_messages', 'readonly');
+    const req = tx.objectStore('pending_messages').getAll();
     req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => resolve([]);
+    req.onerror = () => reject(req.error);
   });
 }
 
-function deletePending(db, id) {
-  return new Promise((resolve) => {
-    const tx = db.transaction('pending', 'readwrite');
-    tx.objectStore('pending').delete(id);
-    tx.oncomplete = resolve;
+function removePending(db, id) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('pending_messages', 'readwrite');
+    const req = tx.objectStore('pending_messages').delete(id);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
   });
 }
-
-// ── Push Notifications ─────────────────────────────────────────────────────────
-self.addEventListener('push', (event) => {
-  let payload = {};
-  try { payload = event.data ? event.data.json() : {}; } catch {}
-
-  const title = payload.title || 'VipChat';
-  const body  = payload.body  || 'You have a new message';
-  const icon  = payload.icon  || '/logo192.png';
-  const badge = '/logo192.png';
-  const tag   = payload.tag   || `vipchat-${payload.sender_id || 'msg'}`;
-  const data  = { url: payload.url || '/', ...payload };
-
-  event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      icon,
-      badge,
-      tag,
-      renotify: true,
-      vibrate: [200, 100, 200],
-      requireInteraction: false,
-      silent: false,
-      data,
-      actions: [
-        { action: 'reply', title: 'Reply' },
-        { action: 'dismiss', title: 'Dismiss' },
-      ],
-    })
-  );
-});
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  const action = event.action;
-  if (action === 'dismiss') return;
-
-  const url = event.notification.data?.url || '/';
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) {
-        if (client.url.includes(self.location.origin) && 'focus' in client) {
-          client.focus();
-          client.postMessage({ type: 'navigate', url });
-          return;
-        }
-      }
-      return self.clients.openWindow(url);
-    })
-  );
-});
-
-// ── Periodic background updates ────────────────────────────────────────────────
-self.addEventListener('periodicsync', (event) => {
-  if (event.tag === 'update-cache') {
-    event.waitUntil(updateStaticCache());
-  }
-});
-
-async function updateStaticCache() {
-  const cache = await caches.open(CACHE_NAME);
-  await Promise.allSettled(STATIC_ASSETS.map(url => cache.add(url).catch(() => {})));
-}
-
-// ── Message from main thread ───────────────────────────────────────────────────
-self.addEventListener('message', (event) => {
-  if (event.data?.type === 'skip-waiting') {
-    self.skipWaiting();
-  }
-  if (event.data?.type === 'queue-message') {
-    openDB().then(db => {
-      const tx = db.transaction('pending', 'readwrite');
-      tx.objectStore('pending').add(event.data.payload);
-    }).catch(() => {});
-  }
-});

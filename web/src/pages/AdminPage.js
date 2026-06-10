@@ -187,6 +187,7 @@ const TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: FiGrid },
   { id: 'live', label: 'Live', icon: FiRadio, badge: 'LIVE' },
   { id: 'users', label: 'Users', icon: FiUsers },
+  { id: 'roles', label: 'Roles', icon: FiShield },
   { id: 'messages', label: 'Messages', icon: FiMessageSquare },
   { id: 'groups', label: 'Groups', icon: FiUsers },
   { id: 'activity', label: 'Activity', icon: FiActivity },
@@ -197,6 +198,183 @@ const TABS = [
   { id: 'revenue', label: 'Revenue', icon: FiPieChart },
   { id: 'system', label: 'System', icon: FiSettings },
 ];
+
+// ── Admin Roles Tab ──────────────────────────────────────────────────────────
+const ALL_PERMISSIONS = [
+  { id: 'view_users', label: 'View Users', group: 'Users' },
+  { id: 'ban_users', label: 'Ban/Unban Users', group: 'Users' },
+  { id: 'delete_users', label: 'Delete Users', group: 'Users' },
+  { id: 'make_admin', label: 'Make Admin', group: 'Users' },
+  { id: 'view_messages', label: 'View Messages', group: 'Content' },
+  { id: 'delete_messages', label: 'Delete Messages', group: 'Content' },
+  { id: 'view_groups', label: 'View Groups', group: 'Content' },
+  { id: 'delete_groups', label: 'Delete Groups', group: 'Content' },
+  { id: 'view_marketplace', label: 'View Marketplace', group: 'Commerce' },
+  { id: 'manage_marketplace', label: 'Manage Marketplace', group: 'Commerce' },
+  { id: 'view_ads', label: 'View Ads', group: 'Commerce' },
+  { id: 'manage_ads', label: 'Manage Ads', group: 'Commerce' },
+  { id: 'view_revenue', label: 'View Revenue', group: 'Finance' },
+  { id: 'manage_wallet', label: 'Manage Wallet', group: 'Finance' },
+  { id: 'send_broadcast', label: 'Send Broadcasts', group: 'Communication' },
+  { id: 'manage_settings', label: 'Manage Settings', group: 'System' },
+  { id: 'view_api_clients', label: 'View API Clients', group: 'System' },
+  { id: 'manage_api_clients', label: 'Manage API Clients', group: 'System' },
+];
+
+function AdminRolesTab() {
+  const [subAdmins, setSubAdmins] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+  const [perms, setPerms] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get('/admin/sub-admins');
+      setSubAdmins(data.admins || []);
+    } catch {}
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const selectAdmin = (admin) => {
+    setSelected(admin);
+    setPerms(admin.permissions || {});
+  };
+
+  const togglePerm = (permId) => {
+    setPerms(prev => ({ ...prev, [permId]: !prev[permId] }));
+  };
+
+  const savePerms = async () => {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      await api.put(`/admin/users/${selected.id}/permissions`, { permissions: perms });
+      toast.success('Permissions saved!');
+      setSubAdmins(prev => prev.map(a => a.id === selected.id ? { ...a, permissions: perms } : a));
+      setSelected(s => s ? { ...s, permissions: perms } : s);
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to save');
+    }
+    setSaving(false);
+  };
+
+  const grantAll = () => {
+    const all = {};
+    ALL_PERMISSIONS.forEach(p => { all[p.id] = true; });
+    setPerms(all);
+  };
+
+  const revokeAll = () => setPerms({});
+
+  const groups = [...new Set(ALL_PERMISSIONS.map(p => p.group))];
+
+  const filtered = subAdmins.filter(a => a.full_name?.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Left: Admin list */}
+      <div>
+        <div className="flex items-center gap-3 mb-4">
+          <h3 className="text-lg font-bold text-gray-900 flex-1">Sub-Admins</h3>
+          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-full">{subAdmins.length} total</span>
+        </div>
+        <div className="relative mb-3">
+          <FiSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search admins…"
+            className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#25D366]/30" />
+        </div>
+        {loading ? (
+          <div className="flex justify-center py-10"><div className="w-6 h-6 border-2 border-[#25D366] border-t-transparent rounded-full animate-spin" /></div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-10 text-gray-400">
+            <FiShield size={32} className="mx-auto mb-2 opacity-30" />
+            <p className="text-sm">No admins found</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filtered.map(admin => (
+              <button key={admin.id} onClick={() => selectAdmin(admin)}
+                className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition border ${selected?.id === admin.id ? 'border-[#25D366] bg-green-50' : 'border-gray-100 hover:border-gray-200 bg-white'}`}>
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#075E54] to-[#25D366] flex items-center justify-center text-white font-bold text-sm flex-shrink-0 overflow-hidden">
+                  {admin.avatar_url ? <img src={admin.avatar_url} alt="" className="w-full h-full object-cover" /> : admin.full_name?.[0]?.toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-800 text-sm truncate flex items-center gap-1.5">
+                    {admin.full_name}
+                    {admin.is_me && <span className="text-[10px] bg-[#25D366] text-white px-1.5 py-0.5 rounded-full font-normal">You</span>}
+                  </p>
+                  <p className="text-xs text-gray-400">{admin.permission_count} permissions</p>
+                </div>
+                <FiChevronRight size={14} className="text-gray-300 flex-shrink-0" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Right: Permission editor */}
+      <div>
+        {selected ? (
+          <>
+            <div className="flex items-center gap-3 mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">{selected.full_name}</h3>
+                <p className="text-xs text-gray-400">Edit permissions</p>
+              </div>
+              <div className="ml-auto flex gap-2">
+                <button onClick={grantAll} className="text-xs px-3 py-1.5 bg-green-50 text-green-600 border border-green-200 rounded-lg hover:bg-green-100 transition">Grant All</button>
+                <button onClick={revokeAll} className="text-xs px-3 py-1.5 bg-red-50 text-red-500 border border-red-200 rounded-lg hover:bg-red-100 transition">Revoke All</button>
+              </div>
+            </div>
+            <div className="space-y-4 mb-5">
+              {groups.map(group => (
+                <div key={group} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                  <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">{group}</p>
+                  </div>
+                  <div className="divide-y divide-gray-50">
+                    {ALL_PERMISSIONS.filter(p => p.group === group).map(perm => (
+                      <button key={perm.id} onClick={() => !selected.is_me && togglePerm(perm.id)}
+                        className={`w-full flex items-center justify-between px-4 py-3 text-sm hover:bg-gray-50 transition ${selected.is_me ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                        <span className="text-gray-700">{perm.label}</span>
+                        <div className={`w-10 h-5.5 rounded-full transition-colors relative ${perms[perm.id] ? 'bg-[#25D366]' : 'bg-gray-200'}`}
+                          style={{ height: 22, width: 40 }}>
+                          <motion.div animate={{ x: perms[perm.id] ? 18 : 2 }} transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                            className="absolute top-0.5 w-4.5 h-4.5 bg-white rounded-full shadow-sm"
+                            style={{ width: 18, height: 18 }} />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {!selected.is_me && (
+              <button onClick={savePerms} disabled={saving}
+                className="w-full bg-gradient-to-r from-[#075E54] to-[#25D366] text-white rounded-xl py-3 font-bold flex items-center justify-center gap-2 disabled:opacity-50 hover:opacity-90 transition">
+                {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><FiCheck size={16} /> Save Permissions</>}
+              </button>
+            )}
+          </>
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
+              <FiShield size={28} className="text-gray-300" />
+            </div>
+            <p className="text-gray-500 font-medium">Select an admin</p>
+            <p className="text-gray-400 text-sm mt-1">Choose an admin from the left to manage their permissions</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function AdminPage() {
   const navigate = useNavigate();
@@ -825,6 +1003,9 @@ function AdminPage() {
             </div>
           ) : (
             <>
+              {/* ── ROLES ── */}
+              {activeTab === 'roles' && <AdminRolesTab />}
+
               {/* ── LIVE ── */}
               {activeTab === 'live' && (
                 <div className="space-y-5">

@@ -312,6 +312,26 @@ def create_app(config_name='development'):
     except Exception as e:
         logger.warning(f"⚠ Trends routes not available: {e}")
 
+    try:
+        from app.routes.scheduled_messages import scheduled_bp, ScheduledMessage, start_scheduler
+        app.register_blueprint(scheduled_bp)
+        with app.app_context():
+            db.create_all()
+        start_scheduler(app)
+        logger.info("✓ Scheduled Messages routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ Scheduled Messages routes not available: {e}")
+
+    try:
+        from app.routes.livestream import livestream_bp, LiveStream, LiveStreamViewer, LiveChatMessage, register_livestream_events
+        app.register_blueprint(livestream_bp)
+        with app.app_context():
+            db.create_all()
+        register_livestream_events(socketio)
+        logger.info("✓ Live Stream routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ Live Stream routes not available: {e}")
+
     # ── JWT token blocklist ────────────────────────────────────────────────
     @jwt.token_in_blocklist_loader
     def _check_token_revoked(jwt_header, jwt_payload):
