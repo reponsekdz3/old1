@@ -71,6 +71,10 @@ def _run_migrations():
     if 'privacy'            not in sc: _add('statuses', 'privacy',            "VARCHAR(20) DEFAULT 'everyone'")
     if 'duration_hours'     not in sc: _add('statuses', 'duration_hours',     'INTEGER DEFAULT 24')
 
+    # status_viewers — add viewed_at timestamp column
+    sv = _col_names('status_viewers')
+    if 'viewed_at' not in sv: _add('status_viewers', 'viewed_at', 'DATETIME')
+
 
 def create_app(config_name='development'):
     """Application factory"""

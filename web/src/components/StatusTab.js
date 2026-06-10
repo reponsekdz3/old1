@@ -79,38 +79,94 @@ function timeLeft(expiresAt) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AvatarRing
+// AvatarRing — SVG-segmented ring (like Instagram Stories)
+// Each status = one arc segment; unviewed = green/gold, viewed = gray
 // ─────────────────────────────────────────────────────────────────────────────
-function AvatarRing({ src, name, viewed, isOwn, size = 56, onClick, showPlus, closeFriend }) {
+function AvatarRing({ src, name, statuses = [], viewed, isOwn, size = 82, onClick, showPlus, closeFriend }) {
   const initial = name?.[0]?.toUpperCase() || '?';
-  const ringClass = viewed
-    ? 'ring-2 ring-gray-200'
-    : closeFriend
-      ? 'ring-2 ring-[#FFD700] ring-offset-1'
-      : 'ring-2 ring-[#25D366] ring-offset-1';
+  const count    = Math.max(isOwn ? 1 : statuses.length, 1);
+  const hasNew   = !isOwn && statuses.some(s => !s.viewed);
+
+  const strokeW = hasNew ? 3.5 : 2;
+  const pad     = 3;
+  const r       = (size / 2) - strokeW / 2 - pad;
+  const cx = size / 2;
+  const cy = size / 2;
+  const circum  = 2 * Math.PI * r;
+  const gap     = count > 1 ? Math.min(5, circum * 0.018) : 0;
+  const segLen  = (circum - gap * count) / count;
+  const gradId  = `rg-${(name || 'u').replace(/[^a-z0-9]/gi, '').slice(0, 6) || 'x'}`;
+
+  const inset = strokeW + pad + 2;
+
   return (
-    <button onClick={onClick}
-      className="flex flex-col items-center gap-1 focus:outline-none flex-shrink-0"
-      style={{ minWidth: size + 16 }}>
-      <div className={`relative rounded-full ${!isOwn && !viewed ? ringClass : viewed ? ringClass : ''}`}
-        style={{ width: size, height: size }}>
-        <div className="w-full h-full rounded-full overflow-hidden bg-gradient-to-br from-[#25D366] to-[#075E54]">
+    <button
+      onClick={onClick}
+      className="flex flex-col items-center gap-1.5 focus:outline-none flex-shrink-0 active:scale-95 transition-transform duration-150"
+    >
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg
+          width={size} height={size}
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            transform: 'rotate(-90deg)',
+            filter: hasNew
+              ? `drop-shadow(0 0 6px ${closeFriend ? '#FFD70099' : '#25D36699'})`
+              : 'none',
+          }}
+        >
+          <defs>
+            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%"   stopColor={closeFriend ? '#FFD700' : '#25D366'} />
+              <stop offset="100%" stopColor={closeFriend ? '#FFA500' : '#075E54'} />
+            </linearGradient>
+          </defs>
+          {Array.from({ length: count }, (_, i) => {
+            const segViewed = isOwn ? false : (statuses[i]?.viewed ?? false);
+            return (
+              <circle
+                key={i}
+                cx={cx} cy={cy} r={r}
+                fill="none"
+                stroke={segViewed ? '#d1d5db' : `url(#${gradId})`}
+                strokeWidth={strokeW}
+                strokeDasharray={`${segLen} ${circum}`}
+                strokeDashoffset={-(i * (segLen + gap))}
+                strokeLinecap="round"
+              />
+            );
+          })}
+        </svg>
+
+        {/* Avatar photo */}
+        <div
+          className="absolute rounded-full overflow-hidden bg-gray-200 border-[3px] border-white"
+          style={{ inset }}
+        >
           {src
             ? <img src={src} alt={name} className="w-full h-full object-cover" />
-            : <span className="w-full h-full flex items-center justify-center text-white font-bold text-lg">{initial}</span>}
+            : <span
+                className="w-full h-full flex items-center justify-center text-white font-bold select-none"
+                style={{ fontSize: size * 0.28, background: 'linear-gradient(135deg,#25D366,#075E54)' }}
+              >{initial}</span>}
         </div>
+
+        {/* Add (+) badge */}
         {showPlus && (
-          <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-[#25D366] rounded-full flex items-center justify-center border-2 border-white shadow">
-            <FiPlus size={10} className="text-white" />
+          <div className="absolute bottom-0.5 right-0.5 w-7 h-7 bg-[#25D366] rounded-full flex items-center justify-center border-[2.5px] border-white shadow-md z-10">
+            <FiPlus size={14} className="text-white" />
           </div>
         )}
+
+        {/* Close-friend gold star */}
         {closeFriend && !isOwn && (
-          <div className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-yellow-400 rounded-full flex items-center justify-center border border-white">
-            <FiStar size={8} className="text-white" />
+          <div className="absolute top-0.5 right-0.5 w-5 h-5 bg-yellow-400 rounded-full flex items-center justify-center border border-white z-10 shadow">
+            <FiStar size={9} className="text-white" />
           </div>
         )}
       </div>
-      <span className="text-[10px] text-gray-600 truncate max-w-[56px] text-center leading-tight">
+
+      <span className="text-[11px] font-medium text-gray-700 truncate max-w-[80px] text-center leading-tight">
         {isOwn ? 'My Status' : name?.split(' ')[0] || ''}
       </span>
     </button>
@@ -177,7 +233,9 @@ function ViewerListModal({ statusId, viewerCount, reactionCount, onClose }) {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-sm text-gray-900 truncate">{v.full_name}</p>
-                        {v.viewed_at && <p className="text-xs text-gray-400">{formatDistanceToNow(new Date(v.viewed_at), { addSuffix: true })}</p>}
+                        {v.viewed_at
+          ? <p className="text-xs text-gray-400">{formatDistanceToNow(new Date(v.viewed_at), { addSuffix: true })}</p>
+          : <p className="text-xs text-gray-300">Viewed</p>}
                       </div>
                     </div>
                   ))}
@@ -335,6 +393,7 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
   const current = items[idx];
   const isVideo = !!(current?.media_url && (current?.media_type === 'video' || /\.(mp4|webm|mov)/i.test(current?.media_url || '')));
   const DURATION = isVideo ? null : 6000;
+  const [liveViewCount, setLiveViewCount] = useState(current?.viewers_count || 0);
 
   useEffect(() => {
     api.get('/ads/feed').then(({ data }) => { if (data?.ad) setAdData(data.ad); }).catch(() => {});
@@ -386,9 +445,25 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
 
   useEffect(() => {
     if (current?.id && !isOwn) {
-      api.post(`/status/${current.id}/view`).catch(() => {});
+      api.post(`/status/${current.id}/view`)
+        .then(({ data }) => { if (data?.viewers_count !== undefined) setLiveViewCount(data.viewers_count); })
+        .catch(() => {});
+    }
+    if (isOwn && current?.id) {
+      setLiveViewCount(current.viewers_count || 0);
     }
   }, [current?.id, isOwn]);
+
+  // Live view-count refresh for own statuses (every 10 s while viewer is open)
+  useEffect(() => {
+    if (!isOwn || !current?.id) return;
+    const t = setInterval(() => {
+      api.get(`/status/${current.id}/viewers`).then(({ data }) => {
+        setLiveViewCount(data.count ?? liveViewCount);
+      }).catch(() => {});
+    }, 10000);
+    return () => clearInterval(t);
+  }, [isOwn, current?.id]);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -471,14 +546,21 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
       onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}
     >
       <audio ref={musicRef} loop style={{ display: 'none' }} />
-      {/* Progress bars */}
-      <div className="flex gap-1 px-3 pt-10 pb-2 z-10 relative">
+      {/* Progress bars — segmented, animated */}
+      <div className="flex gap-[3px] px-3 pt-safe pt-11 pb-2 z-10 relative">
         {items.map((_, i) => (
-          <div key={i} className="flex-1 h-[3px] bg-white/30 rounded-full overflow-hidden">
-            <motion.div key={`bar-${idx}-${i}`} className="h-full bg-white rounded-full"
+          <div key={i} className="flex-1 h-[4px] bg-white/25 rounded-full overflow-hidden shadow-sm">
+            <motion.div
+              key={`bar-${idx}-${i}`}
+              className="h-full rounded-full"
+              style={{ background: i < idx ? '#fff' : 'linear-gradient(90deg,#25D366,#fff)' }}
               initial={{ width: i < idx ? '100%' : '0%' }}
-              animate={{ width: i < idx ? '100%' : i === idx ? '100%' : '0%' }}
-              transition={i === idx && !paused && !isVideo ? { duration: (DURATION || 6000) / 1000, ease: 'linear' } : { duration: 0 }}
+              animate={{ width: i <= idx ? '100%' : '0%' }}
+              transition={
+                i === idx && !paused && !isVideo
+                  ? { duration: (DURATION || 6000) / 1000, ease: 'linear' }
+                  : { duration: 0.15 }
+              }
             />
           </div>
         ))}
@@ -621,7 +703,7 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
               <button onClick={() => { setPaused(true); setShowViewers(true); }}
                 className="flex items-center gap-2 text-white/70 hover:text-white transition">
                 <FiEye size={18} />
-                <span className="text-sm">{current?.viewers_count || 0} views</span>
+                <span className="text-sm">{liveViewCount} view{liveViewCount !== 1 ? 's' : ''}</span>
               </button>
               {totalReactions > 0 && (
                 <button onClick={() => { setPaused(true); setShowViewers(true); }}
@@ -1305,22 +1387,16 @@ function ContactStatusRow({ group, onClick, onMute }) {
     <div className="relative">
       <div className="flex items-center gap-3 cursor-pointer hover:bg-gray-50/80 px-4 py-3 transition-colors"
         onClick={onClick}>
-        <div className={`relative w-14 h-14 rounded-full flex-shrink-0 p-0.5 ${unviewed ? group.is_close_friend ? 'bg-gradient-to-br from-yellow-400 to-orange-500' : 'bg-gradient-to-br from-[#25D366] to-[#075E54]' : 'bg-gray-200'}`}>
-          <div className="w-full h-full rounded-full overflow-hidden border-2 border-white bg-gray-100">
-            {group.owner_avatar
-              ? <img src={group.owner_avatar} alt="" className="w-full h-full object-cover" />
-              : hasImage
-                ? <img src={latest.media_url} alt="" className="w-full h-full object-cover" />
-                : <div className="w-full h-full flex items-center justify-center font-bold text-xl text-white"
-                    style={{ background: latest?.background_color?.includes('gradient') ? latest.background_color : latest?.background_color || '#25D366' }}>
-                    {group.owner_name?.[0]?.toUpperCase() || '?'}
-                  </div>}
-          </div>
-          {group.is_close_friend && (
-            <div className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-yellow-400 rounded-full border border-white flex items-center justify-center">
-              <FiStar size={8} className="text-white" />
-            </div>
-          )}
+        {/* SVG-segmented ring in list view — 64 px */}
+        <div className="flex-shrink-0">
+          <AvatarRing
+            src={group.owner_avatar}
+            name={group.owner_name}
+            statuses={group.statuses || []}
+            closeFriend={group.is_close_friend}
+            onClick={onClick}
+            size={64}
+          />
         </div>
 
         <div className="flex-1 min-w-0">
@@ -1436,9 +1512,15 @@ function StatusTab() {
   // Unviewed statuses first in the ring
   const sortedForRings = useMemo(() => {
     const unviewed = statuses.filter(g => g.statuses?.some(s => !s.viewed));
-    const viewed = statuses.filter(g => !g.statuses?.some(s => !s.viewed));
+    const viewed   = statuses.filter(g => !g.statuses?.some(s => !s.viewed));
     return [...unviewed, ...viewed];
   }, [statuses]);
+
+  // Auto-refresh every 60 s — keeps statuses live without manual pull
+  useEffect(() => {
+    const t = setInterval(() => loadStatuses(true), 60000);
+    return () => clearInterval(t);
+  }, []);
 
   return (
     <>
@@ -1446,33 +1528,33 @@ function StatusTab() {
 
         {/* ── Top horizontal story rings ── */}
         <div className="border-b border-gray-100 bg-white">
-          <div className="flex gap-1 px-3 py-3 overflow-x-auto scrollbar-hide">
+          <div className="flex gap-3 px-3 py-4 overflow-x-auto no-scrollbar">
             {/* My status ring */}
             <AvatarRing
               src={user?.avatar_url}
               name={user?.full_name}
-              viewed={myStatuses.length === 0}
+              statuses={myStatuses}
               isOwn
               showPlus
               onClick={openMyStatus}
+              size={82}
             />
             {/* Contacts rings */}
-            {sortedForRings.map((group, gIdx) => {
-              const latest = group.statuses?.[0];
-              const unviewed = group.statuses?.some(s => !s.viewed);
-              return (
-                <AvatarRing
-                  key={group.user_id}
-                  src={group.owner_avatar}
-                  name={group.owner_name}
-                  viewed={!unviewed}
-                  closeFriend={group.is_close_friend}
-                  onClick={() => openStatusGroup({ ...group, user_id: group.user_id }, gIdx, false)}
-                />
-              );
-            })}
+            {sortedForRings.map((group, gIdx) => (
+              <AvatarRing
+                key={group.user_id}
+                src={group.owner_avatar}
+                name={group.owner_name}
+                statuses={group.statuses || []}
+                closeFriend={group.is_close_friend}
+                onClick={() => openStatusGroup({ ...group, user_id: group.user_id }, gIdx, false)}
+                size={82}
+              />
+            ))}
             {statuses.length === 0 && !loading && (
-              <div className="flex items-center text-gray-400 text-xs px-2 italic">No contacts' statuses yet</div>
+              <div className="flex items-center text-gray-400 text-xs px-2 italic self-center">
+                No contacts' statuses yet
+              </div>
             )}
           </div>
         </div>
@@ -1481,23 +1563,16 @@ function StatusTab() {
         <div className="border-b border-gray-100">
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-4 pt-3 pb-1">My Status</p>
           <div className="flex items-center gap-3 cursor-pointer hover:bg-gray-50/80 px-4 py-3 transition-colors" onClick={openMyStatus}>
-            <div className="relative flex-shrink-0">
-              <div className={`w-14 h-14 rounded-full p-0.5 ${myStatuses.length > 0 ? 'bg-gradient-to-br from-[#25D366] to-[#075E54]' : 'bg-gray-200'}`}>
-                <div className="w-full h-full rounded-full overflow-hidden border-2 border-white bg-gray-100">
-                  {user?.avatar_url
-                    ? <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
-                    : mineHasImage
-                      ? <img src={latestMine.media_url} alt="" className="w-full h-full object-cover" />
-                      : <div className="w-full h-full flex items-center justify-center font-bold text-xl text-white"
-                          style={{ background: latestMine?.background_color || '#25D366' }}>
-                          {myStatuses.length === 0 ? (user?.full_name?.[0]?.toUpperCase() || '?') : ''}
-                        </div>}
-                </div>
-              </div>
-              <button onClick={e => { e.stopPropagation(); setShowCompose(true); }}
-                className="absolute -bottom-0.5 -right-0.5 w-6 h-6 bg-[#25D366] rounded-full flex items-center justify-center border-2 border-white shadow-sm hover:bg-[#1fbd5a] transition">
-                <FiPlus size={13} className="text-white" />
-              </button>
+            <div className="flex-shrink-0">
+              <AvatarRing
+                src={user?.avatar_url}
+                name={user?.full_name}
+                statuses={myStatuses}
+                isOwn
+                showPlus
+                onClick={openMyStatus}
+                size={64}
+              />
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-gray-900 text-sm">My Status</p>

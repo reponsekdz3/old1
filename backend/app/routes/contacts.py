@@ -432,6 +432,7 @@ def get_user_status(user_id_or_status_id):
 @jwt_required()
 def view_status(status_id):
     try:
+        from sqlalchemy import text
         viewer_id = get_jwt_identity()
         status = Status.query.get(status_id)
         if not status:
@@ -439,8 +440,21 @@ def view_status(status_id):
         viewer = User.query.get(viewer_id)
         if viewer and viewer not in status.viewers:
             status.viewers.append(viewer)
+            db.session.flush()
+            # Set the viewed_at timestamp directly on the association row
+            try:
+                db.session.execute(
+                    text("UPDATE status_viewers SET viewed_at = :ts "
+                         "WHERE status_id = :sid AND user_id = :uid"),
+                    {'ts': datetime.utcnow(), 'sid': status_id, 'uid': viewer_id}
+                )
+            except Exception:
+                pass
             db.session.commit()
-        return jsonify({'message': 'Viewed'}), 200
+        else:
+            # Already viewed — still return ok
+            pass
+        return jsonify({'message': 'Viewed', 'viewers_count': len(status.viewers)}), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
@@ -465,22 +479,36 @@ def delete_status(status_id):
 @status_bp.route('/<status_id>/viewers', methods=['GET'])
 @jwt_required()
 def get_status_viewers(status_id):
-    """Return the list of users who have viewed a status (owner only)."""
+    """Return the list of users who have viewed a status (owner only), with real timestamps."""
     try:
+        from sqlalchemy import text
         user_id = get_jwt_identity()
         status = Status.query.get(status_id)
         if not status:
             return jsonify({'error': 'Status not found'}), 404
         if status.user_id != user_id:
             return jsonify({'error': 'Forbidden'}), 403
-        viewers = []
-        for v in status.viewers:
-            viewers.append({
-                'id': v.id,
-                'full_name': v.full_name,
-                'avatar_url': v.avatar_url,
-                'viewed_at': None,
-            })
+
+        # Fetch viewed_at timestamps directly from the association table
+        rows = db.session.execute(
+            text("SELECT sv.user_id, sv.viewed_at, u.full_name, u.avatar_url "
+                 "FROM status_viewers sv "
+                 "JOIN users u ON u.id = sv.user_id "
+                 "WHERE sv.status_id = :sid "
+                 "ORDER BY CASE WHEN sv.viewed_at IS NULL THEN 1 ELSE 0 END, "
+                 "sv.viewed_at DESC"),
+            {'sid': status_id}
+        ).fetchall()
+
+        viewers = [
+            {
+                'id': r.user_id,
+                'full_name': r.full_name,
+                'avatar_url': r.avatar_url,
+                'viewed_at': r.viewed_at.isoformat() if r.viewed_at else None,
+            }
+            for r in rows
+        ]
         return jsonify({'viewers': viewers, 'count': len(viewers)}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
