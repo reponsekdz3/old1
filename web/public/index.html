@@ -2,13 +2,46 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
   <meta name="theme-color" content="#075E54" />
   <meta name="description" content="VipChat — Secure, fast, and private messaging. Voice calls, video calls, group chats, and more." />
+
+  <!-- iOS PWA -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="VipChat" />
+  <link rel="apple-touch-icon" href="/logo192.png" />
+  <link rel="apple-touch-startup-image" href="/logo192.png" />
+
+  <!-- Android PWA -->
+  <meta name="mobile-web-app-capable" content="yes" />
+
+  <!-- Open Graph -->
   <meta property="og:title" content="VipChat" />
   <meta property="og:description" content="VipChat — Your world, connected. Fast, secure, private messaging." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="/logo192.png" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="VipChat" />
+
   <title>VipChat</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="manifest" href="/manifest.json" />
+
+  <style>
+    /* Prevent flash of unstyled content and iOS rubber-band scroll */
+    html, body { overscroll-behavior: none; }
+    body { -webkit-overflow-scrolling: touch; }
+    /* iOS notch safe area utility */
+    :root {
+      --sat: env(safe-area-inset-top, 0px);
+      --sab: env(safe-area-inset-bottom, 0px);
+      --sal: env(safe-area-inset-left, 0px);
+      --sar: env(safe-area-inset-right, 0px);
+    }
+  </style>
 </head>
 <body>
   <div id="root"></div>

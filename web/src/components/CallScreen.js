@@ -20,6 +20,11 @@ function formatDuration(seconds) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+// Detect mobile/tablet — getDisplayMedia is desktop-only
+const isMobileDevice = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(
+  typeof navigator !== 'undefined' ? navigator.userAgent : ''
+);
+
 function CallScreen({
   onEndCall, onToggleMute, onToggleCamera, onFlipCamera,
 }) {
@@ -466,8 +471,8 @@ function CallScreen({
                 <ControlButton icon={FiRefreshCw} label="Flip" onClick={onFlipCamera} size="sm" />
               )}
 
-              {/* Screen Share button with options */}
-              {callState === 'active' && !isScreenSharing && (
+              {/* Screen Share button with options — desktop only */}
+              {!isMobileDevice && callState === 'active' && !isScreenSharing && (
                 <div className="relative">
                   <ControlButton
                     icon={FiMonitor}
@@ -546,10 +551,10 @@ function CallScreen({
               )}
             </div>
 
-            {/* Screen share mobile hint */}
+            {/* Screen share hint */}
             {!isScreenSharing && callState === 'active' && (
               <p className="text-white/30 text-xs text-center mt-3">
-                Tap 🖥️ to share your screen with the other person
+                {isMobileDevice ? '📱 Screen sharing is available on desktop' : 'Tap 🖥️ to share your screen'}
               </p>
             )}
           </motion.div>

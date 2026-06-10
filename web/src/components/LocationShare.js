@@ -103,11 +103,22 @@ export function LocationMapBubble({ message, isMine }) {
       )}
       <div className={`px-3 py-2 flex items-center justify-between ${isMine ? 'bg-[#075e54]' : 'bg-[#1a1a1a]'}`}>
         <span className="text-white/60 text-[11px] truncate flex-1">{isLive ? 'Live location' : 'Pinned location'}</span>
-        <a href={`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}&zoom=15`}
-          target="_blank" rel="noopener noreferrer"
-          className="text-[11px] text-[#25D366] font-bold hover:underline flex-shrink-0 ml-2">
-          Open map
-        </a>
+        <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+          {/* Native maps deep-link: Apple Maps on iOS, Google Maps elsewhere */}
+          <a href={/iPhone|iPad|iPod/i.test(navigator.userAgent)
+              ? `maps://maps.apple.com/?q=${lat},${lng}`
+              : `https://maps.google.com/?q=${lat},${lng}`}
+            target="_blank" rel="noopener noreferrer"
+            className="text-[11px] text-[#25D366] font-bold hover:underline">
+            {/iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'Apple Maps' : 'Google Maps'}
+          </a>
+          <span className="text-white/20 text-[10px]">·</span>
+          <a href={`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}&zoom=15`}
+            target="_blank" rel="noopener noreferrer"
+            className="text-[11px] text-white/40 hover:text-white/70 font-medium hover:underline">
+            OSM
+          </a>
+        </div>
       </div>
     </div>
   );

@@ -71,6 +71,7 @@ export default function CameraCapture({ onCapture, onClose }) {
   const [previewType, setPreviewType]   = useState('image');
   const [filter, setFilter]             = useState('normal');
   const [flash, setFlash]               = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
   const [grid, setGrid]                 = useState(false);
   const [timerVal, setTimerVal]         = useState(0);
   const [timerCount, setTimerCount]     = useState(null);
@@ -81,6 +82,7 @@ export default function CameraCapture({ onCapture, onClose }) {
   const [aspectRatio, setAspectRatio]   = useState('9:16');
   const [cameraReady, setCameraReady]   = useState(false);
   const [permDenied, setPermDenied]     = useState(false);
+  const [noCamera, setNoCamera]         = useState(false);
   const [flipping, setFlipping]         = useState(false);
   const [captureFlash, setCaptureFlash] = useState(false);
   const [qrResult, setQrResult]         = useState(null);
@@ -89,16 +91,40 @@ export default function CameraCapture({ onCapture, onClose }) {
 
   const startCamera = useCallback(async (facing, withAudio = false) => {
     if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+
+    // Camera requires HTTPS (except localhost)
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setNoCamera(true);
+      return;
+    }
+
+    const tryGetCamera = async (constraints) => {
+      return navigator.mediaDevices.getUserMedia(constraints);
+    };
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: withAudio,
-      });
+      let stream;
+      try {
+        stream = await tryGetCamera({
+          video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: withAudio,
+        });
+      } catch (firstErr) {
+        if (firstErr.name === 'OverconstrainedError' || firstErr.name === 'ConstraintNotSatisfiedError') {
+          // Retry without resolution constraints (older iOS devices)
+          stream = await tryGetCamera({ video: { facingMode: facing }, audio: withAudio });
+        } else {
+          throw firstErr;
+        }
+      }
+
       streamRef.current = stream;
       if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
       const vt = stream.getVideoTracks()[0];
       const caps = vt?.getCapabilities?.();
       if (caps?.zoom) setMaxZoom(Math.min(caps.zoom.max, 10));
+      // Detect torch support (Android Chrome; not available on iOS Safari)
+      setTorchSupported(!!(caps?.torch));
       setCameraReady(true);
     } catch (err) {
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') setPermDenied(true);
@@ -116,10 +142,10 @@ export default function CameraCapture({ onCapture, onClose }) {
   }, []);
 
   useEffect(() => {
-    if (!streamRef.current) return;
+    if (!streamRef.current || !torchSupported) return;
     const vt = streamRef.current.getVideoTracks()[0];
     try { vt?.applyConstraints({ advanced: [{ torch: flash }] }); } catch {}
-  }, [flash]);
+  }, [flash, torchSupported]);
 
   useEffect(() => {
     if (!streamRef.current) return;
@@ -240,12 +266,19 @@ export default function CameraCapture({ onCapture, onClose }) {
       clearInterval(recIntRef.current);
     } else {
       chunksRef.current = [];
-      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-        ? 'video/webm;codecs=vp9,opus' : 'video/webm';
+      // iOS Safari supports video/mp4; Android Chrome supports webm/vp9
+      const preferredTypes = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm',
+        'video/mp4;codecs=avc1,mp4a.40.2',
+        'video/mp4',
+      ];
+      const mimeType = preferredTypes.find(t => MediaRecorder.isTypeSupported(t)) || '';
       const rec = new MediaRecorder(streamRef.current, { mimeType });
       rec.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       rec.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || 'video/webm' });
         setPreview(URL.createObjectURL(blob));
         setPreviewBlob(blob);
         setPreviewType('video');
@@ -274,11 +307,29 @@ export default function CameraCapture({ onCapture, onClose }) {
   const expBright = exposure !== 0 ? ` brightness(${1 + exposure * 0.25})` : '';
   const videoFilter = filterObj.css !== 'none' ? `${filterObj.css}${expBright}` : expBright || 'none';
 
+  if (noCamera) return (
+    <div className="fixed inset-0 bg-black z-[999] flex flex-col items-center justify-center text-white text-center p-10">
+      <FiAlertCircle size={56} className="mb-4 text-yellow-400" />
+      <h2 className="text-2xl font-black mb-2">Camera Unavailable</h2>
+      <p className="text-gray-400 mb-4 text-sm leading-relaxed">
+        Camera access requires a secure (HTTPS) connection.<br />
+        Try opening the app from its published URL.
+      </p>
+      <button onClick={onClose} className="px-8 py-3 bg-white text-black font-bold rounded-2xl text-sm">Close</button>
+    </div>
+  );
+
   if (permDenied) return (
     <div className="fixed inset-0 bg-black z-[999] flex flex-col items-center justify-center text-white text-center p-10">
       <FiAlertCircle size={56} className="mb-4 text-red-400" />
       <h2 className="text-2xl font-black mb-2">Camera Access Denied</h2>
-      <p className="text-gray-400 mb-6 text-sm leading-relaxed">Please allow camera permission in your browser settings, then reload.</p>
+      <p className="text-gray-400 mb-3 text-sm leading-relaxed">
+        Please allow camera permission in your browser settings, then reload.
+      </p>
+      <p className="text-gray-500 mb-6 text-xs">
+        iOS: Settings → Safari → Camera → Allow<br />
+        Android: Settings → Apps → Browser → Permissions → Camera
+      </p>
       <button onClick={onClose} className="px-8 py-3 bg-white text-black font-bold rounded-2xl text-sm">Close</button>
     </div>
   );
@@ -302,9 +353,10 @@ export default function CameraCapture({ onCapture, onClose }) {
       </div>
       <div className="px-5 pb-10 pt-4 flex gap-3">
         <button onClick={() => {
+          const ext = previewBlob?.type?.includes('mp4') ? 'mp4' : previewType === 'video' ? 'webm' : 'jpg';
           const a = document.createElement('a');
           a.href = preview;
-          a.download = `vipchat_${Date.now()}.${previewType === 'video' ? 'webm' : 'jpg'}`;
+          a.download = `vipchat_${Date.now()}.${ext}`;
           a.click();
         }} className="flex-1 border border-white/30 text-white py-3.5 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 hover:bg-white/10 transition">
           <FiDownload size={16} /> Save to Device
@@ -338,7 +390,7 @@ export default function CameraCapture({ onCapture, onClose }) {
               : <FiClock size={17} className="text-white" />}
           </button>
 
-          {facingMode === 'environment' && (
+          {torchSupported && facingMode === 'environment' && (
             <button onClick={() => setFlash(f => !f)}
               className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${flash ? 'bg-yellow-400 shadow-lg shadow-yellow-400/50' : 'bg-white/15 backdrop-blur-sm'}`}>
               <FiZap size={17} className={flash ? 'text-black' : 'text-white'} fill={flash ? 'currentColor' : 'none'} />
@@ -570,7 +622,8 @@ export default function CameraCapture({ onCapture, onClose }) {
       </div>
 
       {/* ── Bottom controls ──────────────────────────────────────────── */}
-      <div className="bg-black pb-12 pt-4 px-8 flex items-center justify-between">
+      <div className="bg-black pt-4 px-8 flex items-center justify-between"
+        style={{ paddingBottom: 'max(3rem, env(safe-area-inset-bottom, 0px) + 1rem)' }}>
         {/* Gallery placeholder */}
         <button className="w-14 h-14 rounded-2xl bg-white/10 border-2 border-white/10 flex items-center justify-center overflow-hidden hover:bg-white/20 transition">
           <FiImage size={22} className="text-white/50" />
