@@ -73,7 +73,7 @@ export function GiftOverlayManager({ events }) {
   );
 }
 
-export default function GiftSystem({ recipientId, recipientName, context = 'chat', contextId, onClose, socket }) {
+export default function GiftSystem({ recipientId, recipientName, context = 'chat', contextId, onClose, onSent, socket }) {
   const navigate = useNavigate();
   const [gifts, setGifts] = useState([]);
   const [balance, setBalance] = useState(0);
@@ -107,8 +107,10 @@ export default function GiftSystem({ recipientId, recipientName, context = 'chat
         is_anonymous: isAnon,
       });
       setBalance(r.data.new_balance);
-      setActiveGift({ ...selected, quantity, coins_deducted: r.data.transaction.coins_deducted });
+      const giftData = { ...selected, quantity, coins_deducted: r.data.transaction.coins_deducted };
+      setActiveGift(giftData);
       toast.success(`${selected.emoji} Gift sent!`);
+      onSent?.(giftData);
       setSelected(null);
       setQuantity(1);
       setMessage('');

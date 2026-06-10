@@ -38,6 +38,12 @@ def _run_migrations():
         except Exception:
             pass  # column already exists or table doesn't exist yet
 
+    # escrow_milestones table (created by SQLAlchemy on first start)
+    em = _col_names('escrow_milestones')
+    if 'dispute_reason'  not in em: _add('escrow_milestones', 'dispute_reason',  'VARCHAR(500)')
+    if 'evidence_urls'   not in em: _add('escrow_milestones', 'evidence_urls',   'VARCHAR(1000)')
+    if 'completed_at'    not in em: _add('escrow_milestones', 'completed_at',    'DATETIME')
+
     # messages
     mc = _col_names('messages')
     if 'view_once'           not in mc: _add('messages', 'view_once',           'BOOLEAN DEFAULT 0')

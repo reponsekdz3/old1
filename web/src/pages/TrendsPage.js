@@ -10,12 +10,16 @@ import {
   FiCornerDownRight, FiUsers, FiEye, FiStar,
   FiFilter, FiGlobe, FiHome, FiPause,
   FiChevronRight, FiRadio,
+  FiGift, FiDownload, FiSettings, FiBell, FiSliders,
+  FiClock, FiTrendingUp,
+  FiPhone, FiUserCheck, FiShield,
 } from 'react-icons/fi';
 import { MdOutlineLocalFireDepartment, MdOutlineExplore } from 'react-icons/md';
 import api from '../services/api';
 import { useAuthStore } from '../services/store';
 import toast from 'react-hot-toast';
 import LiveStreamViewer, { GoLiveModal } from '../components/LiveStreamViewer';
+import GiftSystem from '../components/GiftSystem';
 
 // ── Category metadata ──────────────────────────────────────────────────────────
 const CATEGORY_META = {
@@ -404,7 +408,6 @@ function AdOverlay({ ad, onSkip }) {
 
 // ── Video Card ─────────────────────────────────────────────────────────────────
 function VideoCard({ video, isActive, isLoggedIn, userId, onCreatorClick }) {
-  const navigate = useNavigate();
   const videoRef = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(true);
@@ -431,6 +434,20 @@ function VideoCard({ video, isActive, isLoggedIn, userId, onCreatorClick }) {
   const [lastTap, setLastTap] = useState(0);
   const [showControls, setShowControls] = useState(false);
   const controlsTimer = useRef(null);
+  const [showGift, setShowGift] = useState(false);
+  const [giftAnim, setGiftAnim] = useState(null);
+
+  const handleDownload = async () => {
+    if (!video.video_url) { toast.error('No downloadable video'); return; }
+    try {
+      const a = document.createElement('a');
+      a.href = video.video_url;
+      a.download = `${video.title || 'video'}.mp4`;
+      a.target = '_blank';
+      a.click();
+      toast.success('Download started!');
+    } catch { toast.error('Download failed'); }
+  };
 
   useEffect(() => {
     if (isActive && videoRef.current) {
@@ -626,6 +643,8 @@ function VideoCard({ video, isActive, isLoggedIn, userId, onCreatorClick }) {
           { onClick: () => { setShowComments(v => !v); if (!showComments) loadComments(); }, icon: <FiMessageCircle size={22} className="text-white" />, count: fmtNum(commentsCount), color: showComments ? 'bg-[#25D366]/20' : 'bg-black/50' },
           { onClick: handleSave, icon: <FiBookmark size={22} className={saved ? 'fill-[#25D366] text-[#25D366]' : 'text-white'} />, count: fmtNum(savesCount), color: saved ? 'bg-[#25D366]/20' : 'bg-black/50' },
           { onClick: handleShare, icon: <FiShare2 size={22} className="text-white" />, count: fmtNum(video.shares || 0), color: 'bg-black/50' },
+          { onClick: () => { if (!isLoggedIn) { toast.error('Log in to send gifts'); return; } setShowGift(true); }, icon: <FiGift size={22} className="text-yellow-400" />, count: 'Gift', color: 'bg-yellow-500/20' },
+          { onClick: handleDownload, icon: <FiDownload size={22} className="text-white/70" />, count: '', color: 'bg-black/50' },
         ].map(({ onClick, icon, count, color }, i) => (
           <button key={i} onClick={onClick} className="flex flex-col items-center gap-1">
             <motion.div whileTap={{ scale: 0.8 }} className={`w-12 h-12 rounded-full ${color} hover:brightness-125 flex items-center justify-center backdrop-blur-sm border border-white/10 transition-all`}>
@@ -681,6 +700,46 @@ function VideoCard({ video, isActive, isLoggedIn, userId, onCreatorClick }) {
               </div>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Gift animation overlay */}
+      <AnimatePresence>
+        {giftAnim && (
+          <div className="pointer-events-none absolute inset-0 z-50">
+            <div className="absolute inset-0 flex items-end justify-center pb-24">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <motion.div key={i} className="absolute text-4xl select-none"
+                  style={{ left: `${25 + Math.random() * 50}%`, bottom: `${15 + Math.random() * 25}%` }}
+                  animate={{ y: [-10, -200 - Math.random() * 80], opacity: [1, 0], scale: [1.2, 0.5], x: [0, (Math.random() - 0.5) * 60] }}
+                  transition={{ duration: 2.5, delay: i * 0.1, ease: 'easeOut' }}>
+                  {giftAnim.emoji || '🎁'}
+                </motion.div>
+              ))}
+              <motion.div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-black/90 text-white text-sm font-bold px-5 py-2.5 rounded-full whitespace-nowrap border border-yellow-500/40 shadow-xl"
+                initial={{ opacity: 0, scale: 0.8, y: 20 }}
+                animate={{ opacity: [0, 1, 1, 0], scale: [0.8, 1.05, 1, 0.9], y: [20, 0, 0, -20] }}
+                transition={{ duration: 2.5, times: [0, 0.1, 0.75, 1] }}>
+                <span className="text-yellow-400 mr-1">🎁</span> Gift sent to {video.uploader_name}!
+              </motion.div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Gift system modal */}
+      <AnimatePresence>
+        {showGift && (
+          <div className="absolute inset-0 z-50">
+            <GiftSystem
+              recipientId={video.uploader_id}
+              recipientName={video.uploader_name}
+              context="video"
+              contextId={video.id}
+              onClose={() => setShowGift(false)}
+              onSent={(gift) => { setGiftAnim({ ...gift, id: Date.now() }); setTimeout(() => setGiftAnim(null), 3200); }}
+            />
+          </div>
         )}
       </AnimatePresence>
 
@@ -762,6 +821,196 @@ function VideoCard({ video, isActive, isLoggedIn, userId, onCreatorClick }) {
   );
 }
 
+// ── Trends Settings Modal ──────────────────────────────────────────────────────
+function TrendsSettingsModal({ onClose, user }) {
+  const [prefs, setPrefs] = useState({
+    autoplay: true,
+    muteByDefault: true,
+    showAds: true,
+    hdQuality: false,
+    loopVideos: true,
+    notifyLive: true,
+    notifyUploads: false,
+    notifyGifts: true,
+    dataSaver: false,
+    phoneSync: false,
+  });
+  const [phoneSyncing, setPhoneSyncing] = useState(false);
+  const [phoneSyncDone, setPhoneSyncDone] = useState(false);
+  const [phoneSyncCount, setPhoneSyncCount] = useState(0);
+  const [tab, setTab] = useState('playback');
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('trendsPrefs') || '{}');
+      setPrefs(p => ({ ...p, ...saved }));
+    } catch {}
+  }, []);
+
+  const toggle = (key) => {
+    setPrefs(p => {
+      const next = { ...p, [key]: !p[key] };
+      localStorage.setItem('trendsPrefs', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const handlePhoneSync = async () => {
+    if (!user) { toast.error('Log in to sync contacts'); return; }
+    setPhoneSyncing(true);
+    try {
+      const { data } = await api.post('/contacts/sync-phone', { source: 'trends' });
+      setPhoneSyncCount(data.matched || 0);
+      setPhoneSyncDone(true);
+      toggle('phoneSync');
+      toast.success(`Found ${data.matched || 0} creators from your contacts!`);
+    } catch {
+      toast.error('Phone sync unavailable — check permissions');
+    } finally { setPhoneSyncing(false); }
+  };
+
+  const ToggleRow = ({ label, subtext, value, onToggle, icon: Icon, iconColor }) => (
+    <div className="flex items-center gap-3 py-3 border-b border-white/5 last:border-0">
+      {Icon && (
+        <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0`}
+          style={{ background: `${iconColor}18` }}>
+          <Icon size={15} style={{ color: iconColor }} />
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-white/90">{label}</p>
+        {subtext && <p className="text-[11px] text-white/35 mt-0.5 leading-snug">{subtext}</p>}
+      </div>
+      <button onClick={onToggle}
+        className={`flex-shrink-0 w-11 h-6 rounded-full border transition-all duration-200 ${value ? 'bg-[#25D366] border-[#25D366]' : 'bg-white/10 border-white/15'}`}>
+        <motion.div animate={{ x: value ? 20 : 2 }} transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+          className="w-4 h-4 bg-white rounded-full shadow-md mt-0.5" />
+      </button>
+    </div>
+  );
+
+  const TABS = [
+    { id: 'playback', label: 'Playback', icon: FiPlay },
+    { id: 'notifications', label: 'Alerts', icon: FiBell },
+    { id: 'sync', label: 'Sync', icon: FiPhone },
+    { id: 'privacy', label: 'Privacy', icon: FiShield },
+  ];
+
+  return (
+    <motion.div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <motion.div className="relative w-full max-w-md bg-[#141414] rounded-3xl border border-white/10 overflow-hidden shadow-2xl"
+        initial={{ y: 60, scale: 0.95 }} animate={{ y: 0, scale: 1 }} exit={{ y: 60, scale: 0.95 }}
+        transition={{ type: 'spring', damping: 30, stiffness: 280 }}>
+        <div className="px-5 pt-5 pb-3 flex items-center justify-between border-b border-white/8">
+          <div>
+            <p className="font-black text-lg">Trends Settings</p>
+            <p className="text-white/35 text-xs mt-0.5">Personalize your experience</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/8 hover:bg-white/15 flex items-center justify-center transition">
+            <FiX size={15} />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-white/8 px-4 pt-3">
+          {TABS.map(({ id, label, icon: Icon }) => (
+            <button key={id} onClick={() => setTab(id)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold mr-1 rounded-t-lg transition ${tab === id ? 'text-[#25D366] border-b-2 border-[#25D366]' : 'text-white/40 hover:text-white/70'}`}>
+              <Icon size={12} />{label}
+            </button>
+          ))}
+        </div>
+
+        <div className="px-5 py-2 max-h-[50vh] overflow-y-auto no-scrollbar">
+          {tab === 'playback' && (
+            <>
+              <ToggleRow label="Autoplay videos" subtext="Start playing as you scroll" value={prefs.autoplay} onToggle={() => toggle('autoplay')} icon={FiPlay} iconColor="#25D366" />
+              <ToggleRow label="Mute by default" subtext="Videos start silently" value={prefs.muteByDefault} onToggle={() => toggle('muteByDefault')} icon={FiVolumeX} iconColor="#60a5fa" />
+              <ToggleRow label="Loop videos" subtext="Replay when finished" value={prefs.loopVideos} onToggle={() => toggle('loopVideos')} icon={FiTrendingUp} iconColor="#a78bfa" />
+              <ToggleRow label="HD quality" subtext="Uses more data" value={prefs.hdQuality} onToggle={() => toggle('hdQuality')} icon={FiSliders} iconColor="#f59e0b" />
+              <ToggleRow label="Data saver" subtext="Lower quality to save data" value={prefs.dataSaver} onToggle={() => toggle('dataSaver')} icon={FiClock} iconColor="#f97316" />
+              <ToggleRow label="Show ads" subtext="Support creators with ads" value={prefs.showAds} onToggle={() => toggle('showAds')} icon={FiZap} iconColor="#ec4899" />
+            </>
+          )}
+          {tab === 'notifications' && (
+            <>
+              <ToggleRow label="Live stream alerts" subtext="Get notified when creators go live" value={prefs.notifyLive} onToggle={() => toggle('notifyLive')} icon={FiRadio} iconColor="#ef4444" />
+              <ToggleRow label="New uploads" subtext="From creators you follow" value={prefs.notifyUploads} onToggle={() => toggle('notifyUploads')} icon={FiUpload} iconColor="#25D366" />
+              <ToggleRow label="Gift notifications" subtext="When someone gifts your video" value={prefs.notifyGifts} onToggle={() => toggle('notifyGifts')} icon={FiGift} iconColor="#f59e0b" />
+            </>
+          )}
+          {tab === 'sync' && (
+            <div className="py-2">
+              <div className="bg-gradient-to-br from-[#25D366]/10 to-teal-600/5 border border-[#25D366]/20 rounded-2xl p-4 mb-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-2xl bg-[#25D366]/20 flex items-center justify-center">
+                    <FiPhone size={18} className="text-[#25D366]" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm">Phone Contact Sync</p>
+                    <p className="text-white/40 text-xs">Find creators from your contacts</p>
+                  </div>
+                </div>
+                <p className="text-white/50 text-xs mb-3 leading-relaxed">
+                  Sync your phone contacts to discover which of your friends are creators on VipTrends. Your contacts are hashed and never stored.
+                </p>
+                {phoneSyncDone ? (
+                  <div className="flex items-center gap-2 bg-[#25D366]/15 border border-[#25D366]/30 rounded-xl px-3 py-2.5">
+                    <FiUserCheck size={14} className="text-[#25D366]" />
+                    <span className="text-sm font-semibold text-[#25D366]">Found {phoneSyncCount} creators from your contacts!</span>
+                  </div>
+                ) : (
+                  <button onClick={handlePhoneSync} disabled={phoneSyncing}
+                    className="w-full py-2.5 bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold rounded-xl text-sm transition flex items-center justify-center gap-2 disabled:opacity-60">
+                    {phoneSyncing ? <><motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full" /> Syncing…</> : <><FiPhone size={14} /> Sync Contacts</>}
+                  </button>
+                )}
+              </div>
+              <ToggleRow label="Show from contacts" subtext="Prioritize creators you know" value={prefs.phoneSync} onToggle={() => toggle('phoneSync')} icon={FiUsers} iconColor="#25D366" />
+            </div>
+          )}
+          {tab === 'privacy' && (
+            <>
+              <div className="bg-white/4 rounded-2xl p-4 mb-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <FiShield size={14} className="text-[#25D366]" />
+                  <p className="text-sm font-bold">Your data is protected</p>
+                </div>
+                <p className="text-white/40 text-xs leading-relaxed">VipTrends uses end-to-end encryption for all gift transactions. Your viewing history and preferences are stored locally and never shared without consent.</p>
+              </div>
+              <div className="space-y-2">
+                {[
+                  { label: 'Watch history', desc: 'Videos you\'ve viewed', icon: FiEye, color: '#60a5fa' },
+                  { label: 'Search history', desc: 'Your search terms', icon: FiSearch, color: '#a78bfa' },
+                  { label: 'Saved videos', desc: 'Your bookmarked content', icon: FiBookmark, color: '#25D366' },
+                ].map(({ label, desc, icon: Icon, color }) => (
+                  <button key={label} className="w-full flex items-center gap-3 px-3 py-2.5 bg-white/4 hover:bg-red-500/10 border border-white/8 hover:border-red-500/30 rounded-xl transition group">
+                    <Icon size={14} style={{ color }} />
+                    <div className="flex-1 text-left">
+                      <p className="text-xs font-semibold text-white/80">{label}</p>
+                      <p className="text-[10px] text-white/35">{desc}</p>
+                    </div>
+                    <span className="text-[10px] text-red-400/60 group-hover:text-red-400 font-bold transition">Clear</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="px-5 pb-5 pt-3 border-t border-white/8">
+          <button onClick={onClose} className="w-full py-2.5 bg-white/8 hover:bg-white/12 text-white font-bold rounded-xl text-sm transition">
+            Done
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function TrendsPage() {
   const navigate = useNavigate();
@@ -804,6 +1053,7 @@ export default function TrendsPage() {
 
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const containerRef = useRef(null);
   const observerRef = useRef(null);
@@ -1003,6 +1253,11 @@ export default function TrendsPage() {
 
   return (
     <div className="flex h-screen bg-[#080808] text-white overflow-hidden">
+
+      {/* Settings Modal */}
+      <AnimatePresence>
+        {showSettings && <TrendsSettingsModal onClose={() => setShowSettings(false)} user={user} />}
+      </AnimatePresence>
 
       {/* Upload Modal */}
       <AnimatePresence>
@@ -1394,6 +1649,13 @@ export default function TrendsPage() {
               <FiUpload size={12} /> Upload
             </button>
           )}
+
+          {/* Settings button */}
+          <button onClick={() => setShowSettings(true)}
+            className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center border border-white/8 transition flex-shrink-0"
+            title="Settings">
+            <FiSettings size={14} className="text-white/60" />
+          </button>
 
           {/* Auth button */}
           {!user ? (

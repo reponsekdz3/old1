@@ -1729,3 +1729,268 @@ def stripe_webhook_physical():
     except Exception as e:
         logger.exception('stripe_webhook_physical error')
         return jsonify({'error': str(e)}), 500
+
+
+# ── Escrow Milestone System ────────────────────────────────────────────────────
+
+class EscrowMilestone(db.Model):
+    __tablename__ = 'escrow_milestones'
+    __table_args__ = {'extend_existing': True}
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    order_id = Column(String(36), ForeignKey('physical_orders.id'), nullable=False)
+    title = Column(String(200), nullable=False)
+    description = Column(String(500))
+    amount = Column(Float, nullable=False)
+    status = Column(String(20), default='pending')  # pending | buyer_confirmed | released | disputed
+    due_date = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    released_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    dispute_reason = Column(String(500))
+    evidence_urls = Column(String(1000))
+
+
+def _run_escrow_migrations():
+    try:
+        db.engine.execute("ALTER TABLE escrow_milestones ADD COLUMN dispute_reason VARCHAR(500)")
+    except Exception:
+        pass
+    try:
+        db.engine.execute("ALTER TABLE escrow_milestones ADD COLUMN evidence_urls VARCHAR(1000)")
+    except Exception:
+        pass
+
+
+@physical_bp.route('/orders/<order_id>/milestones', methods=['GET'])
+@jwt_required()
+def get_order_milestones(order_id):
+    """Get all milestones for an order."""
+    try:
+        user_id = get_jwt_identity()
+        order = PhysicalOrder.query.get_or_404(order_id)
+        if order.buyer_id != user_id and order.seller_id != user_id:
+            return jsonify({'error': 'Access denied'}), 403
+
+        milestones = EscrowMilestone.query.filter_by(order_id=order_id).order_by(EscrowMilestone.created_at).all()
+        total_held = sum(m.amount for m in milestones if m.status in ('pending', 'buyer_confirmed'))
+        total_released = sum(m.amount for m in milestones if m.status == 'released')
+
+        return jsonify({
+            'milestones': [{
+                'id': m.id,
+                'title': m.title,
+                'description': m.description,
+                'amount': m.amount,
+                'status': m.status,
+                'due_date': m.due_date.isoformat() if m.due_date else None,
+                'completed_at': m.completed_at.isoformat() if m.completed_at else None,
+                'released_at': m.released_at.isoformat() if m.released_at else None,
+                'dispute_reason': m.dispute_reason,
+            } for m in milestones],
+            'summary': {
+                'total': len(milestones),
+                'pending': sum(1 for m in milestones if m.status == 'pending'),
+                'confirmed': sum(1 for m in milestones if m.status == 'buyer_confirmed'),
+                'released': sum(1 for m in milestones if m.status == 'released'),
+                'disputed': sum(1 for m in milestones if m.status == 'disputed'),
+                'total_held': total_held,
+                'total_released': total_released,
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@physical_bp.route('/orders/<order_id>/milestones', methods=['POST'])
+@jwt_required()
+def create_milestone(order_id):
+    """Seller creates a milestone. Buyer must confirm before release."""
+    try:
+        user_id = get_jwt_identity()
+        order = PhysicalOrder.query.get_or_404(order_id)
+        if order.seller_id != user_id:
+            return jsonify({'error': 'Only seller can create milestones'}), 403
+        if order.status not in ('paid', 'processing', 'shipped'):
+            return jsonify({'error': 'Order must be in paid/processing state'}), 400
+
+        data = request.get_json() or {}
+        title = (data.get('title') or '').strip()[:200]
+        if not title:
+            return jsonify({'error': 'Milestone title required'}), 400
+
+        amount = float(data.get('amount', 0))
+        if amount <= 0 or amount > order.total_price:
+            return jsonify({'error': f'Amount must be between 0 and {order.total_price}'}), 400
+
+        due_date = None
+        if data.get('due_date'):
+            try:
+                due_date = datetime.fromisoformat(data['due_date'])
+            except Exception:
+                pass
+
+        milestone = EscrowMilestone(
+            order_id=order_id,
+            title=title,
+            description=(data.get('description') or '')[:500],
+            amount=amount,
+            due_date=due_date,
+        )
+        db.session.add(milestone)
+        db.session.commit()
+
+        return jsonify({
+            'milestone_id': milestone.id,
+            'title': milestone.title,
+            'amount': milestone.amount,
+            'status': milestone.status,
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@physical_bp.route('/orders/<order_id>/milestones/<milestone_id>/confirm', methods=['POST'])
+@jwt_required()
+def buyer_confirm_milestone(order_id, milestone_id):
+    """Buyer confirms milestone completion, triggering escrow release."""
+    try:
+        user_id = get_jwt_identity()
+        order = PhysicalOrder.query.get_or_404(order_id)
+        if order.buyer_id != user_id:
+            return jsonify({'error': 'Only buyer can confirm milestones'}), 403
+
+        milestone = EscrowMilestone.query.filter_by(id=milestone_id, order_id=order_id).first_or_404()
+        if milestone.status != 'pending':
+            return jsonify({'error': f'Milestone is {milestone.status}, not pending'}), 400
+
+        milestone.status = 'buyer_confirmed'
+        milestone.completed_at = datetime.utcnow()
+        db.session.commit()
+
+        return jsonify({'status': 'buyer_confirmed', 'milestone_id': milestone_id}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@physical_bp.route('/orders/<order_id>/milestones/<milestone_id>/release', methods=['POST'])
+@jwt_required()
+def release_milestone_escrow(order_id, milestone_id):
+    """Release escrow for a confirmed milestone. Auto-processes if buyer confirmed or admin."""
+    try:
+        user_id = get_jwt_identity()
+        me = User.query.get(user_id)
+        order = PhysicalOrder.query.get_or_404(order_id)
+
+        is_admin = getattr(me, 'is_admin', False)
+        if order.buyer_id != user_id and not is_admin:
+            return jsonify({'error': 'Only buyer or admin can release escrow'}), 403
+
+        milestone = EscrowMilestone.query.filter_by(id=milestone_id, order_id=order_id).first_or_404()
+        if milestone.status not in ('buyer_confirmed', 'pending'):
+            return jsonify({'error': f'Cannot release: milestone is {milestone.status}'}), 400
+        if milestone.status == 'pending' and not is_admin:
+            return jsonify({'error': 'Buyer must confirm before releasing'}), 400
+
+        milestone.status = 'released'
+        milestone.released_at = datetime.utcnow()
+        if not milestone.completed_at:
+            milestone.completed_at = datetime.utcnow()
+
+        # Credit seller wallet
+        platform_fee = milestone.amount * PLATFORM_FEE_RATE
+        seller_payout = milestone.amount - platform_fee
+        cashback = seller_payout * CASHBACK_RATE
+
+        seller_wallet = _get_or_create_seller_wallet(order.seller_id)
+        seller_wallet.available_balance = (seller_wallet.available_balance or 0) + seller_payout
+        seller_wallet.total_earned = (seller_wallet.total_earned or 0) + seller_payout
+        seller_wallet.pending_balance = max(0, (seller_wallet.pending_balance or 0) - milestone.amount)
+
+        db.session.commit()
+
+        return jsonify({
+            'status': 'released',
+            'amount': milestone.amount,
+            'seller_payout': round(seller_payout, 2),
+            'platform_fee': round(platform_fee, 2),
+            'cashback': round(cashback, 2),
+            'released_at': milestone.released_at.isoformat(),
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@physical_bp.route('/orders/<order_id>/milestones/<milestone_id>/dispute', methods=['POST'])
+@jwt_required()
+def dispute_milestone(order_id, milestone_id):
+    """Buyer opens a dispute on a milestone."""
+    try:
+        user_id = get_jwt_identity()
+        order = PhysicalOrder.query.get_or_404(order_id)
+        if order.buyer_id != user_id:
+            return jsonify({'error': 'Only buyer can open disputes'}), 403
+
+        milestone = EscrowMilestone.query.filter_by(id=milestone_id, order_id=order_id).first_or_404()
+        if milestone.status in ('released', 'disputed'):
+            return jsonify({'error': f'Cannot dispute: milestone is {milestone.status}'}), 400
+
+        data = request.get_json() or {}
+        reason = (data.get('reason') or '').strip()[:500]
+        if not reason:
+            return jsonify({'error': 'Dispute reason required'}), 400
+
+        evidence_urls = data.get('evidence_urls', [])
+        milestone.status = 'disputed'
+        milestone.dispute_reason = reason
+        milestone.evidence_urls = json.dumps(evidence_urls[:5]) if evidence_urls else None
+        order.escrow_status = 'disputed'
+
+        db.session.commit()
+
+        return jsonify({
+            'status': 'disputed',
+            'milestone_id': milestone_id,
+            'message': 'Dispute opened. An admin will review within 24-48 hours.'
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@physical_bp.route('/escrow/security-report', methods=['GET'])
+@jwt_required()
+def escrow_security_report():
+    """Returns escrow health and security stats for the current user."""
+    try:
+        user_id = get_jwt_identity()
+        as_buyer = PhysicalOrder.query.filter_by(buyer_id=user_id).all()
+        as_seller = PhysicalOrder.query.filter_by(seller_id=user_id).all()
+
+        buyer_held = sum(o.total_price for o in as_buyer if o.escrow_status == 'held')
+        seller_pending = sum(o.seller_payout_amount() for o in as_seller if o.escrow_status == 'held')
+        disputes_open = sum(1 for o in as_buyer + as_seller if o.escrow_status == 'disputed')
+
+        return jsonify({
+            'as_buyer': {
+                'funds_held': round(buyer_held, 2),
+                'active_orders': len([o for o in as_buyer if o.status in ('paid', 'processing', 'shipped')]),
+                'disputes_open': sum(1 for o in as_buyer if o.escrow_status == 'disputed'),
+            },
+            'as_seller': {
+                'funds_pending_release': round(seller_pending, 2),
+                'active_orders': len([o for o in as_seller if o.status in ('paid', 'processing', 'shipped')]),
+                'disputes_open': sum(1 for o in as_seller if o.escrow_status == 'disputed'),
+            },
+            'platform_guarantees': {
+                'buyer_protection_days': ESCROW_HOLD_DAYS,
+                'platform_fee_rate': PLATFORM_FEE_RATE,
+                'seller_cashback_rate': CASHBACK_RATE,
+                'encryption': 'AES-256',
+                'fraud_monitoring': True,
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

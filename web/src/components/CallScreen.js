@@ -4,6 +4,8 @@ import {
   FiMic, FiMicOff, FiVideo, FiVideoOff, FiPhoneOff,
   FiVolume2, FiVolumeX, FiRefreshCw,
   FiMinimize2, FiMonitor, FiStopCircle, FiLock,
+  FiEdit3, FiSlash, FiCircle, FiMinus, FiType,
+  FiMusic, FiX,
 } from 'react-icons/fi';
 import { useCallStore } from '../services/store';
 import advancedRinging from '../services/advancedRinging';
@@ -38,6 +40,14 @@ function CallScreen({
   const controlsTimer = useRef(null);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [screenStream, setScreenStream] = useState(null);
+  const [screenAudio, setScreenAudio] = useState(false);
+  const [showScreenOptions, setShowScreenOptions] = useState(false);
+  const [isAnnotating, setIsAnnotating] = useState(false);
+  const [annotationColor, setAnnotationColor] = useState('#25D366');
+  const [annotationTool, setAnnotationTool] = useState('pen');
+  const [isDrawing, setIsDrawing] = useState(false);
+  const annotationCanvasRef = useRef(null);
+  const lastAnnotationPos = useRef(null);
 
   const remote = caller || callee;
   const isVideoCall = callType === 'video';
@@ -102,8 +112,66 @@ function CallScreen({
     return () => { advancedRinging.stopAll(); };
   }, [callState, callDuration]);
 
+  // ── Annotation Tools ────────────────────────────────────────────────────────
+  const startDraw = useCallback((e) => {
+    if (!isAnnotating || !annotationCanvasRef.current) return;
+    const canvas = annotationCanvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX ?? e.touches?.[0]?.clientX ?? 0) - rect.left;
+    const y = (e.clientY ?? e.touches?.[0]?.clientY ?? 0) - rect.top;
+    setIsDrawing(true);
+    lastAnnotationPos.current = { x, y };
+    if (annotationTool === 'circle') {
+      const ctx = canvas.getContext('2d');
+      ctx.beginPath();
+      ctx.arc(x, y, 20, 0, Math.PI * 2);
+      ctx.strokeStyle = annotationColor;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+  }, [isAnnotating, annotationColor, annotationTool]);
+
+  const draw = useCallback((e) => {
+    if (!isDrawing || !isAnnotating || !annotationCanvasRef.current) return;
+    const canvas = annotationCanvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX ?? e.touches?.[0]?.clientX ?? 0) - rect.left;
+    const y = (e.clientY ?? e.touches?.[0]?.clientY ?? 0) - rect.top;
+    const ctx = canvas.getContext('2d');
+
+    if (annotationTool === 'pen') {
+      ctx.beginPath();
+      ctx.moveTo(lastAnnotationPos.current.x, lastAnnotationPos.current.y);
+      ctx.lineTo(x, y);
+      ctx.strokeStyle = annotationColor;
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    } else if (annotationTool === 'eraser') {
+      ctx.clearRect(x - 15, y - 15, 30, 30);
+    } else if (annotationTool === 'line') {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.beginPath();
+      ctx.moveTo(lastAnnotationPos.current.x, lastAnnotationPos.current.y);
+      ctx.lineTo(x, y);
+      ctx.strokeStyle = annotationColor;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+    if (annotationTool !== 'line') lastAnnotationPos.current = { x, y };
+  }, [isDrawing, isAnnotating, annotationColor, annotationTool]);
+
+  const stopDraw = useCallback(() => { setIsDrawing(false); }, []);
+
+  const clearAnnotations = useCallback(() => {
+    if (!annotationCanvasRef.current) return;
+    const canvas = annotationCanvasRef.current;
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+  }, []);
+
   // ── Screen Share ────────────────────────────────────────────────────────────
-  const startScreenShare = useCallback(async () => {
+  const startScreenShare = useCallback(async (withAudio = false) => {
     try {
       if (!navigator.mediaDevices?.getDisplayMedia) {
         toast.error('Screen sharing is not supported in this browser');
@@ -116,8 +184,9 @@ function CallScreen({
           frameRate: { ideal: 30 },
           cursor: 'always',
         },
-        audio: false,
+        audio: withAudio ? { echoCancellation: false, noiseSuppression: false } : false,
       });
+      setScreenAudio(withAudio);
 
       const videoTrack = stream.getVideoTracks()[0];
       if (!videoTrack) { stream.getTracks().forEach(t => t.stop()); return; }
@@ -256,8 +325,55 @@ function CallScreen({
               {/* Screen share indicator banner */}
               <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 bg-red-500/90 backdrop-blur-md text-white text-xs font-bold px-4 py-1.5 rounded-full flex items-center gap-2 shadow-lg border border-white/10">
                 <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                Sharing your screen
+                Sharing your screen{screenAudio && ' + audio'}
               </div>
+
+              {/* Annotation canvas overlay */}
+              <canvas
+                ref={annotationCanvasRef}
+                className={`absolute inset-0 w-full h-full z-30 ${isAnnotating ? 'cursor-crosshair' : 'pointer-events-none'}`}
+                style={{ touchAction: 'none' }}
+                width={typeof window !== 'undefined' ? window.innerWidth : 1280}
+                height={typeof window !== 'undefined' ? window.innerHeight : 720}
+                onMouseDown={startDraw}
+                onMouseMove={draw}
+                onMouseUp={stopDraw}
+                onMouseLeave={stopDraw}
+                onTouchStart={startDraw}
+                onTouchMove={draw}
+                onTouchEnd={stopDraw}
+              />
+
+              {/* Annotation toolbar */}
+              <AnimatePresence>
+                {isAnnotating && (
+                  <motion.div initial={{ x: 60, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 60, opacity: 0 }}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-2 bg-black/80 backdrop-blur-xl rounded-2xl p-2 border border-white/15 shadow-2xl">
+                    {[
+                      { tool: 'pen', icon: FiEdit3, label: 'Pen' },
+                      { tool: 'line', icon: FiMinus, label: 'Line' },
+                      { tool: 'circle', icon: FiCircle, label: 'Circle' },
+                      { tool: 'eraser', icon: FiSlash, label: 'Eraser' },
+                    ].map(({ tool, icon: Icon, label }) => (
+                      <button key={tool} onClick={() => setAnnotationTool(tool)} title={label}
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${annotationTool === tool ? 'bg-[#25D366] text-white' : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'}`}>
+                        <Icon size={16} />
+                      </button>
+                    ))}
+                    <div className="h-px w-full bg-white/10 my-1" />
+                    {['#25D366', '#ef4444', '#3b82f6', '#f59e0b', '#ffffff'].map(color => (
+                      <button key={color} onClick={() => setAnnotationColor(color)}
+                        className={`w-7 h-7 rounded-full border-2 transition ${annotationColor === color ? 'border-white scale-110' : 'border-transparent hover:scale-105'}`}
+                        style={{ background: color }} />
+                    ))}
+                    <div className="h-px w-full bg-white/10 my-1" />
+                    <button onClick={clearAnnotations} title="Clear all"
+                      className="w-9 h-9 rounded-xl flex items-center justify-center bg-red-500/20 text-red-400 hover:bg-red-500/40 transition">
+                      <FiX size={16} />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </>
           ) : (
             <>
@@ -350,16 +466,61 @@ function CallScreen({
                 <ControlButton icon={FiRefreshCw} label="Flip" onClick={onFlipCamera} size="sm" />
               )}
 
-              {/* Screen Share button — available during active calls */}
-              {callState === 'active' && (
-                <ControlButton
-                  icon={isScreenSharing ? FiStopCircle : FiMonitor}
-                  label={isScreenSharing ? 'Stop Share' : 'Share Screen'}
-                  onClick={() => isScreenSharing ? stopScreenShare() : startScreenShare()}
-                  active={isScreenSharing}
-                  danger={isScreenSharing}
-                  size="sm"
-                />
+              {/* Screen Share button with options */}
+              {callState === 'active' && !isScreenSharing && (
+                <div className="relative">
+                  <ControlButton
+                    icon={FiMonitor}
+                    label="Share Screen"
+                    onClick={() => setShowScreenOptions(v => !v)}
+                    size="sm"
+                  />
+                  <AnimatePresence>
+                    {showScreenOptions && (
+                      <motion.div initial={{ opacity: 0, y: 8, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 8, scale: 0.9 }}
+                        className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900/95 backdrop-blur-xl rounded-2xl border border-white/15 overflow-hidden shadow-2xl w-44 z-50">
+                        <button onClick={() => { setShowScreenOptions(false); startScreenShare(false); }}
+                          className="w-full flex items-center gap-2.5 px-3 py-3 hover:bg-white/8 transition text-left">
+                          <FiMonitor size={14} className="text-white/60 flex-shrink-0" />
+                          <div>
+                            <p className="text-xs font-bold text-white">Screen only</p>
+                            <p className="text-[10px] text-white/40">Video only</p>
+                          </div>
+                        </button>
+                        <div className="h-px bg-white/8" />
+                        <button onClick={() => { setShowScreenOptions(false); startScreenShare(true); }}
+                          className="w-full flex items-center gap-2.5 px-3 py-3 hover:bg-white/8 transition text-left">
+                          <FiMusic size={14} className="text-[#25D366] flex-shrink-0" />
+                          <div>
+                            <p className="text-xs font-bold text-white">Screen + Audio</p>
+                            <p className="text-[10px] text-white/40">Shares system sound</p>
+                          </div>
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+
+              {/* Stop share + annotation toggle when sharing */}
+              {callState === 'active' && isScreenSharing && (
+                <>
+                  <ControlButton
+                    icon={FiStopCircle}
+                    label="Stop Share"
+                    onClick={() => { stopScreenShare(); setIsAnnotating(false); }}
+                    danger={true}
+                    size="sm"
+                  />
+                  <ControlButton
+                    icon={FiEdit3}
+                    label={isAnnotating ? 'Stop Draw' : 'Annotate'}
+                    onClick={() => setIsAnnotating(v => !v)}
+                    active={isAnnotating}
+                    size="sm"
+                  />
+                </>
               )}
 
               {isVideoCall && (

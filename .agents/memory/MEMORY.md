@@ -1,0 +1,3 @@
+- [LocationShare map approach](location-map.md) — Uses OpenStreetMap iframe embed + Nominatim geocoding (no API key); LocationMapBubble exports for chat display
+- [Escrow milestone system](escrow-milestones.md) — EscrowMilestone model appended to marketplace_physical.py; DB migration added to __init__.py
+- [GiftSystem onSent prop](giftsystem-onsent.md) — Added onSent optional prop; called after successful send; used in TrendsPage VideoCard for gift animation overlay

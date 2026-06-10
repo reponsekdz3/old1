@@ -1043,3 +1043,74 @@ def admin_feature_video(video_id):
         return jsonify({'featured': video.is_featured}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ── Gift a video creator ──────────────────────────────────────────────────────
+@trends_bp.route('/video/<video_id>/gift', methods=['POST'])
+@jwt_required()
+def gift_video_creator(video_id):
+    """Send a gift to a video creator via the gifts system."""
+    try:
+        from app.routes.gifts import Gift, GiftType, GiftTransaction, UserCoins
+        user_id = get_jwt_identity()
+        video = TrendVideo.query.get(video_id)
+        if not video:
+            return jsonify({'error': 'Video not found'}), 404
+        if video.uploader_id == user_id:
+            return jsonify({'error': 'Cannot gift yourself'}), 400
+
+        data = request.get_json() or {}
+        gift_type_id = data.get('gift_type_id')
+        quantity = max(1, min(int(data.get('quantity', 1)), 99))
+        message = (data.get('message') or '').strip()[:200]
+
+        gift_type = GiftType.query.get(gift_type_id)
+        if not gift_type or not gift_type.is_active:
+            return jsonify({'error': 'Gift not found'}), 404
+
+        total_cost = gift_type.coin_cost * quantity
+        sender_coins = UserCoins.query.filter_by(user_id=user_id).first()
+        if not sender_coins or sender_coins.balance < total_cost:
+            return jsonify({'error': 'Insufficient coins'}), 402
+
+        sender_coins.balance -= total_cost
+        sender_coins.total_spent = (sender_coins.total_spent or 0) + total_cost
+
+        recipient_coins = UserCoins.query.filter_by(user_id=video.uploader_id).first()
+        if not recipient_coins:
+            recipient_coins = UserCoins(user_id=video.uploader_id, balance=0)
+            db.session.add(recipient_coins)
+        stars_earned = int(total_cost * 0.7)
+        recipient_coins.balance += stars_earned
+
+        txn = GiftTransaction(
+            id=str(uuid.uuid4()),
+            sender_id=user_id,
+            recipient_id=video.uploader_id,
+            gift_type_id=gift_type_id,
+            quantity=quantity,
+            coins_deducted=total_cost,
+            stars_credited=stars_earned,
+            context='video',
+            context_id=video_id,
+            message=message,
+        )
+        db.session.add(txn)
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'transaction_id': txn.id,
+            'coins_spent': total_cost,
+            'stars_credited': stars_earned,
+            'gift': {
+                'name': gift_type.name,
+                'emoji': gift_type.emoji,
+                'animation_type': gift_type.animation_type,
+                'quantity': quantity,
+                'coins_deducted': total_cost,
+            }
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
