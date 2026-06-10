@@ -904,3 +904,74 @@ def plan_stats():
         return jsonify({'total_users': total, 'plan_breakdown': {'free': total, 'paid': 0}}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/country-analytics', methods=['GET'])
+@admin_required
+def country_analytics():
+    """Users grouped by country with message and activity stats."""
+    try:
+        from sqlalchemy import func
+        rows = (db.session.query(
+            User.country,
+            func.count(User.id).label('user_count'),
+        ).filter(User.country != None, User.country != '')
+         .group_by(User.country)
+         .order_by(func.count(User.id).desc())
+         .limit(50).all())
+
+        result = []
+        for row in rows:
+            country = row.country or 'Unknown'
+            # Count messages from users in this country
+            msg_count = (db.session.query(func.count(Message.id))
+                          .join(User, Message.sender_id == User.id)
+                          .filter(User.country == country).scalar()) or 0
+            # Count active users (seen in last 24h)
+            from datetime import timedelta
+            active_count = (User.query.filter(
+                User.country == country,
+                User.last_seen >= datetime.utcnow() - timedelta(days=1)
+            ).count())
+            result.append({
+                'country': country,
+                'user_count': int(row.user_count),
+                'message_count': int(msg_count),
+                'active_24h': active_count,
+            })
+        return jsonify({'countries': result, 'total_countries': len(result)}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/gift-stats', methods=['GET'])
+@admin_required
+def gift_stats():
+    """Gift system overview for admin."""
+    try:
+        from sqlalchemy import func
+        try:
+            from app.models.gift_models import GiftTransaction, WithdrawalRequest, EscrowWallet, WalletDeposit
+            total_txns = GiftTransaction.query.count()
+            total_sent = db.session.query(func.sum(GiftTransaction.coins_deducted)).scalar() or 0
+            total_earned = db.session.query(func.sum(GiftTransaction.usd_credited)).scalar() or 0
+            total_fees = db.session.query(func.sum(GiftTransaction.platform_fee_usd)).scalar() or 0
+            pending_withdrawals = WithdrawalRequest.query.filter_by(status='pending').count()
+            pending_withdraw_amount = db.session.query(
+                func.sum(WithdrawalRequest.amount_usd)).filter_by(status='pending').scalar() or 0
+            total_deposits = db.session.query(func.sum(WalletDeposit.amount_usd)).filter_by(status='completed').scalar() or 0
+        except Exception:
+            total_txns = total_sent = total_earned = total_fees = 0
+            pending_withdrawals = pending_withdraw_amount = total_deposits = 0
+
+        return jsonify({
+            'total_gift_transactions': total_txns,
+            'total_coins_sent': int(total_sent),
+            'total_creator_earnings_usd': round(float(total_earned), 2),
+            'total_platform_fees_usd': round(float(total_fees), 2),
+            'pending_withdrawals': pending_withdrawals,
+            'pending_withdrawal_amount_usd': round(float(pending_withdraw_amount), 2),
+            'total_deposits_usd': round(float(total_deposits), 2),
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

@@ -332,6 +332,41 @@ def create_app(config_name='development'):
     except Exception as e:
         logger.warning(f"⚠ Live Stream routes not available: {e}")
 
+    # ── Gift / Escrow System ───────────────────────────────────────────────
+    try:
+        from app.routes.gifts import gifts_bp
+        from app.models.gift_models import (
+            GiftItem, EscrowWallet, WalletDeposit, GiftTransaction,
+            WithdrawalRequest, PinnedChat, SharedNote, NoteRevision, DocumentVault
+        )
+        app.register_blueprint(gifts_bp)
+        with app.app_context():
+            db.create_all()
+        logger.info("✓ Gift/Escrow routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ Gift/Escrow routes not available: {e}")
+
+    try:
+        from app.routes.vault import vault_bp
+        app.register_blueprint(vault_bp)
+        logger.info("✓ Document Vault routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ Document Vault routes not available: {e}")
+
+    try:
+        from app.routes.notes import notes_bp
+        app.register_blueprint(notes_bp)
+        logger.info("✓ Shared Notes routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ Shared Notes routes not available: {e}")
+
+    try:
+        from app.routes.pinned import pinned_bp
+        app.register_blueprint(pinned_bp)
+        logger.info("✓ Pinned Chats routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ Pinned Chats routes not available: {e}")
+
     # ── JWT token blocklist ────────────────────────────────────────────────
     @jwt.token_in_blocklist_loader
     def _check_token_revoked(jwt_header, jwt_payload):

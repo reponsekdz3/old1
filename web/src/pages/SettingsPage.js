@@ -3,7 +3,7 @@ import {
   FiArrowLeft, FiLock, FiBell, FiDownload, FiDatabase,
   FiHelpCircle, FiInfo, FiChevronRight,
   FiCheck, FiShield, FiSend, FiSmartphone, FiZap, FiShoppingBag,
-  FiSearch, FiBriefcase, FiEdit3,
+  FiSearch, FiBriefcase, FiEdit3, FiGift,
 } from 'react-icons/fi';
 import { subscribeToPush, unsubscribeFromPush } from '../services/pushService';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -689,6 +689,32 @@ export default function SettingsPage() {
                   value={settings.auto_download_documents} onChange={v => updateSetting('auto_download_documents', v)} />
               </div>
 
+              {/* Security & Vault */}
+              <div className="mx-4 mt-4 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <SectionHeader icon={FiShield} title="Security & Privacy" desc="Advanced protection features" />
+                <ToggleRow
+                  label="Screenshot Prevention"
+                  sub="Prevent others from screenshotting your chats (applies a CSS overlay)"
+                  value={settings.screenshot_prevention ?? false}
+                  onChange={v => {
+                    updateSetting('screenshot_prevention', v);
+                    if (v) {
+                      document.body.style.userSelect = 'none';
+                      document.body.style.webkitUserSelect = 'none';
+                    } else {
+                      document.body.style.userSelect = '';
+                      document.body.style.webkitUserSelect = '';
+                    }
+                  }}
+                />
+                <ActionRow label="Document Vault" sub="Store encrypted passports, IDs & cards"
+                  icon={FiLock} iconBg="bg-gray-800" iconColor="text-white"
+                  onClick={() => navigate('/vault')} />
+                <ActionRow label="Gift Wallet" sub="Manage coins, gifts sent & earnings"
+                  icon={FiGift} iconBg="bg-green-50" iconColor="text-[#25D366]"
+                  onClick={() => navigate('/gift-wallet')} />
+              </div>
+
               {/* Backup */}
               <div className="mx-4 mt-4 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <SectionHeader icon={FiDatabase} title="Backup & Restore" desc="Keep your chats safe" />
@@ -731,6 +757,12 @@ export default function SettingsPage() {
                 <ActionRow label="Marketplace" sub="Browse, sell, and manage products"
                   icon={FiShoppingBag} iconBg="bg-purple-50" iconColor="text-purple-500"
                   onClick={() => navigate('/marketplace')} />
+                <ActionRow label="Gift Wallet" sub="Coins, gifts & creator earnings"
+                  icon={FiGift} iconBg="bg-green-50" iconColor="text-[#25D366]"
+                  onClick={() => navigate('/gift-wallet')} />
+                <ActionRow label="Document Vault" sub="Encrypted passport & ID storage"
+                  icon={FiLock} iconBg="bg-gray-900" iconColor="text-white"
+                  onClick={() => navigate('/vault')} />
               </div>
 
               {/* Security info */}

@@ -1,8 +1,59 @@
 # VipChat — Enterprise Messaging & Commerce Platform
 
 <p align="center">
-  <strong>Real-time encrypted messaging · HD video calls · Marketplace · B2B Commerce · API Platform</strong>
+  <strong>Real-time encrypted messaging · HD video calls · Marketplace · Gift Economy · API Platform</strong>
 </p>
+
+## Quick Start
+
+### Backend (Flask — port 8000)
+```bash
+cd backend
+pip install -r requirements.txt
+cp .env.example .env   # fill in your env vars (see below)
+python run.py
+```
+
+### Frontend (React — port 5000)
+```bash
+cd web
+npm install
+npm start
+```
+
+## Environment Variables
+
+Create `backend/.env`:
+
+```env
+SECRET_KEY=your-secret-key
+JWT_SECRET_KEY=your-jwt-secret
+
+# Stripe
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# PayPal (sandbox: api-m.sandbox.paypal.com)
+PAYPAL_CLIENT_ID=...
+PAYPAL_CLIENT_SECRET=...
+
+# Flutterwave
+FLUTTERWAVE_SECRET_KEY=FLWSECK_...
+FLUTTERWAVE_WEBHOOK_HASH=...
+
+# Web Push (VAPID)
+VAPID_PRIVATE_KEY=...
+VAPID_PUBLIC_KEY=...
+VAPID_CLAIMS_EMAIL=admin@example.com
+```
+
+## Gift / Coin Economy
+
+| Item | Value |
+|---|---|
+| 1 USD | 100 Coins |
+| Platform fee | 30% |
+| Minimum withdrawal | $10 USD |
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-production--ready-brightgreen" />

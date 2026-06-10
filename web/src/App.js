@@ -18,6 +18,8 @@ import SubscriptionPage from './pages/SubscriptionPage';
 import AdvertisePage from './pages/AdvertisePage';
 import TrendsPage from './pages/TrendsPage';
 import WalletPage from './pages/WalletPage';
+import GiftWalletPage from './pages/GiftWalletPage';
+import DocumentVaultPage from './pages/DocumentVaultPage';
 import OfflineIndicator from './components/OfflineIndicator';
 import PWAInstallBanner from './components/PWAInstallBanner';
 import { Toaster } from 'react-hot-toast';
@@ -137,6 +139,14 @@ function App() {
           {/* Wallet — protected */}
           <Route path="/wallet" element={
             <ProtectedRoute user={user}><WalletPage /></ProtectedRoute>
+          } />
+          {/* Gift Wallet */}
+          <Route path="/gift-wallet" element={
+            <ProtectedRoute user={user}><GiftWalletPage /></ProtectedRoute>
+          } />
+          {/* Document Vault */}
+          <Route path="/vault" element={
+            <ProtectedRoute user={user}><DocumentVaultPage /></ProtectedRoute>
           } />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

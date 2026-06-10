@@ -196,6 +196,8 @@ const TABS = [
   { id: 'marketplace', label: 'Marketplace', icon: FiShoppingBag },
   { id: 'paypal', label: 'PayPal', icon: FiCreditCard },
   { id: 'revenue', label: 'Revenue', icon: FiPieChart },
+  { id: 'countries', label: 'Countries', icon: FiGlobe },
+  { id: 'gifts', label: 'Gifts', icon: FiDollarSign },
   { id: 'system', label: 'System', icon: FiSettings },
 ];
 
@@ -439,6 +441,14 @@ function AdminPage() {
   const [revenueLoading, setRevenueLoading] = useState(false);
   const [revenuePeriod, setRevenuePeriod] = useState('30');
 
+  // Country analytics state
+  const [countryData, setCountryData] = useState([]);
+  const [countryLoading, setCountryLoading] = useState(false);
+
+  // Gift stats state
+  const [giftStats, setGiftStats] = useState(null);
+  const [giftStatsLoading, setGiftStatsLoading] = useState(false);
+
   // System settings state
   const [systemSettings, setSystemSettings] = useState(null);
   const [systemSettingsLoading, setSystemSettingsLoading] = useState(false);
@@ -478,6 +488,14 @@ function AdminPage() {
       fetchSystemSettings();
       fetchSystemHealth();
     }
+  }, [activeTab, isAdmin]);
+
+  useEffect(() => {
+    if (activeTab === 'countries' && isAdmin) fetchCountryAnalytics();
+  }, [activeTab, isAdmin]);
+
+  useEffect(() => {
+    if (activeTab === 'gifts' && isAdmin) fetchGiftStats();
   }, [activeTab, isAdmin]);
 
   const fetchLive = async () => {
@@ -689,6 +707,24 @@ function AdminPage() {
       setRevenuePeriod(period);
     } catch (e) { toast.error('Failed to load revenue data'); }
     finally { setRevenueLoading(false); }
+  };
+
+  const fetchCountryAnalytics = async () => {
+    setCountryLoading(true);
+    try {
+      const { data } = await api.get('/admin/country-analytics');
+      setCountryData(data.countries || []);
+    } catch { toast.error('Failed to load country analytics'); }
+    finally { setCountryLoading(false); }
+  };
+
+  const fetchGiftStats = async () => {
+    setGiftStatsLoading(true);
+    try {
+      const { data } = await api.get('/admin/gift-stats');
+      setGiftStats(data);
+    } catch { toast.error('Failed to load gift stats'); }
+    finally { setGiftStatsLoading(false); }
   };
 
   const fetchSystemSettings = async () => {
@@ -2241,6 +2277,126 @@ function AdminPage() {
               )}
 
               {/* ── PAYPAL ── */}
+              {activeTab === 'countries' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-lg font-bold text-gray-900">Country Analytics</h2>
+                      <p className="text-xs text-gray-400 mt-0.5">Users, messages & activity by country</p>
+                    </div>
+                    <button onClick={fetchCountryAnalytics} className="flex items-center gap-1 text-sm text-gray-500 border border-gray-200 px-3 py-1.5 rounded-xl hover:bg-gray-50 transition">
+                      <FiRefreshCw size={13} />Refresh
+                    </button>
+                  </div>
+
+                  {countryLoading ? (
+                    <div className="flex items-center justify-center py-16">
+                      <div className="w-8 h-8 border-2 border-[#25D366] border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  ) : countryData.length === 0 ? (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 py-16 text-center text-gray-400">
+                      <FiGlobe size={36} className="mx-auto mb-2 opacity-30" />
+                      <p>No country data yet</p>
+                      <p className="text-xs mt-1">Users with a country field will appear here</p>
+                    </div>
+                  ) : (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                      <div className="grid grid-cols-4 gap-0 px-5 py-3 border-b border-gray-50 text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                        <span>Country</span>
+                        <span className="text-right">Users</span>
+                        <span className="text-right">Messages</span>
+                        <span className="text-right">Active 24h</span>
+                      </div>
+                      <div className="divide-y divide-gray-50">
+                        {countryData.map((row, i) => {
+                          const maxUsers = countryData[0]?.user_count || 1;
+                          const pct = Math.round((row.user_count / maxUsers) * 100);
+                          return (
+                            <div key={row.country} className="px-5 py-3.5">
+                              <div className="grid grid-cols-4 gap-0 items-center mb-1.5">
+                                <span className="font-medium text-sm text-gray-900 flex items-center gap-2">
+                                  <span className="text-xs text-gray-400 font-mono w-5">{i + 1}</span>
+                                  {row.country}
+                                </span>
+                                <span className="text-right text-sm font-semibold text-gray-800">{row.user_count.toLocaleString()}</span>
+                                <span className="text-right text-sm text-gray-600">{row.message_count.toLocaleString()}</span>
+                                <span className="text-right text-sm text-[#25D366] font-semibold">{row.active_24h}</span>
+                              </div>
+                              <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-gradient-to-r from-[#25D366] to-[#075E54] rounded-full transition-all duration-500"
+                                  style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'gifts' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-lg font-bold text-gray-900">Gift System Stats</h2>
+                      <p className="text-xs text-gray-400 mt-0.5">Coin economy overview and platform earnings</p>
+                    </div>
+                    <button onClick={fetchGiftStats} className="flex items-center gap-1 text-sm text-gray-500 border border-gray-200 px-3 py-1.5 rounded-xl hover:bg-gray-50 transition">
+                      <FiRefreshCw size={13} />Refresh
+                    </button>
+                  </div>
+
+                  {giftStatsLoading ? (
+                    <div className="flex items-center justify-center py-16">
+                      <div className="w-8 h-8 border-2 border-[#25D366] border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  ) : !giftStats ? (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 py-16 text-center text-gray-400">
+                      <FiDollarSign size={36} className="mx-auto mb-2 opacity-30" />
+                      <p>No gift data yet</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        {[
+                          { label: 'Gift Transactions', value: giftStats.total_gift_transactions?.toLocaleString(), color: 'bg-purple-500' },
+                          { label: 'Coins Sent', value: giftStats.total_coins_sent?.toLocaleString(), color: 'bg-amber-500' },
+                          { label: 'Creator Earnings', value: `$${(giftStats.total_creator_earnings_usd || 0).toFixed(2)}`, color: 'bg-[#25D366]' },
+                          { label: 'Platform Fees', value: `$${(giftStats.total_platform_fees_usd || 0).toFixed(2)}`, color: 'bg-[#075E54]' },
+                        ].map(s => (
+                          <div key={s.label} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                            <div className={`w-8 h-8 ${s.color} rounded-xl flex items-center justify-center mb-3`}>
+                              <FiDollarSign size={16} className="text-white" />
+                            </div>
+                            <p className="text-2xl font-bold text-gray-900">{s.value}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">{s.label}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                          <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold mb-1">Total Deposits</p>
+                          <p className="text-3xl font-bold text-gray-900">${(giftStats.total_deposits_usd || 0).toFixed(2)}</p>
+                          <p className="text-xs text-gray-400 mt-1">Coins purchased by users</p>
+                        </div>
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                          <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold mb-1">Pending Withdrawals</p>
+                          <p className="text-3xl font-bold text-amber-600">{giftStats.pending_withdrawals}</p>
+                          <p className="text-xs text-gray-400 mt-1">${(giftStats.pending_withdrawal_amount_usd || 0).toFixed(2)} awaiting payout</p>
+                        </div>
+                        <div className="bg-gradient-to-r from-[#075E54] to-[#128C7E] rounded-2xl p-5">
+                          <p className="text-xs text-white/70 uppercase tracking-wide font-semibold mb-1">Coin Rate</p>
+                          <p className="text-3xl font-bold text-white">100</p>
+                          <p className="text-xs text-white/70 mt-1">Coins per $1 USD · 30% platform fee</p>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               {activeTab === 'paypal' && (
                 <div className="space-y-5">
                   <div className="flex items-center justify-between">

@@ -560,7 +560,8 @@ class UserSettings(db.Model):
     notification_sound = db.Column(db.String(100), default='default')
     show_notifications = db.Column(db.Boolean, default=True)
     show_preview = db.Column(db.Boolean, default=True)
-    
+    screenshot_prevention = db.Column(db.Boolean, default=False)
+
     user = db.relationship('User', backref='settings', uselist=False)
 
 class MutedChat(db.Model):

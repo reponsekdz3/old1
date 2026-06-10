@@ -33,7 +33,8 @@ def get_settings():
             'chat_wallpaper': settings.chat_wallpaper,
             'notification_sound': settings.notification_sound,
             'show_notifications': settings.show_notifications,
-            'show_preview': settings.show_preview
+            'show_preview': settings.show_preview,
+            'screenshot_prevention': getattr(settings, 'screenshot_prevention', False),
         }), 200
     
     except Exception as e:
@@ -79,7 +80,12 @@ def update_settings():
             settings.show_notifications = data['show_notifications']
         if 'show_preview' in data:
             settings.show_preview = data['show_preview']
-        
+        if 'screenshot_prevention' in data:
+            try:
+                settings.screenshot_prevention = bool(data['screenshot_prevention'])
+            except Exception:
+                pass
+
         db.session.commit()
         
         return jsonify({'message': 'Settings updated successfully'}), 200
