@@ -1,7 +1,7 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View, Text, Image, TouchableOpacity, StyleSheet, Linking,
-  PanResponder, Animated,
+  PanResponder, Animated, Modal, Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../config';
@@ -40,9 +40,10 @@ function DeliveryTicks({ status }) {
   return <Ionicons name="time-outline" size={10} color="rgba(0,0,0,0.3)" />;
 }
 
+const REACTIONS = ['❤️', '👍', '😂', '😮', '😢', '🙏'];
 const SWIPE_THRESHOLD = 48;
 
-export default function MessageBubble({ message, isOwn, onLongPress, onImagePress, onReply }) {
+export default function MessageBubble({ message, isOwn, onLongPress, onImagePress, onReply, onReact }) {
   const {
     content, media_url, media_type, status, created_at,
     latitude, longitude, location_name,
@@ -52,19 +53,20 @@ export default function MessageBubble({ message, isOwn, onLongPress, onImagePres
 
   const translateX = useRef(new Animated.Value(0)).current;
   const replyTriggered = useRef(false);
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
 
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) =>
-        Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+        g.dx > 8 && Math.abs(g.dy) < Math.abs(g.dx) * 0.7,
       onPanResponderGrant: () => {
         replyTriggered.current = false;
       },
       onPanResponderMove: (_, g) => {
-        const dx = isOwn ? Math.min(0, g.dx) : Math.max(0, g.dx);
-        const clamped = isOwn ? Math.max(dx, -SWIPE_THRESHOLD * 1.4) : Math.min(dx, SWIPE_THRESHOLD * 1.4);
+        const dx = Math.max(0, g.dx);
+        const clamped = Math.min(dx, SWIPE_THRESHOLD * 1.4);
         translateX.setValue(clamped);
-        if (!replyTriggered.current && Math.abs(clamped) >= SWIPE_THRESHOLD) {
+        if (!replyTriggered.current && clamped >= SWIPE_THRESHOLD) {
           replyTriggered.current = true;
           onReply?.(message);
         }
@@ -85,6 +87,16 @@ export default function MessageBubble({ message, isOwn, onLongPress, onImagePres
   const bg = isOwn
     ? isFailed ? '#FFEBEE' : isQueued ? '#F5F5F5' : COLORS.lightGreen
     : '#fff';
+
+  const handleLongPress = () => {
+    setShowReactionPicker(true);
+    onLongPress?.();
+  };
+
+  const handleReact = (emoji) => {
+    setShowReactionPicker(false);
+    onReact?.(message.id, emoji);
+  };
 
   const renderReplyPreview = () => {
     if (!replied_to) return null;
@@ -181,49 +193,73 @@ export default function MessageBubble({ message, isOwn, onLongPress, onImagePres
   };
 
   return (
-    <Animated.View
-      {...panResponder.panHandlers}
-      style={[
-        styles.wrapper,
-        isOwn ? styles.wrapperOwn : styles.wrapperOther,
-        { transform: [{ translateX }] },
-      ]}
-    >
-      <TouchableOpacity
-        onLongPress={onLongPress}
-        activeOpacity={0.85}
-        style={{ flexDirection: isOwn ? 'row-reverse' : 'row', alignItems: 'flex-end' }}
-      >
-        {/* Reply arrow indicator — shows during swipe */}
-        <View style={[styles.replyArrow, isOwn ? styles.replyArrowOwn : styles.replyArrowOther]}>
-          <Ionicons name="return-up-back-outline" size={16} color={COLORS.accent} />
-        </View>
-
-        <View style={[styles.bubble, { backgroundColor: bg }, isOwn ? styles.bubbleOwn : styles.bubbleOther]}>
-          {renderReplyPreview()}
-          {renderContent()}
-          <View style={styles.footer}>
-            <Text style={[styles.time, isOwn ? styles.timeOwn : styles.timeOther]}>{formatTime(created_at)}</Text>
-            {isOwn && <DeliveryTicks status={status} />}
-          </View>
-        </View>
-      </TouchableOpacity>
-
-      {reactions && reactions.length > 0 && (
-        <View style={[styles.reactions, isOwn ? styles.reactionsOwn : styles.reactionsOther]}>
-          {reactions.slice(0, 3).map((r, i) => (
-            <Text key={i} style={styles.reaction}>{r.emoji}</Text>
-          ))}
-        </View>
+    <>
+      {showReactionPicker && (
+        <Modal transparent animationType="fade" onRequestClose={() => setShowReactionPicker(false)}>
+          <Pressable style={styles.reactionOverlay} onPress={() => setShowReactionPicker(false)}>
+            <View style={[styles.reactionStrip, isOwn ? styles.reactionStripOwn : styles.reactionStripOther]}>
+              {REACTIONS.map(emoji => (
+                <TouchableOpacity key={emoji} onPress={() => handleReact(emoji)} style={styles.reactionBtn}>
+                  <Text style={styles.reactionEmoji}>{emoji}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </Pressable>
+        </Modal>
       )}
-    </Animated.View>
+
+      <Animated.View
+        {...panResponder.panHandlers}
+        style={[
+          styles.wrapper,
+          isOwn ? styles.wrapperOwn : styles.wrapperOther,
+          { transform: [{ translateX }] },
+        ]}
+      >
+        {/* Reply swipe arrow — visible as bubble slides right */}
+        <View style={[styles.replyArrow, isOwn ? styles.replyArrowOwn : styles.replyArrowOther]}>
+          <Ionicons name="return-up-back-outline" size={15} color={COLORS.accent} />
+        </View>
+
+        <TouchableOpacity
+          onLongPress={handleLongPress}
+          activeOpacity={0.85}
+          delayLongPress={350}
+        >
+          <View style={[styles.bubble, { backgroundColor: bg }, isOwn ? styles.bubbleOwn : styles.bubbleOther]}>
+            {renderReplyPreview()}
+            {renderContent()}
+            <View style={styles.footer}>
+              <Text style={[styles.time, isOwn ? styles.timeOwn : styles.timeOther]}>{formatTime(created_at)}</Text>
+              {isOwn && <DeliveryTicks status={status} />}
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        {reactions && reactions.length > 0 && (
+          <View style={[styles.reactions, isOwn ? styles.reactionsOwn : styles.reactionsOther]}>
+            {reactions.slice(0, 3).map((r, i) => (
+              <Text key={i} style={styles.reaction}>{r.emoji}</Text>
+            ))}
+          </View>
+        )}
+      </Animated.View>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  wrapper: { marginVertical: 2, marginHorizontal: 8, maxWidth: '82%' },
-  wrapperOwn: { alignSelf: 'flex-end' },
+  wrapper: { marginVertical: 2, marginHorizontal: 8, maxWidth: '82%', flexDirection: 'row', alignItems: 'center' },
+  wrapperOwn: { alignSelf: 'flex-end', flexDirection: 'row-reverse' },
   wrapperOther: { alignSelf: 'flex-start' },
+  replyArrow: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.07)',
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 4, opacity: 0.8,
+  },
+  replyArrowOwn: { marginRight: 0, marginLeft: 4 },
+  replyArrowOther: { marginRight: 4 },
   bubble: {
     borderRadius: 18,
     paddingHorizontal: 11,
@@ -234,6 +270,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
+    flexShrink: 1,
   },
   bubbleOwn: { borderBottomRightRadius: 4 },
   bubbleOther: { borderBottomLeftRadius: 4 },
@@ -284,11 +321,19 @@ const styles = StyleSheet.create({
   replyContent: { flex: 1 },
   replySender: { fontSize: 12, fontWeight: '700', color: COLORS.accent, marginBottom: 2 },
   replyText: { fontSize: 13, color: COLORS.textGray },
-  replyArrow: {
-    width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.06)',
-    alignItems: 'center', justifyContent: 'center', alignSelf: 'center',
-    opacity: 0.7, marginHorizontal: 2,
+  reactionOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.25)',
+    justifyContent: 'center', alignItems: 'center',
   },
-  replyArrowOwn: { marginLeft: 4 },
-  replyArrowOther: { marginRight: 4 },
+  reactionStrip: {
+    flexDirection: 'row', backgroundColor: '#fff',
+    borderRadius: 30, paddingHorizontal: 12, paddingVertical: 10,
+    gap: 6,
+    shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 8, shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  reactionStripOwn: { alignSelf: 'flex-end' },
+  reactionStripOther: { alignSelf: 'flex-start' },
+  reactionBtn: { padding: 4 },
+  reactionEmoji: { fontSize: 28 },
 });

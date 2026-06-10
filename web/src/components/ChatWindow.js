@@ -1059,7 +1059,7 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
               >
                 <div className="min-w-0">
                   <p className="text-[11px] font-bold text-[#25D366]">
-                    {replyTo.sender_id === replyTo._selfId ? 'Reply to yourself' : `Replying to ${replyTo.sender_name || chatName}`}
+                    {replyTo.sender_id === user?.id ? 'Replying to yourself' : `Replying to ${chatName}`}
                   </p>
                   <p className="text-xs text-gray-500 truncate">{replyTo.content || (replyTo.media_type ? `[${replyTo.media_type}]` : '[Media]')}</p>
                 </div>

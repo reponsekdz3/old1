@@ -164,7 +164,7 @@ export default function ChatScreen() {
       content: content || null,
       media_url: mediaUrl || null,
       media_type: mediaType || null,
-      reply_to: replyingTo ? {
+      replied_to: replyingTo ? {
         id: replyingTo.id,
         content: replyingTo.content,
         sender_name: replyingTo.sender_id === user?.id ? 'You' : name,
