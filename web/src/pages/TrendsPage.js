@@ -261,6 +261,8 @@ function VideoCard({ video, isActive, onLike, isLoggedIn, userId }) {
   const commentsNextCursorRef = useRef(null);
   const [editingId, setEditingId] = useState(null);
   const [editingText, setEditingText] = useState('');
+  const [quality, setQuality] = useState('auto');
+  const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes || 0);
   const [commentsCount, setCommentsCount] = useState(video.comments_count || 0);
   const [progress, setProgress] = useState(0);
@@ -377,7 +379,8 @@ function VideoCard({ video, isActive, onLike, isLoggedIn, userId }) {
 
   return (
     <div ref={containerRef} className="relative w-full h-full bg-black overflow-hidden flex items-center justify-center">
-      <video ref={videoRef} src={video.video_url}
+      <video ref={videoRef}
+        src={quality === 'sd' && video.video_url_sd ? video.video_url_sd : (quality === 'hd' && video.video_url_hd ? video.video_url_hd : video.video_url)}
         className="max-h-full w-auto object-contain cursor-pointer"
         loop playsInline muted={muted}
         onTimeUpdate={() => {
@@ -494,7 +497,31 @@ function VideoCard({ video, isActive, onLike, isLoggedIn, userId }) {
           </div>
           <div className="flex items-center gap-4">
             <div className="relative">
-              <button onClick={() => setShowSpeedMenu(!showSpeedMenu)} className="text-white text-xs font-bold hover:text-[#25D366] transition">
+              <button onClick={() => { setShowQualityMenu(v => !v); setShowSpeedMenu(false); }}
+                className="text-white text-xs font-bold hover:text-[#25D366] transition flex items-center gap-1">
+                <span>{quality === 'auto' ? 'Auto' : quality.toUpperCase()}</span>
+                {quality === 'hd' && <span className="text-[9px] bg-[#25D366]/20 text-[#25D366] px-1 rounded">HD</span>}
+              </button>
+              {showQualityMenu && (
+                <div className="absolute bottom-full right-0 mb-2 bg-black/90 border border-white/10 rounded-lg overflow-hidden py-1 min-w-[72px] z-50">
+                  {[
+                    { id: 'auto', label: 'Auto', available: true },
+                    { id: 'hd', label: 'HD 1080p', available: !!(video.video_url_hd || video.video_url) },
+                    { id: 'sd', label: 'SD 480p', available: !!(video.video_url_sd || video.video_url) },
+                  ].map(q => (
+                    <button key={q.id} onClick={() => { setQuality(q.id); setShowQualityMenu(false); }}
+                      className={`w-full px-3 py-1.5 text-xs text-left hover:bg-white/10 flex items-center justify-between
+                        ${quality === q.id ? 'text-[#25D366]' : q.available ? 'text-white' : 'text-white/30 cursor-not-allowed'}`}
+                      disabled={!q.available}>
+                      {q.label}
+                      {quality === q.id && <span>✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="relative">
+              <button onClick={() => { setShowSpeedMenu(!showSpeedMenu); setShowQualityMenu(false); }} className="text-white text-xs font-bold hover:text-[#25D366] transition">
                 {playbackSpeed}x
               </button>
               {showSpeedMenu && (
@@ -1018,7 +1045,7 @@ export default function TrendsPage() {
               </div>
               {hasMore && (
                 <div className="flex justify-center mt-12 mb-8">
-                  <button onClick={() => fetchVideos(category, sort, page + 1, true)}
+                  <button onClick={() => fetchVideos(category, sort, nextCursorRef.current, true)}
                     className="px-12 py-3 bg-white/5 hover:bg-white/10 text-white font-bold rounded-full border border-white/10 transition">
                     Load More
                   </button>

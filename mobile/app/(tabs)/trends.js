@@ -71,6 +71,40 @@ function VideoCard({ video, onPress }) {
   );
 }
 
+function VideoPlayerWithQuality({ video }) {
+  const [quality, setQuality] = useState('auto');
+  const videoSrc = quality === 'sd' && video.video_url_sd
+    ? video.video_url_sd
+    : (quality === 'hd' && video.video_url_hd ? video.video_url_hd : video.video_url);
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 4, gap: 6 }}>
+        {['auto', 'hd', 'sd'].map(q => (
+          <TouchableOpacity key={q} onPress={() => setQuality(q)}
+            style={{ paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10,
+              backgroundColor: quality === q ? ACCENT : 'rgba(255,255,255,0.08)',
+              borderWidth: 1, borderColor: quality === q ? ACCENT : 'rgba(255,255,255,0.15)' }}>
+            <Text style={{ color: quality === q ? '#fff' : '#888', fontSize: 11, fontWeight: '600' }}>
+              {q === 'auto' ? 'Auto' : q.toUpperCase()}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <View style={{ width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000', borderRadius: 12, overflow: 'hidden' }}>
+        <Video
+          source={{ uri: videoSrc }}
+          style={{ width: '100%', height: '100%' }}
+          resizeMode={ResizeMode.CONTAIN}
+          useNativeControls
+          shouldPlay
+          isLooping={false}
+          onLoad={() => api.post(`/trends/video/${video.id}/view`).catch(() => {})}
+        />
+      </View>
+    </View>
+  );
+}
+
 export default function TrendsScreen() {
   const { user } = useAuthStore();
   const [videos, setVideos] = useState([]);
@@ -267,6 +301,33 @@ export default function TrendsScreen() {
         />
       )}
 
+      {/* Top Creators */}
+      {topCreators.length > 0 && (
+        <View style={styles.creatorsSection}>
+          <Text style={styles.sectionLabel}>Top Creators</Text>
+          <FlatList
+            horizontal
+            data={topCreators}
+            keyExtractor={c => String(c.id || c.username)}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 16, paddingHorizontal: 16 }}
+            renderItem={({ item }) => (
+              <View style={styles.creatorChip}>
+                <View style={styles.creatorAvatar}>
+                  {item.avatar ? (
+                    <Image source={{ uri: item.avatar }} style={styles.creatorAvatarImg} />
+                  ) : (
+                    <Text style={styles.creatorAvatarText}>{(item.username || item.name || '?')[0].toUpperCase()}</Text>
+                  )}
+                </View>
+                <Text style={styles.creatorName} numberOfLines={1}>{item.username || item.name}</Text>
+                <Text style={styles.creatorStat}>{(item.video_count || item.videos || 0)} vids</Text>
+              </View>
+            )}
+          />
+        </View>
+      )}
+
       {/* Content */}
       {loading ? (
         <View style={styles.center}>
@@ -334,25 +395,10 @@ export default function TrendsScreen() {
                 <Ionicons name="close" size={22} color="#fff" />
               </TouchableOpacity>
             </View>
-            {selectedVideo?.video_url ? (
-              <View style={styles.playerVideoBox}>
-                <Video
-                  source={{ uri: selectedVideo.video_url }}
-                  style={styles.playerVideo}
-                  resizeMode={ResizeMode.CONTAIN}
-                  useNativeControls
-                  shouldPlay
-                  isLooping={false}
-                  onLoad={() => {
-                    api.post(`/trends/video/${selectedVideo.id}/view`).catch(() => {});
-                  }}
-                />
-              </View>
-            ) : (
-              <View style={styles.playerBox}>
-                <Text style={styles.playerNote}>No video URL available</Text>
-              </View>
-            )}
+            {selectedVideo?.video_url
+              ? <VideoPlayerWithQuality video={selectedVideo} />
+              : <View style={styles.playerBox}><Text style={styles.playerNote}>No video URL available</Text></View>
+            }
             <View style={styles.playerMeta}>
               <View style={styles.metaItem}>
                 <Ionicons name="play-outline" size={14} color="#888" />
@@ -505,6 +551,14 @@ const styles = StyleSheet.create({
   playerVideoBox: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000', borderRadius: 12, overflow: 'hidden', marginVertical: 8 },
   playerVideo: { width: '100%', height: '100%' },
   playerBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 32, gap: 12 },
+  creatorsSection: { paddingTop: 12, paddingBottom: 4 },
+  sectionLabel: { color: '#888', fontSize: 11, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', paddingHorizontal: 16, marginBottom: 8 },
+  creatorChip: { alignItems: 'center', gap: 4, width: 64 },
+  creatorAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#1a3a2a', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  creatorAvatarImg: { width: 44, height: 44 },
+  creatorAvatarText: { color: '#25D366', fontWeight: '700', fontSize: 16 },
+  creatorName: { color: '#ccc', fontSize: 11, textAlign: 'center', maxWidth: 60 },
+  creatorStat: { color: '#555', fontSize: 10, textAlign: 'center' },
   playerNote: { color: '#888', fontSize: 13, textAlign: 'center' },
   playerMeta: { flexDirection: 'row', gap: 20, marginTop: 16, justifyContent: 'center' },
   playerDesc: { color: '#888', fontSize: 13, lineHeight: 20, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#2a2a2a' },
