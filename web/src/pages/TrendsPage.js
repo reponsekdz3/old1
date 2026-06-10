@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FiSearch, FiHeart, FiShare2, FiMessageCircle, FiPlay,
@@ -639,6 +639,7 @@ function VideoCard({ video, isActive, onLike, isLoggedIn, userId }) {
 // ── Main Trends Page ───────────────────────────────────────────────────────────
 export default function TrendsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuthStore();
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -686,6 +687,25 @@ export default function TrendsPage() {
       setCategories(catRes.data.categories || Object.keys(CATEGORY_META));
     }).finally(() => setSidebarLoading(false));
   }, []);
+
+  // Resolve ?s=<share_token> — load the shared video and focus it
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const token = params.get('s');
+    if (!token) return;
+    api.get(`/trends/video/by-token/${token}`).then(({ data }) => {
+      if (data.video) {
+        setVideos(prev => {
+          const exists = prev.findIndex(v => v.id === data.video.id);
+          if (exists >= 0) { setActiveIdx(exists); return prev; }
+          setActiveIdx(0);
+          return [data.video, ...prev];
+        });
+        navigate('/trends', { replace: true });
+        toast.success('Shared video loaded');
+      }
+    }).catch(() => toast.error('Share link not found'));
+  }, [location.search]); // eslint-disable-line
 
   // Fetch right panel comments when active video changes
   useEffect(() => {

@@ -510,7 +510,19 @@ def create_share_link(video_id):
         return jsonify({'error': str(e)}), 500
 
 
-# ── Upload video (any logged-in user; non-admins go to pending) ───────────────
+# ── Resolve share token ────────────────────────────────────────────────────────
+@trends_bp.route('/video/by-token/<token>', methods=['GET'])
+def get_video_by_token(token):
+    try:
+        video = TrendVideo.query.filter_by(share_token=token, is_active=True).first()
+        if not video:
+            return jsonify({'error': 'Share link not found or expired'}), 404
+        return jsonify({'video': video.to_dict()}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Upload video (any logged-in user) ─────────────────────────────────────────
 @trends_bp.route('/upload', methods=['POST'])
 @jwt_required()
 def upload_video():
@@ -555,7 +567,7 @@ def upload_video():
             ad_skip_after_sec=max(10, int(data.get('ad_skip_after_sec', 10))),
             ad_url=data.get('ad_url'),
             ad_sponsor_name=data.get('ad_sponsor_name'),
-            is_active=getattr(user, 'is_admin', False),
+            is_active=True,
         )
         db.session.add(video)
         db.session.commit()

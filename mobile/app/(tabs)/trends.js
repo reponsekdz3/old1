@@ -314,10 +314,10 @@ export default function TrendsScreen() {
             renderItem={({ item }) => (
               <View style={styles.creatorChip}>
                 <View style={styles.creatorAvatar}>
-                  {item.avatar ? (
-                    <Image source={{ uri: item.avatar }} style={styles.creatorAvatarImg} />
+                  {item.avatar_url ? (
+                    <Image source={{ uri: item.avatar_url }} style={styles.creatorAvatarImg} />
                   ) : (
-                    <Text style={styles.creatorAvatarText}>{(item.username || item.name || '?')[0].toUpperCase()}</Text>
+                    <Text style={styles.creatorAvatarText}>{(item.avatar || item.username || item.name || '?')[0].toUpperCase()}</Text>
                   )}
                 </View>
                 <Text style={styles.creatorName} numberOfLines={1}>{item.username || item.name}</Text>
