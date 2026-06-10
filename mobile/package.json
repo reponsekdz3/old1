@@ -50,7 +50,10 @@
     "react-native-webrtc": "^118.0.0",
     "socket.io-client": "^4.7.2",
     "zustand": "^4.4.2",
-    "@react-native-voice/voice": "^3.2.4"
+    "@react-native-voice/voice": "^3.2.4",
+    "date-fns": "^3.0.0",
+    "crypto-js": "^4.2.0",
+    "buffer": "^6.0.3"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0"

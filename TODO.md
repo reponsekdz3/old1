@@ -10,6 +10,12 @@
 - [ ] Add Ingress rules for WebSocket + API paths (multi-host routing) if missing.
 - [x] Add resource tuning and production-safe readiness/liveness.
 
+## Step 2 (finalization notes)
+- [x] Backend forced to production runtime via env.
+- [x] Ingress routes added for both `api.vipchat.com` and `app.vipchat.com`.
+- [x] Postgres secret wiring corrected via `POSTGRES_PASSWORD`.
+
+
 
 ## Step 3: Migrations reliability on Kubernetes
 - [ ] Add a K8s `Job` or `initContainer` that runs migration/schema init deterministically before app pods.
