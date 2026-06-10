@@ -7,7 +7,8 @@ import {
   FiTrendingUp, FiStar, FiClock,
   FiSkipForward, FiX, FiSend,
   FiGrid, FiMusic, FiActivity, FiZap, FiRss, FiSmile,
-  FiBook, FiCpu, FiExternalLink, FiMaximize, FiBookmark, FiChevronUp, FiChevronDown
+  FiBook, FiCpu, FiExternalLink, FiMaximize, FiBookmark, FiChevronUp, FiChevronDown,
+  FiUpload, FiCheck, FiCornerDownRight,
 } from 'react-icons/fi';
 import { MdOutlineSubscriptions } from 'react-icons/md';
 import api from '../services/api';
@@ -25,21 +26,176 @@ const CATEGORIES = [
   { id: 'tech', label: 'Tech', icon: FiCpu, color: 'text-sky-400' },
 ];
 
-const SUGGESTED_CREATORS = [
-  { id: 1, name: 'Alex Rivera', username: '@arivera', followers: '1.2M', avatar: 'AR' },
-  { id: 2, name: 'Sarah Chen', username: '@schen', followers: '850K', avatar: 'SC' },
-  { id: 3, name: 'Mike Ross', username: '@mross', followers: '2.1M', avatar: 'MR' },
-];
+// ── Skeleton shimmer ──────────────────────────────────────────────────────────
+function Skeleton({ className = '' }) {
+  return <div className={`animate-pulse bg-white/10 rounded-lg ${className}`} />;
+}
 
-const TRENDING_HASHTAGS = [
-  { tag: '#VipChat', counts: '2.5M' },
-  { tag: '#TechTrends', counts: '840K' },
-  { tag: '#Cooking', counts: '1.2M' },
-  { tag: '#Travel', counts: '3.1M' },
-];
+// ── Upload Modal ──────────────────────────────────────────────────────────────
+function UploadModal({ onClose }) {
+  const [step, setStep] = useState('select');
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [category, setCategory] = useState('general');
+  const [tags, setTags] = useState('');
+  const [progress, setProgress] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef(null);
 
-// ── Ad Overlay (shown for free users, skippable after 10s) ────────────────────
-function AdOverlay({ ad, onSkip, onClose }) {
+  const handleFile = (f) => {
+    if (!f) return;
+    if (!f.type.startsWith('video/')) { toast.error('Please select a video file'); return; }
+    setFile(f);
+    setTitle(f.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '));
+    setPreview(URL.createObjectURL(f));
+    setStep('details');
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    handleFile(e.dataTransfer.files[0]);
+  };
+
+  const handleSubmit = async () => {
+    if (!title.trim()) { toast.error('Add a title'); return; }
+    setStep('uploading');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const { data: uploadData } = await api.post('/upload/video', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (e) => {
+          setProgress(Math.round((e.loaded * 80) / (e.total || 1)));
+        },
+      });
+      setProgress(90);
+      await api.post('/trends/upload', {
+        title: title.trim(),
+        description: description.trim(),
+        video_url: uploadData.url,
+        category: category === 'all' ? 'general' : category,
+        tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+      });
+      setProgress(100);
+      setStep('done');
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Upload failed');
+      setStep('details');
+    }
+  };
+
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <motion.div
+        initial={{ scale: 0.95, y: 20 }}
+        animate={{ scale: 1, y: 0 }}
+        className="bg-[#111] border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden"
+      >
+        <div className="flex items-center justify-between p-6 border-b border-white/10">
+          <h2 className="text-lg font-bold">Upload Video</h2>
+          <button onClick={onClose} className="text-white/50 hover:text-white transition"><FiX size={20} /></button>
+        </div>
+
+        {step === 'select' && (
+          <div className="p-6">
+            <div
+              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-xl p-12 flex flex-col items-center gap-4 cursor-pointer transition-all ${dragOver ? 'border-[#25D366] bg-[#25D366]/10' : 'border-white/20 hover:border-white/40 hover:bg-white/5'}`}
+            >
+              <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center">
+                <FiUpload size={28} className="text-white/40" />
+              </div>
+              <div className="text-center">
+                <p className="text-white font-bold">Drag & drop or click to select</p>
+                <p className="text-white/40 text-sm mt-1">MP4, MOV, AVI, WebM · up to 100MB</p>
+              </div>
+            </div>
+            <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={e => handleFile(e.target.files[0])} />
+          </div>
+        )}
+
+        {step === 'details' && (
+          <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+            {preview && (
+              <video src={preview} className="w-full aspect-video rounded-xl bg-black object-contain" muted controls />
+            )}
+            <div>
+              <label className="text-xs font-bold text-white/50 mb-1 block">Title *</label>
+              <input value={title} onChange={e => setTitle(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 focus:border-[#25D366] rounded-xl px-4 py-3 text-sm outline-none transition"
+                placeholder="Give your video a title" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-white/50 mb-1 block">Description</label>
+              <textarea value={description} onChange={e => setDescription(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 focus:border-[#25D366] rounded-xl px-4 py-3 text-sm outline-none transition resize-none"
+                placeholder="Describe your video..." rows={3} />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-white/50 mb-1 block">Category</label>
+              <select value={category} onChange={e => setCategory(e.target.value)}
+                className="w-full bg-[#1a1a1a] border border-white/10 focus:border-[#25D366] rounded-xl px-4 py-3 text-sm outline-none transition text-white">
+                {CATEGORIES.filter(c => c.id !== 'all').map(c => (
+                  <option key={c.id} value={c.id}>{c.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-white/50 mb-1 block">Tags (comma-separated)</label>
+              <input value={tags} onChange={e => setTags(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 focus:border-[#25D366] rounded-xl px-4 py-3 text-sm outline-none transition"
+                placeholder="vipchat, trending, music" />
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setStep('select')} className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl transition">Back</button>
+              <button onClick={handleSubmit} disabled={!title.trim()} className="flex-1 py-3 bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold rounded-xl transition disabled:opacity-40">Upload</button>
+            </div>
+          </div>
+        )}
+
+        {step === 'uploading' && (
+          <div className="p-12 flex flex-col items-center gap-6">
+            <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center">
+              <div className="w-12 h-12 border-4 border-[#25D366] border-t-transparent rounded-full animate-spin" />
+            </div>
+            <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+              <motion.div className="bg-[#25D366] h-2 rounded-full" style={{ width: `${progress}%` }} transition={{ duration: 0.3 }} />
+            </div>
+            <p className="text-white/60 text-sm">{progress < 85 ? `Uploading file… ${progress}%` : 'Creating video record…'}</p>
+          </div>
+        )}
+
+        {step === 'done' && (
+          <div className="p-12 flex flex-col items-center gap-4">
+            <div className="w-20 h-20 rounded-full bg-[#25D366]/20 flex items-center justify-center">
+              <FiCheck size={36} className="text-[#25D366]" />
+            </div>
+            <h3 className="text-xl font-bold">Uploaded!</h3>
+            <p className="text-white/50 text-sm text-center">Your video is pending admin review and will be published soon.</p>
+            <button onClick={onClose} className="mt-2 px-8 py-3 bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold rounded-full transition">Done</button>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ── Ad Overlay ────────────────────────────────────────────────────────────────
+function AdOverlay({ ad, onSkip }) {
   const [countdown, setCountdown] = useState(ad?.ad_skip_after_sec || 10);
   const [canSkip, setCanSkip] = useState(false);
   const videoRef = useRef(null);
@@ -51,51 +207,30 @@ function AdOverlay({ ad, onSkip, onClose }) {
   }, [countdown]);
 
   useEffect(() => {
-    if (videoRef.current && ad?.video_url) {
-      videoRef.current.play().catch(() => {});
-    }
+    if (videoRef.current && ad?.video_url) videoRef.current.play().catch(() => {});
   }, [ad]);
 
   if (!ad) return null;
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="absolute inset-0 bg-black z-30 flex flex-col"
-    >
-      <video
-        ref={videoRef}
-        src={ad.video_url}
-        className="w-full h-full object-cover"
-        autoPlay
-        playsInline
-        onEnded={onSkip}
-      />
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="absolute inset-0 bg-black z-30 flex flex-col">
+      <video ref={videoRef} src={ad.video_url} className="w-full h-full object-cover" autoPlay playsInline onEnded={onSkip} />
       <div className="absolute inset-0 flex flex-col justify-between p-4">
         <div className="flex items-start justify-between">
-          <span className="bg-black/70 text-white text-xs font-bold px-2 py-1 rounded-full">
-            Ad · {ad.ad_sponsor_name || 'Sponsor'}
-          </span>
+          <span className="bg-black/70 text-white text-xs font-bold px-2 py-1 rounded-full">Ad · {ad.ad_sponsor_name || 'Sponsor'}</span>
           {canSkip ? (
-            <button
-              onClick={onSkip}
-              className="flex items-center gap-1 bg-white/20 backdrop-blur-sm text-white text-sm font-bold px-3 py-1.5 rounded-full hover:bg-white/30 transition"
-            >
+            <button onClick={onSkip} className="flex items-center gap-1 bg-white/20 backdrop-blur-sm text-white text-sm font-bold px-3 py-1.5 rounded-full hover:bg-white/30 transition">
               Skip <FiSkipForward size={14} />
             </button>
           ) : (
-            <span className="bg-black/70 text-white text-xs px-3 py-1.5 rounded-full">
-              Skip in {countdown}s
-            </span>
+            <span className="bg-black/70 text-white text-xs px-3 py-1.5 rounded-full">Skip in {countdown}s</span>
           )}
         </div>
         <div className="flex items-end justify-between">
           <div className="bg-black/60 backdrop-blur-sm rounded-xl p-3 max-w-xs">
             <p className="text-white font-semibold text-sm">{ad.title}</p>
             {ad.ad_url && (
-              <a href={ad.ad_url} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-1 text-blue-400 text-xs mt-1 hover:underline">
+              <a href={ad.ad_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-400 text-xs mt-1 hover:underline">
                 Learn more <FiExternalLink size={10} />
               </a>
             )}
@@ -106,8 +241,8 @@ function AdOverlay({ ad, onSkip, onClose }) {
   );
 }
 
-// ── Single Video Player (TikTok/YouTube Shorts style) ─────────────────────────
-function VideoCard({ video, isActive, onLike, onComment, onShare, isLoggedIn }) {
+// ── Single Video Player ───────────────────────────────────────────────────────
+function VideoCard({ video, isActive, onLike, isLoggedIn }) {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
   const [playing, setPlaying] = useState(false);
@@ -118,6 +253,7 @@ function VideoCard({ video, isActive, onLike, onComment, onShare, isLoggedIn }) 
   const [showComments, setShowComments] = useState(false);
   const [comment, setComment] = useState('');
   const [comments, setComments] = useState([]);
+  const [replyTo, setReplyTo] = useState(null);
   const [loadingComment, setLoadingComment] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes || 0);
   const [commentsCount, setCommentsCount] = useState(video.comments_count || 0);
@@ -131,16 +267,10 @@ function VideoCard({ video, isActive, onLike, onComment, onShare, isLoggedIn }) 
     if (isActive && videoRef.current) {
       if (!isLoggedIn) {
         api.get(`/trends/video/${video.id}`).then(({ data }) => {
-          if (data.pre_roll_ad) {
-            setPreRollAd(data.pre_roll_ad);
-            setShowAd(true);
-          } else {
-            playVideo();
-          }
+          if (data.pre_roll_ad) { setPreRollAd(data.pre_roll_ad); setShowAd(true); }
+          else playVideo();
         }).catch(() => playVideo());
-      } else {
-        playVideo();
-      }
+      } else playVideo();
     } else if (!isActive && videoRef.current) {
       videoRef.current.pause();
       setPlaying(false);
@@ -148,15 +278,13 @@ function VideoCard({ video, isActive, onLike, onComment, onShare, isLoggedIn }) 
   }, [isActive]);
 
   const playVideo = () => {
-    if (videoRef.current) {
-      videoRef.current.play().then(() => setPlaying(true)).catch(() => {});
-    }
+    if (videoRef.current) videoRef.current.play().then(() => setPlaying(true)).catch(() => {});
   };
 
   const togglePlay = () => {
     if (!videoRef.current) return;
     if (playing) { videoRef.current.pause(); setPlaying(false); }
-    else { videoRef.current.play().then(() => setPlaying(true)).catch(() => {}); }
+    else videoRef.current.play().then(() => setPlaying(true)).catch(() => {});
   };
 
   const handleDoubleTap = () => {
@@ -165,26 +293,8 @@ function VideoCard({ video, isActive, onLike, onComment, onShare, isLoggedIn }) 
       if (!liked) handleLike();
       setShowHeartBurst(true);
       setTimeout(() => setShowHeartBurst(false), 800);
-    } else {
-      togglePlay();
-    }
+    } else togglePlay();
     setLastTap(now);
-  };
-
-  const handleTimeUpdate = () => {
-    if (videoRef.current) {
-      const p = (videoRef.current.currentTime / videoRef.current.duration) * 100;
-      setProgress(p);
-    }
-  };
-
-  const handleSeek = (e) => {
-    if (videoRef.current) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const pct = x / rect.width;
-      videoRef.current.currentTime = pct * videoRef.current.duration;
-    }
   };
 
   const handleLike = async () => {
@@ -192,25 +302,20 @@ function VideoCard({ video, isActive, onLike, onComment, onShare, isLoggedIn }) 
     const newLiked = !liked;
     setLiked(newLiked);
     setLikesCount(v => newLiked ? v + 1 : Math.max(0, v - 1));
-    try {
-      await api.post(`/trends/video/${video.id}/like`);
-    } catch { setLiked(!newLiked); setLikesCount(v => newLiked ? Math.max(0, v - 1) : v + 1); }
+    try { await api.post(`/trends/video/${video.id}/like`); }
+    catch { setLiked(!newLiked); setLikesCount(v => newLiked ? Math.max(0, v - 1) : v + 1); }
   };
 
   const handleShare = async () => {
     const url = `${window.location.origin}/trends?v=${video.id}`;
-    if (navigator.share) {
-      navigator.share({ title: video.title, url });
-    } else {
-      navigator.clipboard.writeText(url);
-      toast.success('Link copied!');
-    }
+    if (navigator.share) navigator.share({ title: video.title, url });
+    else { navigator.clipboard.writeText(url); toast.success('Link copied!'); }
     try { await api.post(`/trends/video/${video.id}/track`, { event: 'share' }); } catch {}
   };
 
   const loadComments = async () => {
     try {
-      const { data } = await api.get(`/trends/video/${video.id}`);
+      const { data } = await api.get(`/trends/video/${video.id}/comments`);
       setComments(data.comments || []);
     } catch {}
   };
@@ -220,76 +325,51 @@ function VideoCard({ video, isActive, onLike, onComment, onShare, isLoggedIn }) 
     if (!isLoggedIn) { toast.error('Log in to comment'); return; }
     setLoadingComment(true);
     try {
-      await api.post(`/trends/video/${video.id}/comment`, { content: comment });
+      await api.post(`/trends/video/${video.id}/comment`, {
+        content: comment,
+        parent_id: replyTo?.id || null,
+      });
       setComment('');
-      setCommentsCount(v => v + 1);
+      setReplyTo(null);
+      if (!replyTo) setCommentsCount(v => v + 1);
       loadComments();
     } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
     finally { setLoadingComment(false); }
-  };
-
-  const toggleFullscreen = () => {
-    if (!containerRef.current) return;
-    if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().catch(err => {
-        toast.error(`Error attempting to enable full-screen mode: ${err.message}`);
-      });
-    } else {
-      document.exitFullscreen();
-    }
   };
 
   const isAdVideo = video._is_injected_ad || video.is_ad;
 
   return (
     <div ref={containerRef} className="relative w-full h-full bg-black overflow-hidden flex items-center justify-center">
-      {/* Video element */}
-      <video
-        ref={videoRef}
-        src={video.video_url}
+      <video ref={videoRef} src={video.video_url}
         className="max-h-full w-auto object-contain cursor-pointer"
-        loop
-        playsInline
-        muted={muted}
-        onTimeUpdate={handleTimeUpdate}
+        loop playsInline muted={muted}
+        onTimeUpdate={() => {
+          if (videoRef.current) setProgress((videoRef.current.currentTime / videoRef.current.duration) * 100);
+        }}
         onClick={handleDoubleTap}
         poster={video.thumbnail_url}
       />
 
-      {/* Pre-roll ad overlay */}
       <AnimatePresence>
         {showAd && preRollAd && (
-          <AdOverlay
-            ad={preRollAd}
-            onSkip={() => { setShowAd(false); playVideo(); }}
-            onClose={() => { setShowAd(false); playVideo(); }}
-          />
+          <AdOverlay ad={preRollAd} onSkip={() => { setShowAd(false); playVideo(); }} />
         )}
       </AnimatePresence>
 
-      {/* Heart Burst Animation */}
       <AnimatePresence>
         {showHeartBurst && (
-          <motion.div
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1.5, opacity: 1 }}
-            exit={{ scale: 2, opacity: 0 }}
-            className="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
-          >
+          <motion.div initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1.5, opacity: 1 }} exit={{ scale: 2, opacity: 0 }}
+            className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
             <FiHeart size={100} className="text-red-500 fill-red-500 shadow-xl" />
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Play/pause indicator */}
       <AnimatePresence>
         {!playing && !showAd && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            className="absolute inset-0 flex items-center justify-center pointer-events-none"
-          >
+          <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}
+            className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="w-20 h-20 bg-black/40 rounded-full flex items-center justify-center">
               <FiPlay size={36} className="text-white ml-1" />
             </div>
@@ -297,14 +377,12 @@ function VideoCard({ video, isActive, onLike, onComment, onShare, isLoggedIn }) 
         )}
       </AnimatePresence>
 
-      {/* Ad badge */}
       {isAdVideo && !showAd && (
         <div className="absolute top-4 left-4 bg-yellow-500 text-black text-[10px] font-black px-2 py-0.5 rounded-full">
           AD · {video.ad_sponsor_name || 'Sponsored'}
         </div>
       )}
 
-      {/* Bottom info overlay */}
       <div className="absolute bottom-0 left-0 right-0 p-4 pb-8 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none z-10">
         <div className="max-w-xl">
           <div className="flex items-center gap-3 mb-3 pointer-events-auto">
@@ -312,176 +390,158 @@ function VideoCard({ video, isActive, onLike, onComment, onShare, isLoggedIn }) 
               {video.uploader_name?.[0]?.toUpperCase() || '?'}
             </div>
             <div>
-              <p className="text-white font-bold text-sm flex items-center gap-1">
-                {video.uploader_name}
-                {video.uploader_type === 'sponsor' && (
-                  <span className="bg-yellow-500/20 text-yellow-300 text-[9px] font-bold px-1.5 py-0.5 rounded-full">SPONSOR</span>
-                )}
-              </p>
-              <button className="text-[#25D366] text-xs font-bold hover:underline">Follow</button>
+              <p className="text-white font-bold text-sm">{video.uploader_name}</p>
+              <p className="text-[#25D366] text-xs font-bold">{video.category}</p>
             </div>
           </div>
           <p className="text-white text-sm font-medium line-clamp-2 mb-2">{video.title}</p>
-          {video.description && (
-            <p className="text-white/70 text-xs line-clamp-2 mb-2">{video.description}</p>
+          {video.tags?.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {video.tags.slice(0, 3).map(tag => (
+                <span key={tag} className="text-[#25D366] text-[10px] font-bold">#{tag}</span>
+              ))}
+            </div>
           )}
-          <div className="flex items-center gap-2 text-white/50 text-[10px]">
-            <FiMusic size={10} />
-            <span className="truncate">Original Audio - {video.uploader_name}</span>
-          </div>
         </div>
       </div>
 
-      {/* Right sidebar actions */}
       <div className="absolute right-3 bottom-24 flex flex-col items-center gap-6 z-10">
-        <button onClick={handleLike} className="flex flex-col items-center gap-1 group">
-          <motion.div 
-            whileTap={{ scale: 0.8 }}
-            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${liked ? 'bg-red-500/20' : 'bg-black/40 hover:bg-black/60'}`}
-          >
-            <FiHeart size={24} className={`transition-colors ${liked ? 'text-red-500 fill-red-500' : 'text-white'}`} />
+        <button onClick={handleLike} className="flex flex-col items-center gap-1">
+          <motion.div whileTap={{ scale: 0.8 }}
+            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${liked ? 'bg-red-500/20' : 'bg-black/40 hover:bg-black/60'}`}>
+            <FiHeart size={24} className={liked ? 'text-red-500 fill-red-500' : 'text-white'} />
           </motion.div>
           <span className="text-white text-xs font-bold drop-shadow-md">{likesCount.toLocaleString()}</span>
         </button>
 
         <button onClick={() => { setShowComments(v => !v); if (!showComments) loadComments(); }}
-          className="flex flex-col items-center gap-1 group">
+          className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center transition-all">
             <FiMessageCircle size={24} className="text-white" />
           </div>
           <span className="text-white text-xs font-bold drop-shadow-md">{commentsCount.toLocaleString()}</span>
         </button>
 
-        <button className="flex flex-col items-center gap-1 group">
+        <button className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center transition-all">
             <FiBookmark size={24} className="text-white" />
           </div>
           <span className="text-white text-xs font-bold drop-shadow-md">Save</span>
         </button>
 
-        <button onClick={handleShare} className="flex flex-col items-center gap-1 group">
+        <button onClick={handleShare} className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center transition-all">
             <FiShare2 size={24} className="text-white" />
           </div>
           <span className="text-white text-xs font-bold drop-shadow-md">{(video.shares || 0).toLocaleString()}</span>
         </button>
-
-        <div className="w-12 h-12 rounded-full bg-black/40 flex items-center justify-center overflow-hidden animate-spin-slow border-2 border-white/20">
-          <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-gray-700 to-gray-900" />
-        </div>
       </div>
 
-      {/* Modern Video Controls (Bottom) */}
       <div className="absolute bottom-0 left-0 right-0 px-4 py-2 bg-black/40 backdrop-blur-sm flex flex-col gap-2 z-20 group">
-        {/* Progress Bar */}
-        <div 
-          className="w-full h-1 bg-white/20 rounded-full cursor-pointer relative overflow-hidden group-hover:h-2 transition-all"
-          onClick={handleSeek}
-        >
-          <div 
-            className="absolute left-0 top-0 bottom-0 bg-[#25D366]"
-            style={{ width: `${progress}%` }}
-          />
+        <div className="w-full h-1 bg-white/20 rounded-full cursor-pointer relative overflow-hidden group-hover:h-2 transition-all"
+          onClick={e => {
+            if (videoRef.current) {
+              const rect = e.currentTarget.getBoundingClientRect();
+              videoRef.current.currentTime = ((e.clientX - rect.left) / rect.width) * videoRef.current.duration;
+            }
+          }}>
+          <div className="absolute left-0 top-0 bottom-0 bg-[#25D366]" style={{ width: `${progress}%` }} />
         </div>
-
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button onClick={togglePlay} className="text-white hover:text-[#25D366] transition">
               {playing ? <FiX size={18} /> : <FiPlay size={18} />}
             </button>
-            <div className="flex items-center gap-2 group/vol">
-              <button onClick={() => setMuted(v => !v)} className="text-white">
-                {muted ? <FiVolumeX size={18} /> : <FiVolume2 size={18} />}
-              </button>
-              <input 
-                type="range" min="0" max="1" step="0.1" 
-                className="w-0 group-hover/vol:w-20 transition-all origin-left accent-[#25D366]" 
-                onChange={(e) => {
-                  if (videoRef.current) videoRef.current.volume = e.target.value;
-                }}
-              />
-            </div>
+            <button onClick={() => setMuted(v => !v)} className="text-white hover:text-[#25D366] transition">
+              {muted ? <FiVolumeX size={18} /> : <FiVolume2 size={18} />}
+            </button>
           </div>
-
           <div className="flex items-center gap-4">
-            {/* Playback Speed */}
             <div className="relative">
-              <button 
-                onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                className="text-white text-xs font-bold hover:text-[#25D366] transition"
-              >
+              <button onClick={() => setShowSpeedMenu(!showSpeedMenu)} className="text-white text-xs font-bold hover:text-[#25D366] transition">
                 {playbackSpeed}x
               </button>
               {showSpeedMenu && (
                 <div className="absolute bottom-full right-0 mb-2 bg-black/90 border border-white/10 rounded-lg overflow-hidden py-1 min-w-[60px]">
                   {[0.5, 1, 1.5, 2].map(speed => (
-                    <button
-                      key={speed}
-                      onClick={() => {
-                        setPlaybackSpeed(speed);
-                        if (videoRef.current) videoRef.current.playbackRate = speed;
-                        setShowSpeedMenu(false);
-                      }}
-                      className={`w-full px-3 py-1.5 text-xs text-left hover:bg-white/10 ${playbackSpeed === speed ? 'text-[#25D366]' : 'text-white'}`}
-                    >
+                    <button key={speed} onClick={() => { setPlaybackSpeed(speed); if (videoRef.current) videoRef.current.playbackRate = speed; setShowSpeedMenu(false); }}
+                      className={`w-full px-3 py-1.5 text-xs text-left hover:bg-white/10 ${playbackSpeed === speed ? 'text-[#25D366]' : 'text-white'}`}>
                       {speed}x
                     </button>
                   ))}
                 </div>
               )}
             </div>
-
-            <button onClick={toggleFullscreen} className="text-white hover:text-[#25D366] transition">
+            <button onClick={() => {
+              if (!document.fullscreenElement) containerRef.current?.requestFullscreen().catch(() => {});
+              else document.exitFullscreen();
+            }} className="text-white hover:text-[#25D366] transition">
               <FiMaximize size={18} />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Comments panel */}
+      {/* Comments drawer */}
       <AnimatePresence>
         {showComments && (
-          <motion.div
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
+          <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="absolute inset-x-0 bottom-0 bg-gray-900/95 backdrop-blur-sm rounded-t-3xl max-h-[60%] flex flex-col"
-          >
+            className="absolute inset-x-0 bottom-0 bg-gray-900/95 backdrop-blur-sm rounded-t-3xl max-h-[60%] flex flex-col z-30">
             <div className="flex items-center justify-between p-4 border-b border-white/10">
               <p className="text-white font-bold text-sm">{commentsCount} Comments</p>
-              <button onClick={() => setShowComments(false)}>
-                <FiX size={20} className="text-white/70" />
-              </button>
+              <button onClick={() => setShowComments(false)}><FiX size={20} className="text-white/70" /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {comments.length === 0 && (
-                <p className="text-white/50 text-sm text-center py-4">No comments yet. Be first!</p>
-              )}
+              {comments.length === 0 && <p className="text-white/50 text-sm text-center py-4">No comments yet. Be first!</p>}
               {comments.map(c => (
-                <div key={c.id} className="flex gap-2">
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-green-400 to-teal-500 flex items-center justify-center text-white font-bold text-[10px] flex-shrink-0">
-                    {c.user_name?.[0]?.toUpperCase()}
+                <div key={c.id}>
+                  <div className="flex gap-2">
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-green-400 to-teal-500 flex items-center justify-center text-white font-bold text-[10px] flex-shrink-0">
+                      {c.user_name?.[0]?.toUpperCase()}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-white/70 text-[11px] font-semibold">{c.user_name}</p>
+                      <p className="text-white text-sm">{c.content}</p>
+                      <button onClick={() => setReplyTo(c)} className="text-[10px] text-[#25D366] font-bold mt-1 hover:underline">Reply</button>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-white/70 text-[11px] font-semibold">{c.user_name}</p>
-                    <p className="text-white text-sm">{c.content}</p>
-                  </div>
+                  {c.replies?.length > 0 && (
+                    <div className="ml-9 mt-2 space-y-2">
+                      {c.replies.map(r => (
+                        <div key={r.id} className="flex gap-2">
+                          <FiCornerDownRight size={10} className="text-white/30 mt-1 flex-shrink-0" />
+                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center text-white font-bold text-[9px] flex-shrink-0">
+                            {r.user_name?.[0]?.toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="text-white/60 text-[10px] font-semibold">{r.user_name}</p>
+                            <p className="text-white/90 text-xs">{r.content}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
-            <div className="flex items-center gap-2 p-3 border-t border-white/10">
-              <input
-                value={comment}
-                onChange={e => setComment(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && submitComment()}
-                placeholder="Add a comment..."
-                className="flex-1 bg-white/10 text-white placeholder-white/40 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-white/30"
-              />
-              <button onClick={submitComment} disabled={loadingComment || !comment.trim()}
-                className="w-9 h-9 bg-[#25D366] rounded-full flex items-center justify-center disabled:opacity-40">
-                <FiSend size={15} className="text-white" />
-              </button>
+            <div className="flex flex-col gap-2 p-3 border-t border-white/10">
+              {replyTo && (
+                <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-1.5">
+                  <span className="text-white/50 text-xs flex-1">Replying to {replyTo.user_name}</span>
+                  <button onClick={() => setReplyTo(null)}><FiX size={12} className="text-white/40" /></button>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <input value={comment} onChange={e => setComment(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && submitComment()}
+                  placeholder={replyTo ? `Reply to ${replyTo.user_name}…` : 'Add a comment…'}
+                  className="flex-1 bg-white/10 text-white placeholder-white/40 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-white/30" />
+                <button onClick={submitComment} disabled={loadingComment || !comment.trim()}
+                  className="w-9 h-9 bg-[#25D366] rounded-full flex items-center justify-center disabled:opacity-40">
+                  <FiSend size={15} className="text-white" />
+                </button>
+              </div>
             </div>
           </motion.div>
         )}
@@ -504,11 +564,50 @@ export default function TrendsPage() {
   const [hasMore, setHasMore] = useState(true);
   const [activeIdx, setActiveIdx] = useState(0);
   const [stats, setStats] = useState(null);
-  const [viewMode, setViewMode] = useState('scroll'); // scroll | grid
-  const [feedType, setFeedType] = useState('for-you'); // for-you | following | trending
+  const [viewMode, setViewMode] = useState('scroll');
+  const [feedType, setFeedType] = useState('for-you');
+  const [uploadOpen, setUploadOpen] = useState(false);
+
+  // Sidebar real data
+  const [trendingHashtags, setTrendingHashtags] = useState([]);
+  const [topCreators, setTopCreators] = useState([]);
+  const [sidebarLoading, setSidebarLoading] = useState(true);
+
+  // Right panel comments
+  const [rightComments, setRightComments] = useState([]);
+  const [rightCommentText, setRightCommentText] = useState('');
+  const [rightCommentLoading, setRightCommentLoading] = useState(false);
+  const [rightReplyTo, setRightReplyTo] = useState(null);
+  const [rightCommentsLoading, setRightCommentsLoading] = useState(false);
+
   const containerRef = useRef(null);
   const observerRef = useRef(null);
   const loadingMore = useRef(false);
+
+  // Fetch sidebar data once
+  useEffect(() => {
+    setSidebarLoading(true);
+    Promise.all([
+      api.get('/trends/hashtags/trending?limit=8').catch(() => ({ data: { hashtags: [] } })),
+      api.get('/trends/creators/top?limit=5').catch(() => ({ data: { creators: [] } })),
+    ]).then(([hashRes, creatRes]) => {
+      setTrendingHashtags(hashRes.data.hashtags || []);
+      setTopCreators(creatRes.data.creators || []);
+    }).finally(() => setSidebarLoading(false));
+  }, []);
+
+  // Fetch right panel comments when active video changes
+  useEffect(() => {
+    if (!videos[activeIdx] || viewMode !== 'scroll') return;
+    const vid = videos[activeIdx];
+    setRightComments([]);
+    setRightReplyTo(null);
+    setRightCommentsLoading(true);
+    api.get(`/trends/video/${vid.id}/comments`)
+      .then(({ data }) => setRightComments(data.comments || []))
+      .catch(() => {})
+      .finally(() => setRightCommentsLoading(false));
+  }, [activeIdx, viewMode, videos]);
 
   const fetchVideos = useCallback(async (cat = category, s = sort, pg = 1, append = false) => {
     if (loadingMore.current && append) return;
@@ -521,9 +620,9 @@ export default function TrendsPage() {
       const { data } = await api.get(endpoint);
       const newVideos = data.videos || [];
       setVideos(prev => append ? [...prev, ...newVideos] : newVideos);
-      setHasMore(pg < (data.pages || 1));
+      setHasMore(data.has_more || pg < (data.pages || 1));
       setPage(pg);
-    } catch (e) {
+    } catch {
       if (!append) toast.error('Failed to load videos');
     } finally {
       setLoading(false);
@@ -540,46 +639,54 @@ export default function TrendsPage() {
     fetchVideos(category, sort, 1, false);
   }, [category, sort, searchQuery, feedType]);
 
-  // Intersection observer for scroll-based active video detection
   useEffect(() => {
     if (viewMode !== 'scroll') return;
     const cards = containerRef.current?.querySelectorAll('[data-video-card]');
     if (!cards?.length) return;
     observerRef.current?.disconnect();
-    observerRef.current = new IntersectionObserver(
-      entries => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            const idx = parseInt(entry.target.dataset.idx, 10);
-            setActiveIdx(idx);
-            // Load more when near end
-            if (idx >= videos.length - 3 && hasMore && !loadingMore.current) {
-              fetchVideos(category, sort, page + 1, true);
-            }
+    observerRef.current = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const idx = parseInt(entry.target.dataset.idx, 10);
+          setActiveIdx(idx);
+          if (idx >= videos.length - 3 && hasMore && !loadingMore.current) {
+            fetchVideos(category, sort, page + 1, true);
           }
-        });
-      },
-      { threshold: 0.6 }
-    );
+        }
+      });
+    }, { threshold: 0.6 });
     cards.forEach(card => observerRef.current.observe(card));
     return () => observerRef.current?.disconnect();
   }, [videos, viewMode, hasMore, page, category, sort]);
 
-  const handleSearch = () => {
-    setSearchQuery(search.trim());
+  const submitRightComment = async () => {
+    if (!rightCommentText.trim() || !user) return;
+    const vid = videos[activeIdx];
+    if (!vid) return;
+    setRightCommentLoading(true);
+    try {
+      await api.post(`/trends/video/${vid.id}/comment`, {
+        content: rightCommentText.trim(),
+        parent_id: rightReplyTo?.id || null,
+      });
+      setRightCommentText('');
+      setRightReplyTo(null);
+      const { data } = await api.get(`/trends/video/${vid.id}/comments`);
+      setRightComments(data.comments || []);
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+    finally { setRightCommentLoading(false); }
   };
-
-  const SORT_OPTIONS = [
-    { id: 'trending', label: 'Trending', icon: FiTrendingUp },
-    { id: 'latest', label: 'Latest', icon: FiClock },
-    { id: 'popular', label: 'Popular', icon: FiStar },
-  ];
 
   return (
     <div className="flex h-screen bg-[#0a0a0a] text-white overflow-hidden">
-      {/* ── Left Sidebar (280px) ─────────────────────────────────────────── */}
+
+      {/* ── Upload Modal ── */}
+      <AnimatePresence>
+        {uploadOpen && <UploadModal onClose={() => setUploadOpen(false)} />}
+      </AnimatePresence>
+
+      {/* ── Left Sidebar ── */}
       <div className="hidden lg:flex w-[280px] flex-col border-r border-white/10 bg-[#0a0a0a] shrink-0 overflow-y-auto no-scrollbar">
-        {/* User Mini-Card */}
         {user ? (
           <div className="p-6 pb-2">
             <div className="flex items-center gap-3 mb-4">
@@ -591,14 +698,16 @@ export default function TrendsPage() {
                 <p className="text-white/40 text-xs truncate">@{user.username || 'user'}</p>
               </div>
             </div>
-            <div className="flex gap-4 text-xs">
-              <span className="text-white/60"><strong className="text-white">1.2K</strong> Following</span>
-              <span className="text-white/60"><strong className="text-white">45.8K</strong> Followers</span>
-            </div>
+            {stats && (
+              <div className="flex gap-4 text-xs">
+                <span className="text-white/60"><strong className="text-white">{(stats.total_videos || 0).toLocaleString()}</strong> Videos</span>
+                <span className="text-white/60"><strong className="text-white">{(stats.total_views || 0).toLocaleString()}</strong> Views</span>
+              </div>
+            )}
           </div>
         ) : (
           <div className="p-6">
-            <p className="text-white/60 text-sm mb-4">Log in to follow creators, like videos, and view comments.</p>
+            <p className="text-white/60 text-sm mb-4">Log in to like, comment, and upload videos.</p>
             <button onClick={() => navigate('/login')} className="w-full py-2.5 bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold rounded-lg transition">Log in</button>
           </div>
         )}
@@ -607,62 +716,66 @@ export default function TrendsPage() {
 
         {/* Navigation */}
         <nav className="px-4 space-y-1">
-          <button 
-            onClick={() => setFeedType('for-you')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition font-bold text-lg ${feedType === 'for-you' ? 'text-[#25D366] bg-white/5' : 'text-white/60 hover:bg-white/5'}`}
-          >
-            <FiPlay /> For You
-          </button>
-          <button 
-            onClick={() => setFeedType('following')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition font-bold text-lg ${feedType === 'following' ? 'text-[#25D366] bg-white/5' : 'text-white/60 hover:bg-white/5'}`}
-          >
-            <FiRss /> Following
-          </button>
-          <button 
-            onClick={() => setFeedType('trending')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition font-bold text-lg ${feedType === 'trending' ? 'text-[#25D366] bg-white/5' : 'text-white/60 hover:bg-white/5'}`}
-          >
-            <FiTrendingUp /> Trending
-          </button>
+          {[
+            { id: 'for-you', label: 'For You', icon: FiPlay },
+            { id: 'trending', label: 'Trending', icon: FiTrendingUp },
+          ].map(({ id, label, icon: Icon }) => (
+            <button key={id} onClick={() => setFeedType(id)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition font-bold text-lg ${feedType === id ? 'text-[#25D366] bg-white/5' : 'text-white/60 hover:bg-white/5'}`}>
+              <Icon /> {label}
+            </button>
+          ))}
         </nav>
 
         <div className="h-px bg-white/5 mx-6 my-4" />
 
-        {/* Suggested Accounts */}
+        {/* Top Creators */}
         <div className="px-6 py-2">
-          <p className="text-white/40 text-xs font-bold uppercase mb-4 tracking-wider">Suggested accounts</p>
+          <p className="text-white/40 text-xs font-bold uppercase mb-4 tracking-wider">Top Creators</p>
           <div className="space-y-4">
-            {SUGGESTED_CREATORS.map(creator => (
-              <div key={creator.id} className="flex items-center justify-between group cursor-pointer">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-white text-[10px] font-bold border border-white/10 group-hover:border-[#25D366] transition">
-                    {creator.avatar}
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold group-hover:underline">{creator.name}</p>
-                    <p className="text-white/40 text-[10px]">{creator.username}</p>
+            {sidebarLoading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <Skeleton className="w-8 h-8 rounded-full" />
+                  <div className="flex-1 space-y-1">
+                    <Skeleton className="h-3 w-24 rounded" />
+                    <Skeleton className="h-2 w-16 rounded" />
                   </div>
                 </div>
-                <button className="text-[#25D366] text-[10px] font-bold hover:underline">Follow</button>
-              </div>
-            ))}
+              ))
+            ) : topCreators.length === 0 ? (
+              <p className="text-white/30 text-xs">No creators yet</p>
+            ) : (
+              topCreators.map(creator => (
+                <div key={creator.id} className="flex items-center justify-between group cursor-pointer">
+                  <div className="flex items-center gap-3">
+                    {creator.avatar_url ? (
+                      <img src={creator.avatar_url} alt={creator.name} className="w-8 h-8 rounded-full object-cover border border-white/10" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#25D366] to-teal-600 flex items-center justify-center text-white text-[10px] font-bold border border-white/10">
+                        {creator.avatar}
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-xs font-bold group-hover:underline">{creator.name}</p>
+                      <p className="text-white/40 text-[10px]">{creator.username} · {creator.followers} views</p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-          <button className="mt-4 text-[#25D366] text-xs font-bold hover:underline">See all</button>
         </div>
 
         <div className="h-px bg-white/5 mx-6 my-4" />
 
-        {/* Categories (Vertical) */}
+        {/* Categories */}
         <div className="px-6 py-2">
           <p className="text-white/40 text-xs font-bold uppercase mb-4 tracking-wider">Explore Topics</p>
           <div className="space-y-1">
             {CATEGORIES.map(cat => (
-              <button 
-                key={cat.id} 
-                onClick={() => setCategory(cat.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${category === cat.id ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5 hover:text-white'}`}
-              >
+              <button key={cat.id} onClick={() => setCategory(cat.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${category === cat.id ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5 hover:text-white'}`}>
                 <cat.icon className={category === cat.id ? 'text-[#25D366]' : cat.color} size={14} />
                 {cat.label}
               </button>
@@ -674,16 +787,28 @@ export default function TrendsPage() {
 
         {/* Trending Hashtags */}
         <div className="px-6 py-2">
-          <p className="text-white/40 text-xs font-bold uppercase mb-4 tracking-wider">Trending</p>
+          <p className="text-white/40 text-xs font-bold uppercase mb-4 tracking-wider">Trending Hashtags</p>
           <div className="space-y-4">
-            {TRENDING_HASHTAGS.map(h => (
-              <div key={h.tag} className="group cursor-pointer">
-                <p className="text-sm font-medium hover:underline flex items-center gap-2">
-                  <FiActivity size={12} className="text-white/40" /> {h.tag}
-                </p>
-                <p className="text-[10px] text-white/40 ml-5">{h.counts} videos</p>
-              </div>
-            ))}
+            {sidebarLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="space-y-1">
+                  <Skeleton className="h-3 w-28 rounded" />
+                  <Skeleton className="h-2 w-16 rounded ml-5" />
+                </div>
+              ))
+            ) : trendingHashtags.length === 0 ? (
+              <p className="text-white/30 text-xs">No hashtags yet — upload a video with tags!</p>
+            ) : (
+              trendingHashtags.map(h => (
+                <div key={h.tag} className="group cursor-pointer"
+                  onClick={() => { setSearch(h.tag); setSearchQuery(h.tag); }}>
+                  <p className="text-sm font-medium hover:underline flex items-center gap-2">
+                    <FiActivity size={12} className="text-white/40" /> {h.tag}
+                  </p>
+                  <p className="text-[10px] text-white/40 ml-5">{h.counts} videos</p>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -691,20 +816,15 @@ export default function TrendsPage() {
         <div className="mt-auto p-6 space-y-2">
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-white/30 font-medium">
             <button className="hover:underline">About</button>
-            <button className="hover:underline">Newsroom</button>
             <button className="hover:underline">Contact</button>
-            <button className="hover:underline">Careers</button>
-            <button className="hover:underline">VipChat for Good</button>
             <button className="hover:underline">Advertise</button>
-            <button className="hover:underline">Developers</button>
           </div>
-          <p className="text-[10px] text-white/20 pt-2">© 2024 VipTrends</p>
+          <p className="text-[10px] text-white/20 pt-2">© 2025 VipTrends</p>
         </div>
       </div>
 
-      {/* ── Main Content Area ─────────────────────────────────────────────── */}
+      {/* ── Main Content ── */}
       <div className="flex-1 flex flex-col relative overflow-hidden">
-        {/* Header */}
         <header className="h-[72px] border-b border-white/10 bg-[#0a0a0a]/80 backdrop-blur-md flex items-center justify-between px-6 z-40 shrink-0">
           <div className="flex items-center gap-4 lg:hidden">
             <button onClick={() => navigate(user ? '/' : '/login')} className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#25D366] to-teal-600 flex items-center justify-center">
@@ -715,18 +835,14 @@ export default function TrendsPage() {
           <div className="flex-1 max-w-xl mx-auto px-4">
             <div className="relative group">
               <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#25D366] transition-colors" />
-              <input 
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                type="text" 
-                placeholder="Search accounts and videos" 
-                className="w-full bg-white/5 border border-transparent focus:border-white/20 focus:bg-white/10 rounded-full py-2.5 pl-11 pr-4 text-sm transition-all outline-none"
-              />
+              <input value={search} onChange={e => setSearch(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && setSearchQuery(search.trim())}
+                type="text" placeholder="Search accounts and videos"
+                className="w-full bg-white/5 border border-transparent focus:border-white/20 focus:bg-white/10 rounded-full py-2.5 pl-11 pr-4 text-sm transition-all outline-none" />
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <div className="hidden sm:flex items-center gap-1 bg-white/5 rounded-full p-1 border border-white/10">
               <button onClick={() => setViewMode('scroll')}
                 className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${viewMode === 'scroll' ? 'bg-[#25D366] text-white shadow-lg' : 'text-white/50 hover:text-white'}`}>
@@ -737,6 +853,14 @@ export default function TrendsPage() {
                 Browse
               </button>
             </div>
+
+            {user && (
+              <button onClick={() => setUploadOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold rounded-full text-sm transition">
+                <FiUpload size={15} /> Upload
+              </button>
+            )}
+
             {!user ? (
               <button onClick={() => navigate('/login')} className="px-6 py-2 bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold rounded-lg text-sm transition">Log in</button>
             ) : (
@@ -747,12 +871,11 @@ export default function TrendsPage() {
           </div>
         </header>
 
-        {/* Scrollable Feed Container */}
         <main className="flex-1 overflow-y-auto no-scrollbar relative snap-y snap-mandatory bg-black">
           {loading ? (
             <div className="h-full flex flex-col items-center justify-center space-y-4">
               <div className="w-12 h-12 border-4 border-[#25D366] border-t-transparent rounded-full animate-spin" />
-              <p className="text-white/40 text-sm animate-pulse">Tailoring your feed...</p>
+              <p className="text-white/40 text-sm animate-pulse">Tailoring your feed…</p>
             </div>
           ) : videos.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center p-12 text-center">
@@ -760,34 +883,29 @@ export default function TrendsPage() {
                 <MdOutlineSubscriptions size={40} className="text-white/20" />
               </div>
               <h2 className="text-2xl font-bold mb-2">No videos yet</h2>
-              <p className="text-white/40 max-w-xs mb-8">Follow more accounts or check back later for new content.</p>
-              <button onClick={() => { setFeedType('for-you'); setCategory('all'); }} className="px-8 py-3 bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold rounded-full transition">Refresh Feed</button>
+              <p className="text-white/40 max-w-xs mb-8">
+                {searchQuery ? `No results for "${searchQuery}"` : 'Check back later for new content.'}
+              </p>
+              <button onClick={() => { setFeedType('for-you'); setCategory('all'); setSearchQuery(''); setSearch(''); }}
+                className="px-8 py-3 bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold rounded-full transition">
+                Refresh Feed
+              </button>
             </div>
           ) : viewMode === 'scroll' ? (
-            /* ── Vertical Fullscreen Shorts ── */
             <div ref={containerRef} className="h-full w-full">
               {videos.map((video, idx) => (
-                <div 
-                  key={`${video.id}-${idx}`} 
-                  data-video-card 
-                  data-idx={idx}
-                  className="h-full w-full snap-start relative flex items-center justify-center"
-                >
+                <div key={`${video.id}-${idx}`} data-video-card data-idx={idx}
+                  className="h-full w-full snap-start relative flex items-center justify-center">
                   <div className="relative w-full h-full max-w-[500px] bg-black shadow-2xl overflow-hidden">
                     <VideoCard video={video} isActive={activeIdx === idx} isLoggedIn={!!user} />
                   </div>
-                  {/* Up/Down Arrows (Visible on large screens) */}
                   <div className="hidden xl:flex absolute left-full ml-8 flex-col gap-4">
-                    <button 
-                      onClick={() => containerRef.current.scrollBy({ top: -window.innerHeight, behavior: 'smooth' })}
-                      className="w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center border border-white/10 transition"
-                    >
+                    <button onClick={() => containerRef.current.scrollBy({ top: -window.innerHeight, behavior: 'smooth' })}
+                      className="w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center border border-white/10 transition">
                       <FiChevronUp size={24} />
                     </button>
-                    <button 
-                      onClick={() => containerRef.current.scrollBy({ top: window.innerHeight, behavior: 'smooth' })}
-                      className="w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center border border-white/10 transition"
-                    >
+                    <button onClick={() => containerRef.current.scrollBy({ top: window.innerHeight, behavior: 'smooth' })}
+                      className="w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center border border-white/10 transition">
                       <FiChevronDown size={24} />
                     </button>
                   </div>
@@ -800,18 +918,13 @@ export default function TrendsPage() {
               )}
             </div>
           ) : (
-            /* ── Grid browse mode ── */
             <div className="max-w-7xl mx-auto p-6">
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {videos.filter(v => !v._is_injected_ad).map(video => (
-                  <motion.div
-                    key={video.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
+                  <motion.div key={video.id}
+                    initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
                     className="relative group cursor-pointer"
-                    onClick={() => { setViewMode('scroll'); setActiveIdx(videos.findIndex(v => v.id === video.id)); }}
-                  >
+                    onClick={() => { setViewMode('scroll'); setActiveIdx(videos.findIndex(v => v.id === video.id)); }}>
                     <div className="aspect-[9/16] rounded-xl overflow-hidden bg-gray-900 border border-white/5 relative">
                       {video.thumbnail_url ? (
                         <img src={video.thumbnail_url} alt={video.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
@@ -838,7 +951,7 @@ export default function TrendsPage() {
                 <div className="flex justify-center mt-12 mb-8">
                   <button onClick={() => fetchVideos(category, sort, page + 1, true)}
                     className="px-12 py-3 bg-white/5 hover:bg-white/10 text-white font-bold rounded-full border border-white/10 transition">
-                    Load More Content
+                    Load More
                   </button>
                 </div>
               )}
@@ -847,15 +960,11 @@ export default function TrendsPage() {
         </main>
       </div>
 
-      {/* ── Right Panel (320px, Optional - for Comments/Shares on large screens) ── */}
+      {/* ── Right Panel — Comments ── */}
       <AnimatePresence>
         {activeIdx !== null && videos[activeIdx] && viewMode === 'scroll' && (
-          <motion.div 
-            initial={{ x: 320 }}
-            animate={{ x: 0 }}
-            exit={{ x: 320 }}
-            className="hidden xl:flex w-[350px] flex-col border-l border-white/10 bg-[#0a0a0a] shrink-0 overflow-hidden"
-          >
+          <motion.div initial={{ x: 320 }} animate={{ x: 0 }} exit={{ x: 320 }}
+            className="hidden xl:flex w-[350px] flex-col border-l border-white/10 bg-[#0a0a0a] shrink-0 overflow-hidden">
             <div className="p-6 border-b border-white/10">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#25D366] to-teal-600 flex items-center justify-center text-white font-bold border-2 border-white/10">
@@ -865,13 +974,15 @@ export default function TrendsPage() {
                   <p className="font-bold hover:underline cursor-pointer">{videos[activeIdx].uploader_name}</p>
                   <p className="text-white/40 text-xs">@{videos[activeIdx].uploader_name?.toLowerCase().replace(/\s/g, '')}</p>
                 </div>
-                <button className="ml-auto px-4 py-1.5 bg-[#25D366] hover:bg-[#1fbd5a] text-white text-xs font-bold rounded-lg transition">Follow</button>
               </div>
               <p className="text-sm leading-relaxed mb-4">{videos[activeIdx].title}</p>
-              <div className="flex items-center gap-2 text-[#25D366] text-sm font-medium mb-4">
-                <FiMusic size={14} />
-                <span>Original Sound - {videos[activeIdx].uploader_name}</span>
-              </div>
+              {videos[activeIdx].tags?.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-4">
+                  {videos[activeIdx].tags.map(tag => (
+                    <span key={tag} className="bg-white/5 text-[#25D366] text-[10px] font-bold px-2 py-0.5 rounded-full">#{tag}</span>
+                  ))}
+                </div>
+              )}
               <div className="flex items-center gap-6 py-4 border-y border-white/5">
                 <div className="flex items-center gap-2 text-sm font-bold">
                   <FiHeart className="text-red-500 fill-red-500" /> {videos[activeIdx].likes?.toLocaleString() || 0}
@@ -884,38 +995,81 @@ export default function TrendsPage() {
                 </div>
               </div>
             </div>
-            
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
               <p className="text-xs font-bold text-white/40 uppercase tracking-widest">Comments</p>
-              {/* Dummy Comments for UI */}
-              <div className="space-y-6">
-                {[1, 2, 3, 4, 5].map(i => (
+              {rightCommentsLoading ? (
+                Array.from({ length: 4 }).map((_, i) => (
                   <div key={i} className="flex gap-3">
-                    <div className="w-8 h-8 rounded-full bg-gray-800 shrink-0 border border-white/10" />
-                    <div>
-                      <p className="text-xs font-bold mb-1">User_{i} <span className="text-white/20 font-medium ml-2">2h</span></p>
-                      <p className="text-sm text-white/80">This content is absolutely amazing! 🔥 Keep up the great work.</p>
-                      <div className="flex items-center gap-4 mt-2 text-[10px] font-bold text-white/40">
-                        <button className="hover:text-white transition">Reply</button>
-                        <button className="flex items-center gap-1 hover:text-red-500 transition"><FiHeart size={10} /> 12</button>
-                      </div>
+                    <Skeleton className="w-8 h-8 rounded-full flex-shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-3 w-24 rounded" />
+                      <Skeleton className="h-3 w-40 rounded" />
                     </div>
                   </div>
-                ))}
-              </div>
+                ))
+              ) : rightComments.length === 0 ? (
+                <p className="text-white/30 text-sm text-center py-4">No comments yet. Be first!</p>
+              ) : (
+                rightComments.map(c => (
+                  <div key={c.id} className="space-y-2">
+                    <div className="flex gap-3">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#25D366] to-teal-500 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                        {c.user_name?.[0]?.toUpperCase()}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-xs font-bold mb-1">{c.user_name} <span className="text-white/20 font-medium ml-2">{new Date(c.created_at).toLocaleDateString()}</span></p>
+                        <p className="text-sm text-white/80">{c.content}</p>
+                        <div className="flex items-center gap-4 mt-2 text-[10px] font-bold text-white/40">
+                          <button className="hover:text-[#25D366] transition" onClick={() => setRightReplyTo(c)}>Reply</button>
+                          <button className="flex items-center gap-1 hover:text-red-500 transition"><FiHeart size={10} /> {c.likes || 0}</button>
+                        </div>
+                      </div>
+                    </div>
+                    {c.replies?.length > 0 && (
+                      <div className="ml-11 space-y-2">
+                        {c.replies.map(r => (
+                          <div key={r.id} className="flex gap-2">
+                            <FiCornerDownRight size={10} className="text-white/20 mt-1 flex-shrink-0" />
+                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center text-white font-bold text-[9px] flex-shrink-0">
+                              {r.user_name?.[0]?.toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold text-white/60">{r.user_name}</p>
+                              <p className="text-xs text-white/70">{r.content}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
 
-            <div className="p-4 bg-white/5 border-t border-white/10">
-              <div className="relative">
-                <input 
-                  type="text" 
-                  placeholder="Add comment..." 
-                  className="w-full bg-black/40 border border-white/10 focus:border-[#25D366] rounded-xl py-3 pl-4 pr-12 text-sm transition-all outline-none"
-                />
-                <button className="absolute right-3 top-1/2 -translate-y-1/2 text-[#25D366] hover:scale-110 transition-transform">
-                  <FiSend />
+            <div className="p-4 bg-white/5 border-t border-white/10 space-y-2">
+              {rightReplyTo && (
+                <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-1.5">
+                  <span className="text-white/50 text-xs flex-1">Replying to {rightReplyTo.user_name}</span>
+                  <button onClick={() => setRightReplyTo(null)}><FiX size={12} className="text-white/40" /></button>
+                </div>
+              )}
+              {user ? (
+                <div className="relative">
+                  <input value={rightCommentText} onChange={e => setRightCommentText(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && submitRightComment()}
+                    type="text" placeholder={rightReplyTo ? `Reply to ${rightReplyTo.user_name}…` : 'Add comment…'}
+                    className="w-full bg-black/40 border border-white/10 focus:border-[#25D366] rounded-xl py-3 pl-4 pr-12 text-sm transition-all outline-none" />
+                  <button onClick={submitRightComment} disabled={rightCommentLoading || !rightCommentText.trim()}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#25D366] hover:scale-110 transition-transform disabled:opacity-40">
+                    <FiSend />
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => navigate('/login')} className="w-full py-3 bg-white/5 hover:bg-white/10 text-white/60 rounded-xl text-sm transition">
+                  Log in to comment
                 </button>
-              </div>
+              )}
             </div>
           </motion.div>
         )}

@@ -2,10 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   TextInput, ActivityIndicator, RefreshControl, Image,
-  Dimensions, Platform,
+  Dimensions, Platform, Modal, ScrollView, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import api from '../../services/api';
 import { useAuthStore } from '../../services/store';
 import { COLORS } from '../../config';
@@ -81,6 +82,13 @@ export default function TrendsScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [stats, setStats] = useState(null);
+  const [trendingHashtags, setTrendingHashtags] = useState([]);
+  const [topCreators, setTopCreators] = useState([]);
+  const [uploadVisible, setUploadVisible] = useState(false);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadCategory, setUploadCategory] = useState('general');
+  const [uploadTags, setUploadTags] = useState('');
+  const [uploading, setUploading] = useState(false);
 
   const fetchVideos = useCallback(async (cat = category, s = sort, p = 1, append = false) => {
     if (p === 1) setLoading(true);
@@ -105,7 +113,41 @@ export default function TrendsScreen() {
   useFocusEffect(useCallback(() => {
     fetchVideos(category, sort, 1);
     api.get('/trends/stats').then(r => setStats(r.data)).catch(() => {});
+    api.get('/trends/hashtags/trending?limit=8').then(r => setTrendingHashtags(r.data.hashtags || [])).catch(() => {});
+    api.get('/trends/creators/top?limit=4').then(r => setTopCreators(r.data.creators || [])).catch(() => {});
   }, [category, sort, searchQuery]));
+
+  const handleUpload = async () => {
+    if (!uploadTitle.trim()) { Alert.alert('Error', 'Please enter a title'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      quality: 0.8,
+    });
+    if (result.canceled) return;
+    setUploading(true);
+    try {
+      const asset = result.assets[0];
+      const formData = new FormData();
+      formData.append('file', { uri: asset.uri, type: 'video/mp4', name: 'upload.mp4' });
+      const { data: uploadData } = await api.post('/upload/video', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      await api.post('/trends/upload', {
+        title: uploadTitle.trim(),
+        video_url: uploadData.url,
+        category: uploadCategory,
+        tags: uploadTags.split(',').map(t => t.trim()).filter(Boolean),
+      });
+      Alert.alert('Uploaded!', 'Your video is pending admin review.');
+      setUploadVisible(false);
+      setUploadTitle('');
+      setUploadTags('');
+    } catch (e) {
+      Alert.alert('Error', e.response?.data?.error || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleSearch = () => {
     setSearchQuery(search.trim());
@@ -191,6 +233,27 @@ export default function TrendsScreen() {
         )}
       </View>
 
+      {/* Trending Hashtags strip */}
+      {trendingHashtags.length > 0 && (
+        <FlatList
+          horizontal
+          data={trendingHashtags}
+          keyExtractor={h => h.tag}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.hashtagList}
+          style={styles.hashtagBar}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              onPress={() => { setSearch(item.tag); setSearchQuery(item.tag); }}
+              style={styles.hashtagChip}
+            >
+              <Text style={styles.hashtagText}>{item.tag}</Text>
+              <Text style={styles.hashtagCount}>{item.counts}</Text>
+            </TouchableOpacity>
+          )}
+        />
+      )}
+
       {/* Content */}
       {loading ? (
         <View style={styles.center}>
@@ -228,6 +291,13 @@ export default function TrendsScreen() {
         />
       )}
 
+      {/* Upload FAB (logged-in only) */}
+      {user && (
+        <TouchableOpacity style={styles.fab} onPress={() => setUploadVisible(true)}>
+          <Ionicons name="cloud-upload-outline" size={24} color="#fff" />
+        </TouchableOpacity>
+      )}
+
       {/* Non-user banner */}
       {!user && (
         <View style={styles.guestBanner}>
@@ -240,6 +310,63 @@ export default function TrendsScreen() {
           </TouchableOpacity>
         </View>
       )}
+
+      {/* Upload Modal */}
+      <Modal visible={uploadVisible} transparent animationType="slide" onRequestClose={() => setUploadVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Upload Video</Text>
+              <TouchableOpacity onPress={() => setUploadVisible(false)}>
+                <Ionicons name="close" size={22} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={{ gap: 14, paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+              <View>
+                <Text style={styles.inputLabel}>Title *</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={uploadTitle}
+                  onChangeText={setUploadTitle}
+                  placeholder="Give your video a title"
+                  placeholderTextColor="#555"
+                />
+              </View>
+              <View>
+                <Text style={styles.inputLabel}>Category</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
+                  {CATEGORIES.filter(c => c.id !== 'all').map(c => (
+                    <TouchableOpacity key={c.id} onPress={() => setUploadCategory(c.id)}
+                      style={[styles.catBtn, uploadCategory === c.id && styles.catBtnActive, { marginRight: 8 }]}>
+                      <Text style={[styles.catLabel, uploadCategory === c.id && { color: '#fff' }]}>{c.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+              <View>
+                <Text style={styles.inputLabel}>Tags (comma-separated)</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={uploadTags}
+                  onChangeText={setUploadTags}
+                  placeholder="music, trending, fun"
+                  placeholderTextColor="#555"
+                />
+              </View>
+              <TouchableOpacity style={[styles.uploadBtn, uploading && { opacity: 0.6 }]} onPress={handleUpload} disabled={uploading}>
+                {uploading
+                  ? <ActivityIndicator color="#fff" />
+                  : <>
+                      <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
+                      <Text style={styles.uploadBtnText}>Select & Upload Video</Text>
+                    </>
+                }
+              </TouchableOpacity>
+              <Text style={styles.uploadNote}>Your video will be pending admin review before going live.</Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -279,6 +406,31 @@ const styles = StyleSheet.create({
   loadingText: { color: '#666', fontSize: 14, marginTop: 10 },
   emptyTitle: { fontSize: 17, fontWeight: '800', color: '#fff', marginTop: 8 },
   emptySubtitle: { fontSize: 13, color: '#666', textAlign: 'center' },
+  // Hashtags
+  hashtagBar: { flexGrow: 0, backgroundColor: '#0a0a0a' },
+  hashtagList: { paddingHorizontal: 14, paddingBottom: 8, gap: 8 },
+  hashtagChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#2e2e2e', alignItems: 'center' },
+  hashtagText: { color: ACCENT, fontSize: 12, fontWeight: '700' },
+  hashtagCount: { color: '#555', fontSize: 10, fontWeight: '600', marginTop: 1 },
+  // Upload FAB
+  fab: {
+    position: 'absolute', right: 20, bottom: Platform.OS === 'ios' ? 30 : 20,
+    width: 54, height: 54, borderRadius: 27,
+    backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center',
+    shadowColor: ACCENT, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 8,
+    elevation: 8,
+  },
+  // Upload Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: '#111', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 24, maxHeight: '85%' },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  modalTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  inputLabel: { color: '#888', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+  modalInput: { backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#2a2a2a', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: '#fff', fontSize: 14 },
+  uploadBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: ACCENT, paddingVertical: 14, borderRadius: 14, marginTop: 4 },
+  uploadBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  uploadNote: { color: '#555', fontSize: 12, textAlign: 'center', lineHeight: 16 },
+  // Guest banner
   guestBanner: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: COLORS.primary, flexDirection: 'row',
