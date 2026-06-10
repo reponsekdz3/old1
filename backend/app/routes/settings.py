@@ -35,6 +35,8 @@ def get_settings():
             'show_notifications': settings.show_notifications,
             'show_preview': settings.show_preview,
             'screenshot_prevention': getattr(settings, 'screenshot_prevention', False),
+            'stealth_mode': getattr(settings, 'stealth_mode', False),
+            'ghost_notifications': getattr(settings, 'ghost_notifications', False),
         }), 200
     
     except Exception as e:
@@ -83,6 +85,16 @@ def update_settings():
         if 'screenshot_prevention' in data:
             try:
                 settings.screenshot_prevention = bool(data['screenshot_prevention'])
+            except Exception:
+                pass
+        if 'stealth_mode' in data:
+            try:
+                settings.stealth_mode = bool(data['stealth_mode'])
+            except Exception:
+                pass
+        if 'ghost_notifications' in data:
+            try:
+                settings.ghost_notifications = bool(data['ghost_notifications'])
             except Exception:
                 pass
 

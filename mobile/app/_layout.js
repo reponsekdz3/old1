@@ -101,6 +101,15 @@ export default function RootLayout() {
               headerTitleStyle: { fontWeight: '700' },
             }}
           />
+          <Stack.Screen
+            name="explorer"
+            options={{
+              title: 'My Explorer',
+              headerStyle: { backgroundColor: '#075E54' },
+              headerTintColor: '#fff',
+              headerTitleStyle: { fontWeight: '700' },
+            }}
+          />
         </Stack>
       </SafeAreaProvider>
     </GestureHandlerRootView>

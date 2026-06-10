@@ -186,6 +186,62 @@ def mark_as_delivered(message_id):
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
+@messages_bp.route('/<message_id>/viewed', methods=['POST'])
+@jwt_required()
+def mark_viewed(message_id):
+    """Mark a self-destruct / view-once message as viewed and schedule its deletion."""
+    try:
+        from datetime import datetime, timedelta
+        user_id = get_jwt_identity()
+        msg = Message.query.filter_by(id=message_id, receiver_id=user_id).first()
+        if not msg:
+            return jsonify({'error': 'Not found'}), 404
+
+        now = datetime.utcnow()
+        msg.viewed_by_receiver = True
+        msg.viewed_at          = now
+        msg.status             = MessageStatus.READ
+
+        view_once = getattr(msg, 'view_once', False)
+        auto_secs = getattr(msg, 'auto_delete_seconds', None)
+
+        if view_once:
+            # Vanishes immediately after first view
+            msg.disappear_at = now
+        elif auto_secs:
+            msg.disappear_at = now + timedelta(seconds=int(auto_secs))
+
+        db.session.commit()
+        return jsonify({
+            'ok': True,
+            'disappear_at': msg.disappear_at.isoformat() if msg.disappear_at else None,
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@messages_bp.route('/cleanup-expired', methods=['POST'])
+@jwt_required()
+def cleanup_expired():
+    """Soft-delete messages whose disappear_at has passed."""
+    try:
+        from datetime import datetime
+        now = datetime.utcnow()
+        expired = Message.query.filter(
+            Message.disappear_at.isnot(None),
+            Message.disappear_at <= now,
+            Message.is_deleted_everyone == False,
+        ).all()
+        for m in expired:
+            m.is_deleted_everyone = True
+        db.session.commit()
+        return jsonify({'cleaned': len(expired)})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
 @messages_bp.route('/<message_id>/edit', methods=['PUT'])
 @jwt_required()
 def edit_message(message_id):

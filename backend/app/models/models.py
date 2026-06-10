@@ -48,6 +48,12 @@ class Message(db.Model):
     encrypted_payload = db.Column(db.Text, nullable=True)   # base64 AES-256-GCM ciphertext
     e2ee_header = db.Column(db.Text, nullable=True)          # JSON: ratchet + optional X3DH header
     e2ee_type = db.Column(db.Integer, default=0, nullable=True)  # 0=ratchet, 1=prekey
+    # ── Self-destruct / view-once ─────────────────────────────────────────
+    view_once = db.Column(db.Boolean, default=False)           # disappears after first view
+    viewed_by_receiver = db.Column(db.Boolean, default=False)  # receiver has viewed
+    auto_delete_seconds = db.Column(db.Integer, nullable=True) # seconds after view to delete
+    viewed_at = db.Column(db.DateTime, nullable=True)          # when receiver first viewed
+    is_system_message = db.Column(db.Boolean, default=False)   # VipChat system messages
     # ─────────────────────────────────────────────────────────────────────
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -105,6 +111,12 @@ class Message(db.Model):
             'encrypted_payload': self.encrypted_payload,
             'e2ee_header': self.e2ee_header,
             'e2ee_type': self.e2ee_type,
+            'view_once': getattr(self, 'view_once', False),
+            'viewed_by_receiver': getattr(self, 'viewed_by_receiver', False),
+            'auto_delete_seconds': getattr(self, 'auto_delete_seconds', None),
+            'viewed_at': self.viewed_at.isoformat() if getattr(self, 'viewed_at', None) else None,
+            'disappear_at': self.disappear_at.isoformat() if self.disappear_at else None,
+            'is_system_message': getattr(self, 'is_system_message', False),
         }
 
 class MessageReaction(db.Model):
@@ -561,6 +573,8 @@ class UserSettings(db.Model):
     show_notifications = db.Column(db.Boolean, default=True)
     show_preview = db.Column(db.Boolean, default=True)
     screenshot_prevention = db.Column(db.Boolean, default=False)
+    stealth_mode = db.Column(db.Boolean, default=False)          # appear offline, no read receipts, no typing
+    ghost_notifications = db.Column(db.Boolean, default=False)   # hide sender/content in push notifications
 
     user = db.relationship('User', backref='settings', uselist=False)
 

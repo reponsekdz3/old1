@@ -16,6 +16,57 @@ auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
 from app import limiter
 
+VIPCHAT_SYSTEM_PHONE = '+10000000000'
+VIPCHAT_SYSTEM_NAME  = 'VipChat'
+
+WELCOME_BODY = (
+    "🎉 Welcome to VipChat!\n\n"
+    "Here's a quick guide to get you started:\n\n"
+    "💬 *Messaging* — Tap any contact to chat. Long-press a message to react, reply, forward or pin it.\n\n"
+    "🎤 *Voice Notes* — Hold the microphone icon to record. Live transcription is automatic.\n\n"
+    "📁 *My Explorer* — Find all your shared photos, videos, documents and voice notes in one place. "
+    "Select multiple files and download them as a ZIP archive.\n\n"
+    "🔥 *Self-Destruct Messages* — Tap the timer ⏱ icon when composing a message to make it disappear "
+    "after the recipient reads it (view-once, or a timed countdown).\n\n"
+    "👻 *Stealth Mode* — Go invisible: appear offline, disable read receipts and typing indicators "
+    "without missing a single message. Find it in Settings → Security.\n\n"
+    "🔔 *Ghost Notifications* — Hide sender name and message preview from your lock screen. "
+    "Settings → Notifications → Ghost Notifications.\n\n"
+    "📞 *Calls & Screen Share* — Make HD audio/video calls, share your screen and switch between "
+    "camera and screen in real time.\n\n"
+    "🌐 *Low Bandwidth Mode* — VipChat automatically detects your connection speed and switches to "
+    "a compressed, high-efficiency delivery mode so everything works even on 2G.\n\n"
+    "Enjoy VipChat — your messages are end-to-end encrypted 🔒"
+)
+
+
+def _send_welcome_message(new_user_id: str):
+    """Insert a rich welcome message from the VipChat system account."""
+    from app.models.models import Message, UserSettings
+    import uuid
+
+    # Find or create the system user
+    system_user = User.query.filter_by(phone_number=VIPCHAT_SYSTEM_PHONE).first()
+    if not system_user:
+        system_user = User()
+        system_user.phone_number = VIPCHAT_SYSTEM_PHONE
+        system_user.full_name    = VIPCHAT_SYSTEM_NAME
+        system_user.is_verified  = True
+        system_user.status       = 'available'
+        system_user.avatar_url   = '/logo192.png'
+        system_user.set_password(secrets.token_hex(32))
+        db.session.add(system_user)
+        db.session.flush()   # get the id without full commit
+
+    msg = Message()
+    msg.sender_id         = system_user.id
+    msg.receiver_id       = new_user_id
+    msg.content           = WELCOME_BODY
+    msg.is_system_message = True
+    db.session.add(msg)
+    db.session.commit()
+    logger.info('Welcome message sent to user %s', new_user_id)
+
 
 # ── CSRF token endpoint (public) ──────────────────────────────────────────────
 from flask import Blueprint as _Blueprint, current_app
@@ -160,6 +211,12 @@ def signup():
 
         db.session.add(user)
         db.session.commit()
+
+        # ── Send welcome message from VipChat system account ──────────────
+        try:
+            _send_welcome_message(user.id)
+        except Exception:
+            logger.exception('Welcome message failed (non-fatal)')
 
         access_token = create_access_token(identity=user.id)
         refresh_token = create_refresh_token(identity=user.id)

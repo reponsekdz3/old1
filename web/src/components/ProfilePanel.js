@@ -343,6 +343,7 @@ export default function ProfilePanel({ onClose }) {
                   {[
                     { icon: FiGrid,     label: 'QR Code',         sub: 'Scan or share your code',          action: () => setShowQR(true) },
                     { icon: FiStar,     label: 'Starred Messages', sub: 'View your starred messages',      action: () => { navigate('/starred'); onClose(); } },
+                    { icon: FiAlertCircle, label: 'My Explorer',   sub: 'Browse all your shared media & files', action: () => { navigate('/explorer'); onClose(); } },
                     { icon: FiSettings, label: 'Settings',         sub: 'Privacy, security, notifications', action: () => { navigate('/settings'); onClose(); } },
                   ].map(item => (
                     <button key={item.label} onClick={item.action}

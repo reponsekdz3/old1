@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
+import ProgressiveImage from './ProgressiveImage';
 import { encryptForUser, decryptFromUser } from '../services/e2ee';
 import { useAuthStore, useChatStore } from '../services/store';
 import api from '../services/api';
@@ -433,7 +434,11 @@ const MessageBubble = memo(function MessageBubble({
           {/* Media: image */}
           {message.media_type === 'image' && message.media_url && !isDeleted && (
             <div className="rounded-xl overflow-hidden mb-1 -mx-0.5 cursor-zoom-in" onClick={() => onImageClick(message.media_url)}>
-              <img src={message.media_url} alt="media" className="max-w-full max-h-64 object-cover" />
+              <ProgressiveImage
+                src={message.media_url}
+                alt="media"
+                style={{ width: '100%', maxHeight: 256 }}
+              />
             </div>
           )}
 
@@ -636,6 +641,8 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
   const [hasMore, setHasMore] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [pendingAttachment, setPendingAttachment] = useState(null);
+  const [destructTimer, setDestructTimer] = useState(null);      // null | 'view_once' | seconds
+  const [showTimerPicker, setShowTimerPicker] = useState(false);
 
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
@@ -808,6 +815,8 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
       const payload = {
         content: text,
         replied_to_id: replyTo?.id || null,
+        ...(destructTimer === 'view_once'   ? { view_once: true }                              : {}),
+        ...(typeof destructTimer === 'number' ? { auto_delete_seconds: destructTimer }          : {}),
       };
 
       // Attempt Signal Protocol E2EE — gracefully degrade if keys unavailable
@@ -838,12 +847,13 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
       }
       setMessageText('');
       setReplyTo(null);
+      setDestructTimer(null);
       setShowEmoji(false);
       scrollToBottom();
     } catch {
       toast.error('Failed to send message');
     }
-  }, [messageText, editingMessage, replyTo, activeChat, socket, user]);
+  }, [messageText, editingMessage, replyTo, activeChat, socket, user, destructTimer]);
 
   // ── Typing indicator ─────────────────────────────────────────────────────
   const handleTyping = () => {
@@ -879,6 +889,8 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
         media_type: mediaType,
         content: caption || null,
         replied_to_id: replyTo?.id || null,
+        ...(destructTimer === 'view_once'    ? { view_once: true }                : {}),
+        ...(typeof destructTimer === 'number' ? { auto_delete_seconds: destructTimer } : {}),
       });
       addMessage(msgData);
       setPendingAttachment(null);
@@ -1238,6 +1250,47 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
               >
                 <FiClock size={21} />
               </button>
+
+              {/* Self-destruct timer */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowTimerPicker(v => !v)}
+                  title="Self-destruct timer"
+                  className={`p-2 rounded-full transition ${destructTimer ? 'bg-red-100 text-red-500' : 'text-gray-500 hover:bg-gray-200 hover:text-red-400'}`}
+                >
+                  🔥
+                  {destructTimer && (
+                    <span className="absolute -top-0.5 -right-0.5 text-[9px] font-bold bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center leading-none">
+                      {destructTimer === 'view_once' ? '1' : typeof destructTimer === 'number' ? Math.round(destructTimer/60) || 's' : ''}
+                    </span>
+                  )}
+                </button>
+                {showTimerPicker && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowTimerPicker(false)} />
+                    <div className="absolute bottom-12 left-0 bg-white rounded-2xl shadow-2xl border border-gray-100 py-2 z-20 w-52">
+                      <p className="text-xs font-semibold text-gray-400 px-4 py-1.5 uppercase tracking-wider">Self-Destruct Timer</p>
+                      {[
+                        { label: '🔥 View once', value: 'view_once' },
+                        { label: '⏱ 30 seconds', value: 30 },
+                        { label: '⏱ 5 minutes',  value: 300 },
+                        { label: '⏱ 1 hour',     value: 3600 },
+                        { label: '⏱ 24 hours',   value: 86400 },
+                        { label: '❌ No timer',   value: null },
+                      ].map(opt => (
+                        <button key={String(opt.value)}
+                          type="button"
+                          onClick={() => { setDestructTimer(opt.value); setShowTimerPicker(false); }}
+                          className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition ${destructTimer === opt.value ? 'text-red-500 font-semibold' : 'text-gray-700'}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             <div className="flex-1 bg-white rounded-xl flex items-center px-3 min-h-[44px] shadow-sm border border-gray-100">

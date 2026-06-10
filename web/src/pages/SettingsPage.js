@@ -420,6 +420,8 @@ export default function SettingsPage() {
     show_preview: true,
     message_sound: true,
     group_notifications: true,
+    stealth_mode: false,
+    ghost_notifications: false,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -675,6 +677,12 @@ export default function SettingsPage() {
                   value={settings.message_sound ?? true} onChange={v => updateSetting('message_sound', v)} />
                 <ToggleRow label="Group Notifications" sub="Get notified for new group messages"
                   value={settings.group_notifications ?? true} onChange={v => updateSetting('group_notifications', v)} />
+                <ToggleRow
+                  label="👻 Ghost Notifications"
+                  sub="Hide sender name and message content on your lock screen"
+                  value={settings.ghost_notifications ?? false}
+                  onChange={v => updateSetting('ghost_notifications', v)}
+                />
               </div>
 
               {/* Storage & Data */}
@@ -707,6 +715,18 @@ export default function SettingsPage() {
                     }
                   }}
                 />
+                <ToggleRow
+                  label="👻 Stealth Mode"
+                  sub="Appear offline to everyone, hide read receipts and typing indicators — you still receive everything"
+                  value={settings.stealth_mode ?? false}
+                  onChange={v => {
+                    updateSetting('stealth_mode', v);
+                    toast(v ? '👻 Stealth mode ON — you are now invisible' : '👁 Stealth mode OFF — you appear online', { duration: 3000 });
+                  }}
+                />
+                <ActionRow label="My Explorer" sub="Browse and download all your shared media"
+                  icon={FiShield} iconBg="bg-blue-50" iconColor="text-blue-500"
+                  onClick={() => navigate('/explorer')} />
                 <ActionRow label="Document Vault" sub="Store encrypted passports, IDs & cards"
                   icon={FiLock} iconBg="bg-gray-800" iconColor="text-white"
                   onClick={() => navigate('/vault')} />

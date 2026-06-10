@@ -48,7 +48,17 @@ def push_to_user(user_id, title, body, icon='/logo192.png', url='/', extra=None)
     """
     def _send():
         try:
-            from app.models.models import PushSubscription, db
+            from app.models.models import PushSubscription, UserSettings, db
+
+            # Ghost notifications: hide sender/content for privacy
+            try:
+                s = UserSettings.query.filter_by(user_id=str(user_id)).first()
+                if s and getattr(s, 'ghost_notifications', False):
+                    title = 'VipChat'
+                    body  = 'You have a new message'
+            except Exception:
+                pass
+
             subs = PushSubscription.query.filter_by(user_id=str(user_id), active=True).all()
             if not subs:
                 return

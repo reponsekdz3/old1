@@ -33,6 +33,7 @@ const SETTINGS_SECTIONS = [
       { id: '2fa', icon: 'shield-checkmark', label: 'Two-Factor Auth', type: 'toggle' },
       { id: 'session_timeout', icon: 'time', label: 'Session Timeout', type: 'select', options: ['5 min', '15 min', '30 min', '1 hour', 'Never'] },
       { id: 'login_alerts', icon: 'notifications', label: 'Login Alerts', type: 'toggle' },
+      { id: 'stealth_mode', icon: 'eye-off', label: '👻 Stealth Mode', sub: 'Appear offline, hide read receipts & typing', type: 'toggle' },
     ]
   },
   {
@@ -42,6 +43,7 @@ const SETTINGS_SECTIONS = [
       { id: 'email_notifications', icon: 'mail', label: 'Email Notifications', type: 'toggle' },
       { id: 'call_notifications', icon: 'call', label: 'Call Notifications', type: 'toggle' },
       { id: 'message_preview', icon: 'document-text', label: 'Message Preview', type: 'toggle' },
+      { id: 'ghost_notifications', icon: 'notifications-off', label: '👻 Ghost Notifications', sub: 'Hide sender & content on lock screen', type: 'toggle' },
     ]
   },
   {
@@ -87,10 +89,12 @@ export default function SettingsScreen({ navigation }) {
     '2fa': false,
     'session_timeout': '15 min',
     'login_alerts': true,
+    'stealth_mode': false,
     'push_notifications': true,
     'email_notifications': false,
     'call_notifications': true,
     'message_preview': true,
+    'ghost_notifications': false,
     'online_status': true,
     'read_receipts': true,
     'typing_indicator': true,

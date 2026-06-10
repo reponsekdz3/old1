@@ -7,6 +7,7 @@ import {
   FiActivity, FiMusic, FiCpu, FiRss, FiSmile, FiBook,
   FiBell, FiSearch, FiFilter, FiArchive,
 } from 'react-icons/fi';
+import NotificationCenter from './NotificationCenter';
 import ChatsTab from './ChatsTab';
 import CommunitiesTab from './CommunitiesTab';
 import ChannelsTab from './ChannelsTab';
@@ -257,6 +258,10 @@ function MainNavigation({ socket, onChatSelect, onNewChat, onProfileClick, onLog
               </h2>
             </div>
             <div className="flex items-center gap-1">
+              {/* System notification bell */}
+              <div className="scale-90 [&_button]:!text-white [&_button:hover]:!bg-white/20">
+                <NotificationCenter />
+              </div>
               {activeTab === 'chats' && (
                 <button onClick={onNewChat}
                   className="w-8 h-8 bg-white/15 hover:bg-white/25 rounded-full flex items-center justify-center transition-all">

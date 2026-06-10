@@ -20,6 +20,7 @@ import TrendsPage from './pages/TrendsPage';
 import WalletPage from './pages/WalletPage';
 import GiftWalletPage from './pages/GiftWalletPage';
 import DocumentVaultPage from './pages/DocumentVaultPage';
+import ExplorerPage from './pages/ExplorerPage';
 import OfflineIndicator from './components/OfflineIndicator';
 import PWAInstallBanner from './components/PWAInstallBanner';
 import { Toaster } from 'react-hot-toast';
@@ -147,6 +148,10 @@ function App() {
           {/* Document Vault */}
           <Route path="/vault" element={
             <ProtectedRoute user={user}><DocumentVaultPage /></ProtectedRoute>
+          } />
+          {/* My Explorer */}
+          <Route path="/explorer" element={
+            <ProtectedRoute user={user}><ExplorerPage /></ProtectedRoute>
           } />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

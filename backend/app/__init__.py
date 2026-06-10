@@ -20,6 +20,38 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _run_migrations():
+    """Safely add new columns to existing tables (non-destructive ALTER TABLE)."""
+    from sqlalchemy import text, inspect as sa_inspect
+    inspector = sa_inspect(db.engine)
+
+    def _col_names(table):
+        try:
+            return {c['name'] for c in inspector.get_columns(table)}
+        except Exception:
+            return set()
+
+    def _add(table, col, ddl):
+        try:
+            with db.engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
+        except Exception:
+            pass  # column already exists or table doesn't exist yet
+
+    # messages
+    mc = _col_names('messages')
+    if 'view_once'           not in mc: _add('messages', 'view_once',           'BOOLEAN DEFAULT 0')
+    if 'viewed_by_receiver'  not in mc: _add('messages', 'viewed_by_receiver',  'BOOLEAN DEFAULT 0')
+    if 'auto_delete_seconds' not in mc: _add('messages', 'auto_delete_seconds', 'INTEGER')
+    if 'viewed_at'           not in mc: _add('messages', 'viewed_at',           'DATETIME')
+    if 'is_system_message'   not in mc: _add('messages', 'is_system_message',   'BOOLEAN DEFAULT 0')
+
+    # user_settings
+    uc = _col_names('user_settings')
+    if 'stealth_mode'        not in uc: _add('user_settings', 'stealth_mode',        'BOOLEAN DEFAULT 0')
+    if 'ghost_notifications' not in uc: _add('user_settings', 'ghost_notifications', 'BOOLEAN DEFAULT 0')
+
+
 def create_app(config_name='development'):
     """Application factory"""
     app = Flask(__name__)
@@ -367,6 +399,31 @@ def create_app(config_name='development'):
     except Exception as e:
         logger.warning(f"⚠ Pinned Chats routes not available: {e}")
 
+    # ── My Explorer & System Notifications ────────────────────────────────
+    try:
+        from app.routes.explorer import explorer_bp
+        app.register_blueprint(explorer_bp)
+        logger.info("✓ Explorer routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ Explorer routes not available: {e}")
+
+    try:
+        from app.routes.system_notifications import sysnotif_bp, SystemNotification, SystemNotificationRead
+        app.register_blueprint(sysnotif_bp)
+        with app.app_context():
+            db.create_all()
+        logger.info("✓ System Notifications routes registered")
+    except Exception as e:
+        logger.warning(f"⚠ System Notifications routes not available: {e}")
+
+    # ── Schema migration (add new columns to existing tables safely) ───────
+    try:
+        with app.app_context():
+            _run_migrations()
+        logger.info("✓ Schema migrations applied")
+    except Exception as e:
+        logger.warning(f"⚠ Schema migrations error: {e}")
+
     # ── JWT token blocklist ────────────────────────────────────────────────
     @jwt.token_in_blocklist_loader
     def _check_token_revoked(jwt_header, jwt_payload):
@@ -432,39 +489,56 @@ def create_app(config_name='development'):
         join_room(f"user_{user_id}")
         emit('user_connected', {'user_id': user_id, 'message': 'User connected'})
 
+    def _user_stealth(user_id):
+        """Return True if the given user has stealth_mode enabled."""
+        try:
+            from app.models.models import UserSettings
+            s = UserSettings.query.filter_by(user_id=str(user_id)).first()
+            return bool(s and getattr(s, 'stealth_mode', False))
+        except Exception:
+            return False
+
     @socketio.on('typing')
     def handle_typing(data):
         user_id = data.get('user_id')
         receiver_id = data.get('receiver_id')
-        if receiver_id:
-            try:
-                # Throttle typing events per sender->receiver to reduce bandwidth
-                key = f"typing:{user_id}:{receiver_id}"
-                if hasattr(app, 'cache_manager') and app.cache_manager:
-                    existing = app.cache_manager.get(key)
-                    if existing:
-                        return
-                    # Set short TTL so repeated typing within window is suppressed
-                    app.cache_manager.set(key, {'ts': datetime.utcnow().isoformat()}, cache_type='default', ex=3)
-            except Exception:
-                # Best-effort; don't break typing flow
-                pass
+        if not receiver_id:
+            return
+        # Stealth mode: don't reveal typing
+        if _user_stealth(user_id):
+            return
+        try:
+            # Throttle typing events per sender->receiver to reduce bandwidth
+            key = f"typing:{user_id}:{receiver_id}"
+            if hasattr(app, 'cache_manager') and app.cache_manager:
+                existing = app.cache_manager.get(key)
+                if existing:
+                    return
+                # Set short TTL so repeated typing within window is suppressed
+                app.cache_manager.set(key, {'ts': datetime.utcnow().isoformat()}, cache_type='default', ex=3)
+        except Exception:
+            # Best-effort; don't break typing flow
+            pass
 
-            emit('typing_indicator', {'user_id': user_id}, room=f"user_{receiver_id}")
+        emit('typing_indicator', {'user_id': user_id}, room=f"user_{receiver_id}")
 
     @socketio.on('stop_typing')
     def handle_stop_typing(data):
         user_id = data.get('user_id')
         receiver_id = data.get('receiver_id')
-        if receiver_id:
-            try:
-                key = f"typing:{user_id}:{receiver_id}"
-                if hasattr(app, 'cache_manager') and app.cache_manager:
-                    app.cache_manager.delete(key)
-            except Exception:
-                pass
+        if not receiver_id:
+            return
+        # Stealth mode: suppress stop_typing too
+        if _user_stealth(user_id):
+            return
+        try:
+            key = f"typing:{user_id}:{receiver_id}"
+            if hasattr(app, 'cache_manager') and app.cache_manager:
+                app.cache_manager.delete(key)
+        except Exception:
+            pass
 
-            emit('stop_typing_indicator', {'user_id': user_id}, room=f"user_{receiver_id}")
+        emit('stop_typing_indicator', {'user_id': user_id}, room=f"user_{receiver_id}")
 
     # Enable lightweight gzip compression for JSON/text responses to save bandwidth
     @app.after_request

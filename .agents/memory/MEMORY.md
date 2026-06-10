@@ -1,1 +1,8 @@
 - [Voice transcription architecture](voice-transcription.md) — Web Speech API on web (no AI); transcript stored in existing content field; mobile uses @react-native-voice/voice with graceful fallback.
+- [VipChat system architecture](vipchat-arch.md) — Flask port 8000, React CRA port 5000, Expo mobile; SQLite dev with _run_migrations() safe ALTER TABLE in __init__.py before create_app returns.
+- [Self-destruct messages](self-destruct.md) — view_once + auto_delete_seconds on Message model; POST /messages/<id>/viewed sets disappear_at; ChatWindow 🔥 FAB timer picker; cleanup-expired endpoint.
+- [Stealth + Ghost notifications](stealth-ghost.md) — stealth_mode suppresses typing/stop_typing socket events via _user_stealth() helper; ghost_notifications overrides push title/body in push_sender _send() closure.
+- [My Explorer](explorer.md) — /api/explorer/* blueprint (explorer.py); ZIP via zipfile.ZIP_DEFLATED compresslevel=9; web ExplorerPage.js grid+list+multi-select+preview; mobile explorer.js; ProgressiveImage blur→HD.
+- [Welcome message](welcome-message.md) — VipChat system user phone +10000000000 auto-created on first call; _send_welcome_message() in auth.py called at end of signup route; message has is_system_message=True.
+- [NotificationCenter](notif-center.md) — bell icon in MainNavigation header (green bar); /notifications/system endpoints; unread badge; mark-read per item or all; slide-down panel with framer-motion.
+- [BandwidthManager](bandwidth.md) — RTT probe (/api/health HEAD) + NetworkInformation API; quality levels high/medium/low/minimal; exported bwManager singleton; ProgressiveImage uses IntersectionObserver + bwManager.
