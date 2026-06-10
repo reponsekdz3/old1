@@ -1,0 +1,2 @@
+- [Trends page rebuild](trends-rebuild.md) — Full TrendsPage rebuild: new models need manual ALTER TABLE in PostgreSQL (db.create_all won't add columns to existing tables).
+- [Backend import pattern](backend-import.md) — Flask app: `from app import create_app; app, socketio = create_app()` — create_app returns a tuple (app, socketio).

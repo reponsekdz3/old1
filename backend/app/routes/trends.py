@@ -1,13 +1,14 @@
 """
-VipChat Trends — YouTube-like shorts/reels/videos section.
-Public browsing (no auth required). Ads in videos for free plan users.
-Any logged-in user can upload; non-admin uploads go to pending review.
+VipChat Trends — YouTube Shorts / TikTok-style video feed.
+Public browsing (no auth required). Ads for free-plan users.
+Full creator ecosystem: follow, save, comment likes, creator profiles,
+monetization stats, personalized feed, trending algorithm.
 """
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_request
 from app.models.models import db, User
 from datetime import datetime, timedelta
-from sqlalchemy import func
+from sqlalchemy import func, distinct
 import uuid, secrets, base64
 
 trends_bp = Blueprint('trends', __name__, url_prefix='/api/trends')
@@ -21,8 +22,8 @@ def _decode_cursor(cursor_str: str) -> int:
     except Exception:
         return 0
 
-# ── Inline models ─────────────────────────────────────────────────────────────
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean, Integer
+# ── Models ─────────────────────────────────────────────────────────────────────
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean, Integer, Float
 
 
 class TrendVideo(db.Model):
@@ -32,6 +33,8 @@ class TrendVideo(db.Model):
     title = Column(String(255), nullable=False)
     description = Column(Text)
     video_url = Column(Text, nullable=False)
+    video_url_sd = Column(Text)
+    video_url_hd = Column(Text)
     thumbnail_url = Column(Text)
     duration_sec = Column(Integer, default=30)
     category = Column(String(64), default='general')
@@ -42,6 +45,7 @@ class TrendVideo(db.Model):
     views = Column(Integer, default=0)
     likes = Column(Integer, default=0)
     shares = Column(Integer, default=0)
+    saves = Column(Integer, default=0)
     comments_count = Column(Integer, default=0)
     share_token = Column(String(16), nullable=True, unique=True)
     is_active = Column(Boolean, default=True)
@@ -51,24 +55,28 @@ class TrendVideo(db.Model):
     ad_url = Column(Text)
     ad_sponsor_name = Column(String(128))
     created_at = Column(DateTime, default=datetime.utcnow)
+    trending_score = Column(Float, default=0.0)
 
-    def to_dict(self):
+    def to_dict(self, include_liked=False, include_saved=False):
         return {
             'id': self.id,
             'title': self.title,
             'description': self.description,
             'video_url': self.video_url,
+            'video_url_sd': self.video_url_sd,
+            'video_url_hd': self.video_url_hd,
             'thumbnail_url': self.thumbnail_url,
             'duration_sec': self.duration_sec,
             'category': self.category,
-            'tags': self.tags.split(',') if self.tags else [],
+            'tags': [t.strip() for t in (self.tags or '').split(',') if t.strip()],
             'uploader_id': self.uploader_id,
             'uploader_name': self.uploader_name,
             'uploader_type': self.uploader_type,
-            'views': self.views,
-            'likes': self.likes,
-            'shares': self.shares,
-            'comments_count': self.comments_count,
+            'views': self.views or 0,
+            'likes': self.likes or 0,
+            'shares': self.shares or 0,
+            'saves': self.saves or 0,
+            'comments_count': self.comments_count or 0,
             'is_featured': self.is_featured,
             'is_ad': self.is_ad,
             'ad_skip_after_sec': self.ad_skip_after_sec if self.is_ad else None,
@@ -91,7 +99,7 @@ class TrendComment(db.Model):
     likes = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    def to_dict(self, include_replies=False):
+    def to_dict(self, include_replies=False, liked_by_user=False):
         d = {
             'id': self.id,
             'user_id': self.user_id,
@@ -99,7 +107,8 @@ class TrendComment(db.Model):
             'user_avatar': self.user_avatar,
             'content': self.content,
             'parent_id': self.parent_id,
-            'likes': self.likes,
+            'likes': self.likes or 0,
+            'liked': liked_by_user,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
         if include_replies:
@@ -119,6 +128,34 @@ class TrendLike(db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class TrendSave(db.Model):
+    __tablename__ = 'trend_saves'
+    __table_args__ = {'extend_existing': True}
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    video_id = Column(String(36), ForeignKey('trend_videos.id'), nullable=False)
+    user_id = Column(String(36), ForeignKey('users.id'), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class TrendFollow(db.Model):
+    __tablename__ = 'trend_follows'
+    __table_args__ = {'extend_existing': True}
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    follower_id = Column(String(36), ForeignKey('users.id'), nullable=False)
+    creator_id = Column(String(36), ForeignKey('users.id'), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CommentLike(db.Model):
+    __tablename__ = 'trend_comment_likes'
+    __table_args__ = {'extend_existing': True}
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    comment_id = Column(String(36), ForeignKey('trend_comments.id'), nullable=False)
+    user_id = Column(String(36), ForeignKey('users.id'), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
 def _optional_auth():
     try:
         verify_jwt_in_request(optional=True)
@@ -139,14 +176,49 @@ def _user_is_pro(user_id):
 
 
 def _fmt_count(n):
+    n = int(n or 0)
     if n >= 1_000_000:
         return f'{n / 1_000_000:.1f}M'
     if n >= 1_000:
-        return f'{n // 1_000}K'
+        return f'{n / 1_000:.1f}K'
     return str(n)
 
 
-# ── Public: browse feed ───────────────────────────────────────────────────────
+def _compute_trending_score(video):
+    """Weighted trending score with time decay."""
+    age_hours = max(1, (datetime.utcnow() - (video.created_at or datetime.utcnow())).total_seconds() / 3600)
+    recency_boost = 1.0 / (1.0 + age_hours / 48.0)
+    raw = (
+        (video.views or 0) * 0.35 +
+        (video.likes or 0) * 0.30 +
+        (video.comments_count or 0) * 0.20 +
+        (video.shares or 0) * 0.10 +
+        (video.saves or 0) * 0.05
+    )
+    return raw * (1 + recency_boost)
+
+
+def _enrich_videos(videos, user_id):
+    """Attach liked/saved booleans per-user efficiently."""
+    if not user_id or not videos:
+        return [v.to_dict() for v in videos]
+    ids = [v.id for v in videos]
+    liked_ids = {r.video_id for r in TrendLike.query.filter(
+        TrendLike.video_id.in_(ids), TrendLike.user_id == user_id
+    ).all()}
+    saved_ids = {r.video_id for r in TrendSave.query.filter(
+        TrendSave.video_id.in_(ids), TrendSave.user_id == user_id
+    ).all()}
+    result = []
+    for v in videos:
+        d = v.to_dict()
+        d['liked'] = v.id in liked_ids
+        d['saved'] = v.id in saved_ids
+        result.append(d)
+    return result
+
+
+# ── Feed ───────────────────────────────────────────────────────────────────────
 @trends_bp.route('/feed', methods=['GET'])
 def get_feed():
     try:
@@ -154,35 +226,50 @@ def get_feed():
         is_pro = _user_is_pro(user_id)
         category = request.args.get('category', '')
         sort = request.args.get('sort', 'trending')
+        feed = request.args.get('feed', 'for-you')
         per_page = 20
         cursor_str = request.args.get('cursor', '')
-        page = request.args.get('page', 1, type=int)
-        offset = _decode_cursor(cursor_str) if cursor_str else (page - 1) * per_page
+        offset = _decode_cursor(cursor_str) if cursor_str else 0
 
         q = TrendVideo.query.filter_by(is_active=True, is_ad=False)
+
         if category and category != 'all':
             q = q.filter_by(category=category)
+
+        if feed == 'following' and user_id:
+            followed_ids = [f.creator_id for f in TrendFollow.query.filter_by(follower_id=user_id).all()]
+            if followed_ids:
+                q = q.filter(TrendVideo.uploader_id.in_(followed_ids))
+            else:
+                return jsonify({
+                    'videos': [], 'total': 0, 'has_more': False, 'next_cursor': None,
+                    'is_pro': is_pro, 'logged_in': True, 'empty_reason': 'not_following'
+                }), 200
 
         if sort == 'latest':
             q = q.order_by(TrendVideo.created_at.desc())
         elif sort == 'popular':
             q = q.order_by(TrendVideo.views.desc())
+        elif sort == 'top':
+            q = q.order_by(TrendVideo.likes.desc())
         else:
-            cutoff = datetime.utcnow() - timedelta(hours=48)
+            cutoff = datetime.utcnow() - timedelta(hours=72)
+            score_expr = (
+                TrendVideo.views * 0.35 +
+                TrendVideo.likes * 0.30 +
+                TrendVideo.comments_count * 0.20 +
+                TrendVideo.shares * 0.10 +
+                TrendVideo.saves * 0.05
+            )
             recent_q = q.filter(TrendVideo.created_at >= cutoff)
             if recent_q.count() >= 5:
-                q = recent_q
-            score_expr = (
-                TrendVideo.views * 0.4 +
-                TrendVideo.likes * 0.3 +
-                TrendVideo.comments_count * 0.2 +
-                TrendVideo.shares * 0.1
-            )
-            q = q.order_by(score_expr.desc())
+                q = recent_q.order_by(score_expr.desc())
+            else:
+                q = q.order_by(score_expr.desc())
 
         total = q.count()
         videos = q.offset(offset).limit(per_page).all()
-        result = [v.to_dict() for v in videos]
+        result = _enrich_videos(videos, user_id)
 
         next_offset = offset + per_page
         has_more = next_offset < total
@@ -193,7 +280,7 @@ def get_feed():
                 TrendVideo.created_at.desc()
             ).limit(5).all()
             for i, ad in enumerate(ads):
-                insert_at = min((i + 1) * 5, len(result))
+                insert_at = min((i + 1) * 6, len(result))
                 result.insert(insert_at, {**ad.to_dict(), '_is_injected_ad': True})
 
         return jsonify({
@@ -208,11 +295,79 @@ def get_feed():
         return jsonify({'error': str(e)}), 500
 
 
-# ── Trending hashtags sidebar ─────────────────────────────────────────────────
+# ── Saved videos feed ──────────────────────────────────────────────────────────
+@trends_bp.route('/me/saved', methods=['GET'])
+@jwt_required()
+def get_saved_videos():
+    try:
+        user_id = get_jwt_identity()
+        per_page = 20
+        cursor_str = request.args.get('cursor', '')
+        offset = _decode_cursor(cursor_str) if cursor_str else 0
+
+        saved_q = TrendSave.query.filter_by(user_id=user_id).order_by(TrendSave.created_at.desc())
+        total = saved_q.count()
+        saved_rows = saved_q.offset(offset).limit(per_page).all()
+        video_ids = [s.video_id for s in saved_rows]
+        videos = TrendVideo.query.filter(TrendVideo.id.in_(video_ids), TrendVideo.is_active == True).all()
+        id_order = {vid: i for i, vid in enumerate(video_ids)}
+        videos_sorted = sorted(videos, key=lambda v: id_order.get(v.id, 999))
+
+        next_offset = offset + per_page
+        has_more = next_offset < total
+        return jsonify({
+            'videos': _enrich_videos(videos_sorted, user_id),
+            'total': total,
+            'has_more': has_more,
+            'next_cursor': _encode_cursor(next_offset) if has_more else None,
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ── User's own creator stats ───────────────────────────────────────────────────
+@trends_bp.route('/me/creator-stats', methods=['GET'])
+@jwt_required()
+def my_creator_stats():
+    try:
+        user_id = get_jwt_identity()
+        rows = db.session.query(
+            func.count(TrendVideo.id).label('video_count'),
+            func.sum(TrendVideo.views).label('total_views'),
+            func.sum(TrendVideo.likes).label('total_likes'),
+            func.sum(TrendVideo.shares).label('total_shares'),
+            func.sum(TrendVideo.saves).label('total_saves'),
+            func.sum(TrendVideo.comments_count).label('total_comments'),
+        ).filter(
+            TrendVideo.uploader_id == user_id,
+            TrendVideo.is_active == True,
+            TrendVideo.is_ad == False,
+        ).first()
+
+        followers = TrendFollow.query.filter_by(creator_id=user_id).count()
+        pending = TrendVideo.query.filter_by(uploader_id=user_id, is_active=False, is_ad=False).count()
+
+        return jsonify({
+            'video_count': rows.video_count or 0,
+            'total_views': rows.total_views or 0,
+            'total_likes': rows.total_likes or 0,
+            'total_shares': rows.total_shares or 0,
+            'total_saves': rows.total_saves or 0,
+            'total_comments': rows.total_comments or 0,
+            'followers': followers,
+            'pending_videos': pending,
+            'total_views_fmt': _fmt_count(rows.total_views or 0),
+            'followers_fmt': _fmt_count(followers),
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Trending hashtags ──────────────────────────────────────────────────────────
 @trends_bp.route('/hashtags/trending', methods=['GET'])
 def trending_hashtags():
     try:
-        limit = request.args.get('limit', 10, type=int)
+        limit = request.args.get('limit', 12, type=int)
         cutoff = datetime.utcnow() - timedelta(days=7)
         rows = TrendVideo.query.filter(
             TrendVideo.is_active == True,
@@ -236,21 +391,25 @@ def trending_hashtags():
 
         sorted_tags = sorted(tag_score.items(), key=lambda x: x[1]['score'], reverse=True)[:limit]
         result = [
-            {'tag': tag, 'counts': _fmt_count(max(data['count'], 1)), 'raw_count': data['count']}
+            {
+                'tag': tag,
+                'counts': _fmt_count(max(data['count'], 1)),
+                'raw_count': data['count'],
+                'score': data['score'],
+            }
             for tag, data in sorted_tags
         ]
-
-        # If no real data, return empty so frontend can show a fallback gracefully
         return jsonify({'hashtags': result}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-# ── Top creators sidebar ───────────────────────────────────────────────────────
+# ── Top creators ───────────────────────────────────────────────────────────────
 @trends_bp.route('/creators/top', methods=['GET'])
 def top_creators():
     try:
-        limit = request.args.get('limit', 5, type=int)
+        user_id = _optional_auth()
+        limit = request.args.get('limit', 8, type=int)
         rows = db.session.query(
             TrendVideo.uploader_id,
             TrendVideo.uploader_name,
@@ -263,27 +422,142 @@ def top_creators():
         ).group_by(
             TrendVideo.uploader_id, TrendVideo.uploader_name
         ).order_by(
-            (func.sum(TrendVideo.views) + func.sum(TrendVideo.likes) * 3).desc()
+            (func.sum(TrendVideo.views) * 0.4 + func.sum(TrendVideo.likes) * 0.6).desc()
         ).limit(limit).all()
+
+        following_ids = set()
+        if user_id:
+            following_ids = {f.creator_id for f in TrendFollow.query.filter_by(follower_id=user_id).all()}
 
         result = []
         for row in rows:
-            total = (row.total_views or 0) + (row.total_likes or 0) * 3
+            followers = TrendFollow.query.filter_by(creator_id=row.uploader_id).count()
             user = User.query.get(row.uploader_id)
             name = row.uploader_name or 'Creator'
             result.append({
                 'id': row.uploader_id,
                 'name': name,
-                'username': f"@{name.lower().replace(' ', '')}",
-                'avatar': name[0].upper(),
+                'username': f"@{name.lower().replace(' ', '_')}",
+                'avatar': name[0].upper() if name else '?',
                 'avatar_url': user.avatar_url if user else None,
                 'video_count': row.video_count,
                 'total_views': row.total_views or 0,
-                'followers': _fmt_count(total),
+                'total_views_fmt': _fmt_count(row.total_views or 0),
+                'total_likes': row.total_likes or 0,
+                'followers': followers,
+                'followers_fmt': _fmt_count(followers),
+                'is_following': row.uploader_id in following_ids,
             })
 
         return jsonify({'creators': result}), 200
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Creator profile ────────────────────────────────────────────────────────────
+@trends_bp.route('/creators/<creator_id>', methods=['GET'])
+def get_creator_profile(creator_id):
+    try:
+        user_id = _optional_auth()
+        creator = User.query.get(creator_id)
+        if not creator:
+            return jsonify({'error': 'Creator not found'}), 404
+
+        stats_row = db.session.query(
+            func.count(TrendVideo.id).label('video_count'),
+            func.sum(TrendVideo.views).label('total_views'),
+            func.sum(TrendVideo.likes).label('total_likes'),
+        ).filter(
+            TrendVideo.uploader_id == creator_id,
+            TrendVideo.is_active == True,
+            TrendVideo.is_ad == False,
+        ).first()
+
+        followers = TrendFollow.query.filter_by(creator_id=creator_id).count()
+        following_count = TrendFollow.query.filter_by(follower_id=creator_id).count()
+        is_following = False
+        if user_id:
+            is_following = TrendFollow.query.filter_by(
+                follower_id=user_id, creator_id=creator_id
+            ).first() is not None
+
+        videos = TrendVideo.query.filter_by(
+            uploader_id=creator_id, is_active=True, is_ad=False
+        ).order_by(TrendVideo.created_at.desc()).limit(20).all()
+
+        name = creator.full_name or 'Creator'
+        return jsonify({
+            'creator': {
+                'id': creator_id,
+                'name': name,
+                'username': f"@{name.lower().replace(' ', '_')}",
+                'avatar': name[0].upper() if name else '?',
+                'avatar_url': creator.avatar_url if hasattr(creator, 'avatar_url') else None,
+                'bio': getattr(creator, 'bio', None) or '',
+                'video_count': stats_row.video_count or 0,
+                'total_views': stats_row.total_views or 0,
+                'total_views_fmt': _fmt_count(stats_row.total_views or 0),
+                'total_likes': stats_row.total_likes or 0,
+                'followers': followers,
+                'followers_fmt': _fmt_count(followers),
+                'following_count': following_count,
+                'is_following': is_following,
+            },
+            'videos': _enrich_videos(videos, user_id),
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Follow / unfollow creator ──────────────────────────────────────────────────
+@trends_bp.route('/creators/<creator_id>/follow', methods=['POST'])
+@jwt_required()
+def toggle_follow(creator_id):
+    try:
+        user_id = get_jwt_identity()
+        if user_id == creator_id:
+            return jsonify({'error': 'Cannot follow yourself'}), 400
+        creator = User.query.get(creator_id)
+        if not creator:
+            return jsonify({'error': 'Creator not found'}), 404
+        existing = TrendFollow.query.filter_by(follower_id=user_id, creator_id=creator_id).first()
+        if existing:
+            db.session.delete(existing)
+            db.session.commit()
+            following = False
+        else:
+            db.session.add(TrendFollow(follower_id=user_id, creator_id=creator_id))
+            db.session.commit()
+            following = True
+        followers = TrendFollow.query.filter_by(creator_id=creator_id).count()
+        return jsonify({'following': following, 'followers': followers, 'followers_fmt': _fmt_count(followers)}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Save / unsave video ────────────────────────────────────────────────────────
+@trends_bp.route('/video/<video_id>/save', methods=['POST'])
+@jwt_required()
+def toggle_save(video_id):
+    try:
+        user_id = get_jwt_identity()
+        video = TrendVideo.query.get(video_id)
+        if not video:
+            return jsonify({'error': 'Video not found'}), 404
+        existing = TrendSave.query.filter_by(video_id=video_id, user_id=user_id).first()
+        if existing:
+            db.session.delete(existing)
+            video.saves = max(0, (video.saves or 0) - 1)
+            saved = False
+        else:
+            db.session.add(TrendSave(video_id=video_id, user_id=user_id))
+            video.saves = (video.saves or 0) + 1
+            saved = True
+        db.session.commit()
+        return jsonify({'saved': saved, 'total_saves': video.saves}), 200
+    except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 
@@ -297,8 +571,10 @@ def get_video(video_id):
             return jsonify({'error': 'Video not found'}), 404
 
         liked = False
+        saved = False
         if user_id:
             liked = TrendLike.query.filter_by(video_id=video_id, user_id=user_id).first() is not None
+            saved = TrendSave.query.filter_by(video_id=video_id, user_id=user_id).first() is not None
 
         is_pro = _user_is_pro(user_id)
         pre_roll_ad = None
@@ -309,32 +585,45 @@ def get_video(video_id):
             if ad:
                 pre_roll_ad = ad.to_dict()
 
-        return jsonify({
-            'video': video.to_dict(),
-            'liked': liked,
-            'pre_roll_ad': pre_roll_ad,
-        }), 200
+        d = video.to_dict()
+        d['liked'] = liked
+        d['saved'] = saved
+        return jsonify({'video': d, 'liked': liked, 'saved': saved, 'pre_roll_ad': pre_roll_ad}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-# ── Get comments (threaded) ────────────────────────────────────────────────────
+# ── Comments (threaded) ────────────────────────────────────────────────────────
 @trends_bp.route('/video/<video_id>/comments', methods=['GET'])
 def get_comments(video_id):
     try:
+        user_id = _optional_auth()
         per_page = 20
         cursor_str = request.args.get('cursor', '')
-        page = request.args.get('page', 1, type=int)
-        offset = _decode_cursor(cursor_str) if cursor_str else (page - 1) * per_page
+        offset = _decode_cursor(cursor_str) if cursor_str else 0
         q = TrendComment.query.filter_by(video_id=video_id, parent_id=None).order_by(
             TrendComment.likes.desc(), TrendComment.created_at.desc()
         )
         total = q.count()
         comments = q.offset(offset).limit(per_page).all()
+
+        liked_comment_ids = set()
+        if user_id:
+            cids = [c.id for c in comments]
+            if cids:
+                liked_comment_ids = {r.comment_id for r in CommentLike.query.filter(
+                    CommentLike.comment_id.in_(cids), CommentLike.user_id == user_id
+                ).all()}
+
+        result = []
+        for c in comments:
+            d = c.to_dict(include_replies=True, liked_by_user=c.id in liked_comment_ids)
+            result.append(d)
+
         next_offset = offset + per_page
         has_more = next_offset < total
         return jsonify({
-            'comments': [c.to_dict(include_replies=True) for c in comments],
+            'comments': result,
             'total': total,
             'has_more': has_more,
             'next_cursor': _encode_cursor(next_offset) if has_more else None,
@@ -343,7 +632,32 @@ def get_comments(video_id):
         return jsonify({'error': str(e)}), 500
 
 
-# ── Edit comment (owner only) ─────────────────────────────────────────────────
+# ── Like comment ──────────────────────────────────────────────────────────────
+@trends_bp.route('/video/<video_id>/comment/<comment_id>/like', methods=['POST'])
+@jwt_required()
+def like_comment(video_id, comment_id):
+    try:
+        user_id = get_jwt_identity()
+        comment = TrendComment.query.filter_by(id=comment_id, video_id=video_id).first()
+        if not comment:
+            return jsonify({'error': 'Comment not found'}), 404
+        existing = CommentLike.query.filter_by(comment_id=comment_id, user_id=user_id).first()
+        if existing:
+            db.session.delete(existing)
+            comment.likes = max(0, (comment.likes or 0) - 1)
+            liked = False
+        else:
+            db.session.add(CommentLike(comment_id=comment_id, user_id=user_id))
+            comment.likes = (comment.likes or 0) + 1
+            liked = True
+        db.session.commit()
+        return jsonify({'liked': liked, 'likes': comment.likes}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Edit comment ──────────────────────────────────────────────────────────────
 @trends_bp.route('/video/<video_id>/comment/<comment_id>', methods=['PUT'])
 @jwt_required()
 def edit_comment(video_id, comment_id):
@@ -366,7 +680,7 @@ def edit_comment(video_id, comment_id):
         return jsonify({'error': str(e)}), 500
 
 
-# ── Delete comment (owner only) ───────────────────────────────────────────────
+# ── Delete comment ────────────────────────────────────────────────────────────
 @trends_bp.route('/video/<video_id>/comment/<comment_id>', methods=['DELETE'])
 @jwt_required()
 def delete_comment(video_id, comment_id):
@@ -378,6 +692,7 @@ def delete_comment(video_id, comment_id):
         if comment.user_id != user_id:
             return jsonify({'error': 'Not your comment'}), 403
         is_top_level = comment.parent_id is None
+        CommentLike.query.filter_by(comment_id=comment_id).delete()
         TrendComment.query.filter_by(parent_id=comment_id).delete()
         db.session.delete(comment)
         if is_top_level:
@@ -391,7 +706,44 @@ def delete_comment(video_id, comment_id):
         return jsonify({'error': str(e)}), 500
 
 
-# ── Like/unlike ───────────────────────────────────────────────────────────────
+# ── Post comment ──────────────────────────────────────────────────────────────
+@trends_bp.route('/video/<video_id>/comment', methods=['POST'])
+@jwt_required()
+def post_comment(video_id):
+    try:
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+        video = TrendVideo.query.get(video_id)
+        if not video:
+            return jsonify({'error': 'Video not found'}), 404
+        data = request.json or {}
+        content = (data.get('content') or '').strip()
+        if not content or len(content) > 1000:
+            return jsonify({'error': 'Comment must be 1–1000 characters'}), 400
+        parent_id = data.get('parent_id')
+        if parent_id:
+            parent = TrendComment.query.get(parent_id)
+            if not parent or parent.video_id != video_id:
+                return jsonify({'error': 'Invalid parent comment'}), 400
+        comment = TrendComment(
+            video_id=video_id,
+            user_id=user_id,
+            user_name=user.full_name if user else 'Anonymous',
+            user_avatar=user.avatar_url if user else None,
+            content=content,
+            parent_id=parent_id,
+        )
+        db.session.add(comment)
+        if not parent_id:
+            video.comments_count = (video.comments_count or 0) + 1
+        db.session.commit()
+        return jsonify({'comment': comment.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Like / unlike video ───────────────────────────────────────────────────────
 @trends_bp.route('/video/<video_id>/like', methods=['POST'])
 @jwt_required()
 def toggle_like(video_id):
@@ -416,62 +768,7 @@ def toggle_like(video_id):
         return jsonify({'error': str(e)}), 500
 
 
-# ── Post comment (with optional parent_id for replies) ────────────────────────
-@trends_bp.route('/video/<video_id>/comment', methods=['POST'])
-@jwt_required()
-def post_comment(video_id):
-    try:
-        user_id = get_jwt_identity()
-        user = User.query.get(user_id)
-        video = TrendVideo.query.get(video_id)
-        if not video:
-            return jsonify({'error': 'Video not found'}), 404
-        data = request.json or {}
-        content = (data.get('content') or '').strip()
-        if not content or len(content) > 1000:
-            return jsonify({'error': 'Comment must be 1–1000 characters'}), 400
-        parent_id = data.get('parent_id')
-        if parent_id:
-            parent = TrendComment.query.get(parent_id)
-            if not parent or parent.video_id != video_id:
-                return jsonify({'error': 'Invalid parent comment'}), 400
-
-        comment = TrendComment(
-            video_id=video_id,
-            user_id=user_id,
-            user_name=user.full_name if user else 'Anonymous',
-            user_avatar=user.avatar_url if user else None,
-            content=content,
-            parent_id=parent_id,
-        )
-        db.session.add(comment)
-        if not parent_id:
-            video.comments_count = (video.comments_count or 0) + 1
-        db.session.commit()
-        return jsonify({'comment': comment.to_dict()}), 201
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
-
-
-# ── Track ad events ───────────────────────────────────────────────────────────
-@trends_bp.route('/video/<video_id>/track', methods=['POST'])
-def track_event(video_id):
-    try:
-        data = request.json or {}
-        event = data.get('event')
-        video = TrendVideo.query.get(video_id)
-        if not video:
-            return jsonify({'error': 'Not found'}), 404
-        if event in ('ad_view', 'ad_click', 'ad_skip'):
-            db.session.commit()
-        return jsonify({'ok': True}), 200
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
-
-
-# ── Persistent view tracking ──────────────────────────────────────────────────
+# ── Track view ────────────────────────────────────────────────────────────────
 @trends_bp.route('/video/<video_id>/view', methods=['POST'])
 def track_view(video_id):
     try:
@@ -486,7 +783,7 @@ def track_view(video_id):
         return jsonify({'error': str(e)}), 500
 
 
-# ── Persistent share link ─────────────────────────────────────────────────────
+# ── Share link ────────────────────────────────────────────────────────────────
 @trends_bp.route('/video/<video_id>/share', methods=['POST'])
 def create_share_link(video_id):
     try:
@@ -510,7 +807,7 @@ def create_share_link(video_id):
         return jsonify({'error': str(e)}), 500
 
 
-# ── Resolve share token ────────────────────────────────────────────────────────
+# ── Resolve share token ───────────────────────────────────────────────────────
 @trends_bp.route('/video/by-token/<token>', methods=['GET'])
 def get_video_by_token(token):
     try:
@@ -522,7 +819,24 @@ def get_video_by_token(token):
         return jsonify({'error': str(e)}), 500
 
 
-# ── Upload video (any logged-in user) ─────────────────────────────────────────
+# ── Track ad events ───────────────────────────────────────────────────────────
+@trends_bp.route('/video/<video_id>/track', methods=['POST'])
+def track_event(video_id):
+    try:
+        data = request.json or {}
+        event = data.get('event')
+        video = TrendVideo.query.get(video_id)
+        if not video:
+            return jsonify({'error': 'Not found'}), 404
+        if event in ('ad_view', 'ad_click', 'ad_skip'):
+            db.session.commit()
+        return jsonify({'ok': True}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Upload video ──────────────────────────────────────────────────────────────
 @trends_bp.route('/upload', methods=['POST'])
 @jwt_required()
 def upload_video():
@@ -585,11 +899,11 @@ def upload_video():
 @trends_bp.route('/search', methods=['GET'])
 def search_videos():
     try:
+        user_id = _optional_auth()
         q_str = (request.args.get('q') or '').strip()
         per_page = 20
         cursor_str = request.args.get('cursor', '')
-        page = request.args.get('page', 1, type=int)
-        offset = _decode_cursor(cursor_str) if cursor_str else (page - 1) * per_page
+        offset = _decode_cursor(cursor_str) if cursor_str else 0
         if not q_str:
             return jsonify({'videos': [], 'total': 0, 'has_more': False, 'next_cursor': None}), 200
         q = TrendVideo.query.filter(
@@ -597,14 +911,15 @@ def search_videos():
             TrendVideo.is_ad == False,
             (TrendVideo.title.ilike(f'%{q_str}%') |
              TrendVideo.description.ilike(f'%{q_str}%') |
-             TrendVideo.tags.ilike(f'%{q_str}%')),
+             TrendVideo.tags.ilike(f'%{q_str}%') |
+             TrendVideo.uploader_name.ilike(f'%{q_str}%')),
         ).order_by(TrendVideo.views.desc())
         total = q.count()
         videos = q.offset(offset).limit(per_page).all()
         next_offset = offset + per_page
         has_more = next_offset < total
         return jsonify({
-            'videos': [v.to_dict() for v in videos],
+            'videos': _enrich_videos(videos, user_id),
             'total': total,
             'has_more': has_more,
             'next_cursor': _encode_cursor(next_offset) if has_more else None,
@@ -613,8 +928,9 @@ def search_videos():
         return jsonify({'error': str(e)}), 500
 
 
-# ── Category list ─────────────────────────────────────────────────────────────
-VALID_CATEGORIES = ['all', 'music', 'sports', 'gaming', 'news', 'comedy', 'education', 'tech']
+# ── Categories ────────────────────────────────────────────────────────────────
+VALID_CATEGORIES = ['all', 'music', 'sports', 'gaming', 'news', 'comedy', 'education', 'tech', 'fashion', 'food', 'travel', 'fitness']
+
 
 @trends_bp.route('/categories', methods=['GET'])
 def get_categories():
@@ -627,13 +943,21 @@ def get_stats():
     try:
         total_videos = TrendVideo.query.filter_by(is_active=True, is_ad=False).count()
         total_views = db.session.query(func.sum(TrendVideo.views)).filter_by(is_active=True).scalar() or 0
+        total_creators = db.session.query(distinct(TrendVideo.uploader_id)).filter_by(is_active=True, is_ad=False).count()
+        total_likes = db.session.query(func.sum(TrendVideo.likes)).filter_by(is_active=True, is_ad=False).scalar() or 0
         total_ads = TrendVideo.query.filter_by(is_active=True, is_ad=True).count()
         featured = TrendVideo.query.filter_by(is_active=True, is_featured=True, is_ad=False).order_by(
             TrendVideo.views.desc()
         ).limit(6).all()
         return jsonify({
             'total_videos': total_videos,
+            'total_videos_fmt': _fmt_count(total_videos),
             'total_views': total_views,
+            'total_views_fmt': _fmt_count(total_views),
+            'total_creators': total_creators,
+            'total_creators_fmt': _fmt_count(total_creators),
+            'total_likes': total_likes,
+            'total_likes_fmt': _fmt_count(total_likes),
             'total_ads': total_ads,
             'featured': [v.to_dict() for v in featured],
         }), 200
@@ -641,7 +965,7 @@ def get_stats():
         return jsonify({'error': str(e)}), 500
 
 
-# ── Admin: moderate videos ────────────────────────────────────────────────────
+# ── Admin ─────────────────────────────────────────────────────────────────────
 @trends_bp.route('/admin/videos', methods=['GET'])
 @jwt_required()
 def admin_list_videos():
