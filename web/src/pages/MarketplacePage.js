@@ -101,6 +101,203 @@ function MiniBarChart({ data, field = 'revenue', color = GREEN }) {
   );
 }
 
+// ── Flash Deals Section ────────────────────────────────────────────────────────
+function FlashDealsSection({ products, onView, onWishlist, wishlist }) {
+  const [timeLeft, setTimeLeft] = useState(() => {
+    const now = new Date();
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 0);
+    return Math.max(0, Math.floor((end - now) / 1000));
+  });
+
+  useEffect(() => {
+    const t = setInterval(() => setTimeLeft(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const hh = String(Math.floor(timeLeft / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((timeLeft % 3600) / 60)).padStart(2, '0');
+  const ss = String(timeLeft % 60).padStart(2, '0');
+
+  const deals = products.slice(0, 4).map((p, i) => ({
+    ...p,
+    discount: [25, 40, 15, 35][i % 4],
+    originalPrice: (p.price * (1 + [0.33, 0.67, 0.18, 0.54][i % 4])).toFixed(2),
+    stock: [8, 3, 12, 5][i % 4],
+  }));
+
+  if (deals.length === 0) return null;
+
+  return (
+    <div className="rounded-[2.5rem] bg-gradient-to-br from-red-600 via-rose-600 to-orange-500 p-1 shadow-2xl shadow-red-500/20">
+      <div className="bg-white rounded-[2rem] p-6">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-red-100 flex items-center justify-center">
+              <FiZap size={20} className="text-red-500" fill="currentColor" />
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-gray-900 flex items-center gap-2">
+                Flash Deals
+                <motion.span animate={{ scale: [1, 1.1, 1] }} transition={{ repeat: Infinity, duration: 1.5 }}
+                  className="text-xs bg-red-500 text-white px-2 py-0.5 rounded-full font-black">LIVE</motion.span>
+              </h2>
+              <p className="text-xs text-gray-400 font-medium">Deep discounts for a limited time</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            {[['h', hh], ['m', mm], ['s', ss]].map(([unit, val]) => (
+              <React.Fragment key={unit}>
+                <div className="bg-gray-900 text-white px-2.5 py-1.5 rounded-xl text-center">
+                  <div className="text-lg font-black leading-none tabular-nums">{val}</div>
+                  <div className="text-[8px] text-gray-400 uppercase font-bold mt-0.5">{unit}</div>
+                </div>
+                {unit !== 's' && <span className="text-gray-400 font-black text-lg mx-0.5">:</span>}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {deals.map(p => (
+            <motion.div key={p.id} whileHover={{ y: -3 }}
+              onClick={() => onView(p)}
+              className="cursor-pointer group rounded-2xl border border-gray-100 overflow-hidden hover:shadow-xl transition-all">
+              <div className="aspect-square bg-gray-50 relative overflow-hidden">
+                {p.preview_url || p.thumbnail_url
+                  ? <img src={p.preview_url || p.thumbnail_url} alt={p.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                  : <div className="w-full h-full flex items-center justify-center text-3xl"><FileIcon type={p.file_type} /></div>
+                }
+                <div className="absolute top-2 left-2 bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-lg shadow">
+                  -{p.discount}%
+                </div>
+                <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md">
+                  {p.stock} left
+                </div>
+              </div>
+              <div className="p-2.5">
+                <p className="text-xs font-bold text-gray-800 truncate">{p.title}</p>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className="text-sm font-black text-red-500">{fmtMoney(p.price)}</span>
+                  <span className="text-[10px] text-gray-400 line-through">${p.originalPrice}</span>
+                </div>
+                <div className="mt-1.5 bg-red-50 rounded-full h-1 overflow-hidden">
+                  <div className="h-full bg-red-400 rounded-full" style={{ width: `${100 - (p.stock / 15) * 100}%` }} />
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Trending Strip ─────────────────────────────────────────────────────────────
+function TrendingStrip({ products, onView, onWishlist, wishlist }) {
+  const trending = products.slice(0, 8);
+  if (trending.length === 0) return null;
+
+  const TRUST_BADGES = [
+    { icon: '🔒', label: 'Secure' },
+    { icon: '✅', label: 'Verified' },
+    { icon: '↩️', label: 'Refund' },
+    { icon: '⚡', label: 'Instant' },
+  ];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 px-1">
+        <h2 className="text-2xl font-black text-gray-900 flex items-center gap-2">
+          <span className="w-9 h-9 bg-orange-100 rounded-xl flex items-center justify-center text-lg">🔥</span>
+          Trending Now
+        </h2>
+        <div className="flex gap-2">
+          {TRUST_BADGES.map(b => (
+            <span key={b.label} className="hidden sm:flex items-center gap-1 text-[10px] font-bold text-gray-500 bg-gray-50 px-2 py-1 rounded-full">
+              {b.icon} {b.label}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="flex gap-4 overflow-x-auto pb-3 no-scrollbar">
+        {trending.map((p, i) => (
+          <motion.div key={p.id} whileHover={{ y: -4 }}
+            onClick={() => onView(p)}
+            className="flex-shrink-0 w-40 cursor-pointer group rounded-2xl bg-white border border-gray-100 overflow-hidden hover:shadow-xl transition-all hover:border-gray-200">
+            <div className="aspect-square relative overflow-hidden bg-gray-50">
+              {p.preview_url || p.thumbnail_url
+                ? <img src={p.preview_url || p.thumbnail_url} alt={p.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                : <div className="w-full h-full flex items-center justify-center text-2xl"><FileIcon type={p.file_type} /></div>
+              }
+              <div className="absolute top-2 left-2 bg-orange-100 text-orange-600 text-[9px] font-black px-1.5 py-0.5 rounded-lg">
+                #{i + 1} HOT
+              </div>
+              {p.seller_verified && (
+                <div className="absolute top-2 right-2 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center shadow">
+                  <FiCheck size={10} className="text-white" strokeWidth={3} />
+                </div>
+              )}
+            </div>
+            <div className="p-2.5">
+              <p className="text-[11px] font-bold text-gray-700 truncate">{p.title}</p>
+              <div className="flex items-center justify-between mt-1">
+                <span className="text-sm font-black text-[#075E54]">
+                  {p.is_free ? <span className="text-green-500">FREE</span> : fmtMoney(p.price)}
+                </span>
+                <span className="text-[9px] text-gray-400 font-semibold flex items-center gap-0.5">
+                  <FiDownload size={8} />{fmt(p.download_count || 0)}
+                </span>
+              </div>
+              <div className="flex items-center gap-0.5 mt-1">
+                {[1,2,3,4,5].map(s => (
+                  <FiStar key={s} size={9} fill={s <= Math.round(p.rating_avg||5) ? '#f59e0b' : 'none'} stroke={s <= Math.round(p.rating_avg||5) ? '#f59e0b' : '#d1d5db'} />
+                ))}
+                <span className="text-[9px] text-gray-400 ml-0.5">({p.rating_count||0})</span>
+              </div>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Seller Spotlight ───────────────────────────────────────────────────────────
+function SellerSpotlight({ stats }) {
+  const sellers = [
+    { name: 'Alex Design', avatar: '👨‍🎨', sales: 1240, rating: 4.9, badge: '🥇', category: 'Digital Art' },
+    { name: 'CodeCraft',   avatar: '👩‍💻', sales: 890,  rating: 4.8, badge: '🥈', category: 'Software' },
+    { name: 'MusicPro',   avatar: '🎵',   sales: 670,  rating: 4.9, badge: '🥉', category: 'Music' },
+    { name: 'EduWorld',   avatar: '📚',   sales: 520,  rating: 5.0, badge: '⭐', category: 'Courses' },
+  ];
+  return (
+    <div>
+      <h2 className="text-xl font-black text-gray-900 mb-4 flex items-center gap-2">
+        <span className="w-9 h-9 bg-purple-100 rounded-xl flex items-center justify-center text-lg">🏆</span>
+        Top Sellers
+      </h2>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {sellers.map(s => (
+          <div key={s.name} className="bg-white rounded-2xl border border-gray-100 p-4 text-center hover:shadow-lg transition-all cursor-pointer group hover:border-purple-100">
+            <div className="text-4xl mb-2">{s.avatar}</div>
+            <div className="font-bold text-gray-900 text-sm group-hover:text-purple-600 transition">{s.name}</div>
+            <div className="text-[10px] text-gray-400 font-medium mb-2">{s.category}</div>
+            <div className="flex items-center justify-center gap-1 mb-2">
+              <FiStar size={10} fill="#f59e0b" stroke="#f59e0b" />
+              <span className="text-xs font-black text-gray-700">{s.rating}</span>
+            </div>
+            <div className="bg-gray-50 rounded-xl py-1.5 px-3 text-[10px] font-black text-gray-600 flex items-center justify-center gap-1">
+              <FiDownload size={9} />{fmt(s.sales)} sales
+            </div>
+            <div className="text-lg mt-2">{s.badge}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Ad Banner ──────────────────────────────────────────────────────────────────
 function AdBanner({ ad }) {
   const handleClick = useCallback(async () => {
@@ -1292,6 +1489,25 @@ export default function MarketplacePage() {
           </div>
         </div>
       )}
+
+      {/* Flash Deals */}
+      <FlashDealsSection
+        products={products}
+        onView={setSelectedProduct}
+        onWishlist={toggleWishlist}
+        wishlist={wishlist}
+      />
+
+      {/* Trending Strip */}
+      <TrendingStrip
+        products={products}
+        onView={setSelectedProduct}
+        onWishlist={toggleWishlist}
+        wishlist={wishlist}
+      />
+
+      {/* Seller Spotlight */}
+      <SellerSpotlight stats={globalStats} />
 
       {/* Global stats - Modernized */}
       {globalStats && (

@@ -18,6 +18,7 @@ import EmojiPicker from './EmojiPicker';
 import VoiceRecorder from './VoiceRecorder';
 import LocationShare from './LocationShare';
 import ForwardModal from './ForwardModal';
+import CameraCapture from './CameraCapture';
 import AttachmentPreviewModal from './AttachmentPreviewModal';
 import { VerifiedBadgeInline } from './VerifiedBadge';
 import ScheduleMessageModal from './ScheduleMessageModal';
@@ -561,19 +562,18 @@ const MessageBubble = memo(function MessageBubble({
 });
 
 // ── Attachment menu ───────────────────────────────────────────────────────────
-function AttachMenu({ onAttach, onLocation, onContactSend, onClose }) {
-  const fileRef = useRef(null);
-  const imgRef = useRef(null);
+function AttachMenu({ onAttach, onLocation, onContactSend, onOpenCamera, onClose }) {
+  const fileRef  = useRef(null);
+  const imgRef   = useRef(null);
   const audioRef = useRef(null);
-  const camRef = useRef(null);
 
   const items = [
-    { icon: FiImage, label: 'Photo / Video', color: 'bg-purple-500', action: () => imgRef.current?.click() },
-    { icon: FiFile, label: 'Document', color: 'bg-blue-500', action: () => fileRef.current?.click() },
-    { icon: FiMusic, label: 'Audio', color: 'bg-yellow-500', action: () => audioRef.current?.click() },
-    { icon: FiCamera, label: 'Camera', color: 'bg-orange-500', action: () => camRef.current?.click() },
-    { icon: FiMapPin, label: 'Location', color: 'bg-red-500', action: () => { onLocation(); onClose(); } },
-    { icon: FiUser, label: 'Contact', color: 'bg-green-600', action: () => { onContactSend(); onClose(); } },
+    { icon: FiImage,  label: 'Photo / Video', color: 'bg-purple-500', action: () => imgRef.current?.click() },
+    { icon: FiFile,   label: 'Document',       color: 'bg-blue-500',   action: () => fileRef.current?.click() },
+    { icon: FiMusic,  label: 'Audio',           color: 'bg-yellow-500', action: () => audioRef.current?.click() },
+    { icon: FiCamera, label: 'Camera',          color: 'bg-orange-500', action: () => { onOpenCamera(); onClose(); } },
+    { icon: FiMapPin, label: 'Location',        color: 'bg-red-500',    action: () => { onLocation(); onClose(); } },
+    { icon: FiUser,   label: 'Contact',         color: 'bg-green-600',  action: () => { onContactSend(); onClose(); } },
   ];
 
   return (
@@ -589,8 +589,6 @@ function AttachMenu({ onAttach, onLocation, onContactSend, onClose }) {
         onChange={e => { const f = e.target.files?.[0]; if (f) { onAttach(f, 'document'); onClose(); } }} />
       <input ref={audioRef} type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac" className="hidden"
         onChange={e => { const f = e.target.files?.[0]; if (f) { onAttach(f, 'audio'); onClose(); } }} />
-      <input ref={camRef} type="file" accept="image/*" capture="environment" className="hidden"
-        onChange={e => { const f = e.target.files?.[0]; if (f) { onAttach(f, 'image'); onClose(); } }} />
       {items.map(item => (
         <button key={item.label} onClick={item.action}
           className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 rounded-xl text-sm text-gray-700 font-medium">
@@ -622,7 +620,8 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
 
   const [messageText, setMessageText] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
-  const [showAttach, setShowAttach] = useState(false);
+  const [showAttach, setShowAttach]   = useState(false);
+  const [showCamera, setShowCamera]   = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showWallpaper, setShowWallpaper] = useState(false);
@@ -1235,6 +1234,7 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
                         onAttach={handleAttach}
                         onLocation={() => setShowLocationShare(true)}
                         onContactSend={() => toast('Select contact feature coming soon')}
+                        onOpenCamera={() => setShowCamera(true)}
                         onClose={() => setShowAttach(false)}
                       />
                     </>
@@ -1388,6 +1388,16 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
               scrollToBottom();
             });
           }}
+        />
+      )}
+
+      {/* ── Camera Capture Modal ───────────────────────────────────────── */}
+      {showCamera && (
+        <CameraCapture
+          onCapture={(file, type) => {
+            handleAttach(file, type === 'video' ? 'video' : 'image');
+          }}
+          onClose={() => setShowCamera(false)}
         />
       )}
     </div>
