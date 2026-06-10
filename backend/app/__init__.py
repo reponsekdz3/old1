@@ -469,6 +469,9 @@ def create_app(config_name='development'):
         return send_from_directory(UPLOAD_BASE, filename)
 
     # ── Health check ──────────────────────────────────────────────────────
+    from app.routes.health import register_health_routes
+    register_health_routes(app)
+    
     @app.route('/api/health', methods=['GET'])
     def health():
         return jsonify({'status': 'healthy'}), 200

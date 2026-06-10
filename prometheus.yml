@@ -1,0 +1,44 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'vipchat-monitor'
+
+scrape_configs:
+  # Backend instances
+  - job_name: 'backend'
+    static_configs:
+      - targets:
+          - 'backend-1:8000'
+          - 'backend-2:8000'
+    metrics_path: '/metrics'
+
+  # MySQL metrics
+  - job_name: 'mysql'
+    static_configs:
+      - targets:
+          - 'mysql-primary:9104'
+
+  # Redis metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets:
+          - 'redis-master:9121'
+
+  # Nginx metrics
+  - job_name: 'nginx'
+    static_configs:
+      - targets:
+          - 'nginx:9113'
+
+  # Node exporter for system metrics
+  - job_name: 'node'
+    static_configs:
+      - targets:
+          - 'node-exporter:9100'
+
+  # Celery worker metrics
+  - job_name: 'celery'
+    static_configs:
+      - targets:
+          - 'celery-worker:9808'
