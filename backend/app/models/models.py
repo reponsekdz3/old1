@@ -146,13 +146,26 @@ class Status(db.Model):
     user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
     content = db.Column(db.Text, nullable=True)
     media_url = db.Column(db.String(512), nullable=True)
-    media_type = db.Column(db.String(20), nullable=True, default='text')  # text | image | video
+    media_type = db.Column(db.String(20), nullable=True, default='text')  # text | image | video | link
     background_color = db.Column(db.String(20), nullable=True, default='#008069')
+    # Enhanced fields
+    font_style = db.Column(db.String(30), nullable=True, default='sans')
+    text_color = db.Column(db.String(20), nullable=True, default='#ffffff')
+    text_align = db.Column(db.String(10), nullable=True, default='center')
+    link_url = db.Column(db.String(512), nullable=True)
+    link_title = db.Column(db.String(255), nullable=True)
+    link_description = db.Column(db.Text, nullable=True)
+    link_image = db.Column(db.String(512), nullable=True)
+    music_name = db.Column(db.String(255), nullable=True)
+    music_url = db.Column(db.String(512), nullable=True)
+    privacy = db.Column(db.String(20), nullable=True, default='everyone')  # everyone | close_friends | contacts
+    duration_hours = db.Column(db.Integer, nullable=True, default=24)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     expires_at = db.Column(db.DateTime, nullable=False)
     
     user = db.relationship('User', backref='statuses')
     viewers = db.relationship('User', secondary='status_viewers', backref='viewed_statuses')
+    reactions = db.relationship('StatusReaction', backref='status', cascade='all, delete-orphan')
     
     def to_dict(self):
         return {
@@ -164,9 +177,21 @@ class Status(db.Model):
             'media_url': self.media_url,
             'media_type': self.media_type or 'text',
             'background_color': self.background_color or '#008069',
+            'font_style': self.font_style or 'sans',
+            'text_color': self.text_color or '#ffffff',
+            'text_align': self.text_align or 'center',
+            'link_url': self.link_url,
+            'link_title': self.link_title,
+            'link_description': self.link_description,
+            'link_image': self.link_image,
+            'music_name': self.music_name,
+            'music_url': self.music_url,
+            'privacy': self.privacy or 'everyone',
+            'duration_hours': self.duration_hours or 24,
             'created_at': self.created_at.isoformat(),
             'expires_at': self.expires_at.isoformat(),
-            'viewers_count': len(self.viewers)
+            'viewers_count': len(self.viewers),
+            'reactions': [r.to_dict() for r in self.reactions],
         }
 
 # Association table for status viewers
@@ -174,6 +199,54 @@ status_viewers = db.Table('status_viewers',
     db.Column('status_id', db.String(36), db.ForeignKey('statuses.id'), primary_key=True),
     db.Column('user_id', db.String(36), db.ForeignKey('users.id'), primary_key=True)
 )
+
+
+class StatusReaction(db.Model):
+    __tablename__ = 'status_reactions'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    status_id = db.Column(db.String(36), db.ForeignKey('statuses.id'), nullable=False)
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
+    emoji = db.Column(db.String(10), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref='status_reactions')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'user_name': self.user.full_name,
+            'user_avatar': self.user.avatar_url,
+            'emoji': self.emoji,
+            'created_at': self.created_at.isoformat(),
+        }
+
+
+class StatusMute(db.Model):
+    __tablename__ = 'status_mutes'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
+    muted_user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'muted_user_id', name='uq_status_mute'),
+    )
+
+
+class CloseFriend(db.Model):
+    __tablename__ = 'close_friends'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
+    friend_user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'friend_user_id', name='uq_close_friend'),
+    )
 
 class Contact(db.Model):
     __tablename__ = 'contacts'

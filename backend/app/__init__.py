@@ -51,6 +51,20 @@ def _run_migrations():
     if 'stealth_mode'        not in uc: _add('user_settings', 'stealth_mode',        'BOOLEAN DEFAULT 0')
     if 'ghost_notifications' not in uc: _add('user_settings', 'ghost_notifications', 'BOOLEAN DEFAULT 0')
 
+    # statuses — enhanced fields
+    sc = _col_names('statuses')
+    if 'font_style'         not in sc: _add('statuses', 'font_style',         "VARCHAR(30) DEFAULT 'sans'")
+    if 'text_color'         not in sc: _add('statuses', 'text_color',         "VARCHAR(20) DEFAULT '#ffffff'")
+    if 'text_align'         not in sc: _add('statuses', 'text_align',         "VARCHAR(10) DEFAULT 'center'")
+    if 'link_url'           not in sc: _add('statuses', 'link_url',           'VARCHAR(512)')
+    if 'link_title'         not in sc: _add('statuses', 'link_title',         'VARCHAR(255)')
+    if 'link_description'   not in sc: _add('statuses', 'link_description',   'TEXT')
+    if 'link_image'         not in sc: _add('statuses', 'link_image',         'VARCHAR(512)')
+    if 'music_name'         not in sc: _add('statuses', 'music_name',         'VARCHAR(255)')
+    if 'music_url'          not in sc: _add('statuses', 'music_url',          'VARCHAR(512)')
+    if 'privacy'            not in sc: _add('statuses', 'privacy',            "VARCHAR(20) DEFAULT 'everyone'")
+    if 'duration_hours'     not in sc: _add('statuses', 'duration_hours',     'INTEGER DEFAULT 24')
+
 
 def create_app(config_name='development'):
     """Application factory"""
