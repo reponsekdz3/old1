@@ -1,39 +1,162 @@
-version: '3.8'
+version: '3.9'
 
 services:
-  backend:
-    build: ./backend
-    ports:
-      - "8000:8000"
-    environment:
-      - DATABASE_URL=postgresql://vipchat:vipchat@db:5432/vipchat
-      - REDIS_URL=redis://redis:6379/0
-    depends_on:
-      - db
-      - redis
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: vipchat-mysql
     restart: unless-stopped
-
-  db:
-    image: postgres:15-alpine
     environment:
-      - POSTGRES_USER=vipchat
-      - POSTGRES_PASSWORD=vipchat
-      - POSTGRES_DB=vipchat
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-RootPassword123!}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-vipchat}
+      MYSQL_USER: ${MYSQL_USER:-vipchat}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-StrongPassword123!}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
+      - mysql_data:/var/lib/mysql
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "3306:3306"
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --max-connections=500
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-RootPassword123!}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vipchat-network
 
+  # Redis Cache
   redis:
     image: redis:7-alpine
+    container_name: vipchat-redis
     restart: unless-stopped
-
-  web:
-    build: ./web
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-RedisPassword123!}
+    volumes:
+      - redis_data:/data
     ports:
-      - "5000:5000"
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vipchat-network
+
+  # Flask Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vipchat-backend
+    restart: unless-stopped
+    environment:
+      # Flask
+      FLASK_APP: run.py
+      FLASK_ENV: ${FLASK_ENV:-production}
+      
+      # Database
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-vipchat}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-StrongPassword123!}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-vipchat}
+      
+      # Redis
+      REDIS_URL: redis://:${REDIS_PASSWORD:-RedisPassword123!}@redis:6379/0
+      
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-change-this-to-64-random-hex-chars-in-production}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-jwt-secret-to-64-random-hex-chars}
+      
+      # Stripe
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      
+      # PayPal
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      PAYPAL_MODE: ${PAYPAL_MODE:-sandbox}
+      
+      # Flutterwave
+      FLUTTERWAVE_SECRET_KEY: ${FLUTTERWAVE_SECRET_KEY:-}
+      FLUTTERWAVE_WEBHOOK_HASH: ${FLUTTERWAVE_WEBHOOK_HASH:-}
+      
+      # Africa's Talking SMS
+      AFRICAN_TALKING_USERNAME: ${AFRICAN_TALKING_USERNAME:-sandbox}
+      AFRICAN_TALKING_API_KEY: ${AFRICAN_TALKING_API_KEY:-}
+      
+      # Web Push VAPID
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_CLAIMS_EMAIL: ${VAPID_CLAIMS_EMAIL:-admin@vipchat.app}
+      
+      # App Config
+      APP_URL: ${APP_URL:-http://localhost}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost,http://localhost:5000,http://localhost:3000}
+      
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/logs:/app/logs
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - vipchat-network
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: vipchat-frontend
+    restart: unless-stopped
+    ports:
+      - "5000:80"
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - vipchat-network
+
+  # Nginx Reverse Proxy (Optional - for SSL termination and load balancing)
+  nginx:
+    image: nginx:alpine
+    container_name: vipchat-nginx
     restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - vipchat-network
 
 volumes:
-  postgres_data:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  vipchat-network:
+    driver: bridge
