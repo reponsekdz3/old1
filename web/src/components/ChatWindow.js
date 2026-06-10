@@ -198,7 +198,12 @@ const MessageBubble = memo(function MessageBubble({
   const isEdited = message.is_edited;
 
   return (
-    <div className={`flex mb-1 group ${isOwn ? 'justify-end' : 'justify-start'}`}>
+    <motion.div
+      initial={{ opacity: 0, y: 6, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.15, ease: 'easeOut' }}
+      className={`flex mb-1 group ${isOwn ? 'justify-end' : 'justify-start'}`}
+    >
       {/* Hover reaction + menu bar */}
       <div className={`flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity self-end mb-1 ${isOwn ? 'mr-1 flex-row-reverse' : 'ml-1'}`}>
         <button
@@ -280,7 +285,8 @@ const MessageBubble = memo(function MessageBubble({
 
         {/* Main bubble */}
         <div
-          className={`rounded-2xl px-3 pt-2 pb-1.5 shadow-sm cursor-default relative ${
+          onDoubleClick={() => !isDeleted && onReply(message)}
+          className={`rounded-2xl px-3 pt-2 pb-1.5 shadow-sm cursor-default relative select-none ${
             isOwn
               ? 'bg-[#DCF8C6] text-gray-900 rounded-tr-none'
               : 'bg-white text-gray-900 rounded-tl-none'
@@ -411,7 +417,6 @@ const MessageBubble = memo(function MessageBubble({
           {/* Timestamp + status row */}
           <div className="flex items-center justify-end gap-1 mt-0.5">
             {isEdited && !isDeleted && <span className="text-[10px] text-gray-400">edited</span>}
-            {message.is_e2ee && isOwn && !isDeleted && <FiLock size={8} className="text-gray-400" title="End-to-end encrypted" />}
             <span className="text-[10px] text-gray-400">{format(new Date(message.created_at), 'HH:mm')}</span>
             {isOwn && !isDeleted && <Ticks status={message.status} />}
           </div>
@@ -427,7 +432,7 @@ const MessageBubble = memo(function MessageBubble({
           )}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 });
 
@@ -686,13 +691,14 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
       };
 
       // Attempt Signal Protocol E2EE — gracefully degrade if keys unavailable
+      // Content is always stored as plaintext for display; encrypted_payload carries the ciphertext
       try {
         const enc = await encryptForUser(activeChat, text, api);
         if (enc) {
           payload.encrypted_payload = enc.encrypted_payload;
           payload.e2ee_header      = enc.e2ee_header;
           payload.e2ee_type        = enc.e2ee_type;
-          payload.content          = '[E2EE]'; // sentinel; cleared on decryption
+          // Keep content as plaintext — never show cipher text in the UI
         }
       } catch (encErr) {
         // Keys not yet exchanged — send plaintext as fallback
@@ -1052,8 +1058,10 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
                 className="bg-white/60 backdrop-blur-md rounded-t-xl mb-1 p-2 border-l-4 border-[#25D366] flex items-center justify-between"
               >
                 <div className="min-w-0">
-                  <p className="text-[11px] font-bold text-[#25D366]">Replying to</p>
-                  <p className="text-xs text-gray-500 truncate">{replyTo.content || '[Media]'}</p>
+                  <p className="text-[11px] font-bold text-[#25D366]">
+                    {replyTo.sender_id === replyTo._selfId ? 'Reply to yourself' : `Replying to ${replyTo.sender_name || chatName}`}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">{replyTo.content || (replyTo.media_type ? `[${replyTo.media_type}]` : '[Media]')}</p>
                 </div>
                 <button onClick={() => setReplyTo(null)} className="p-1 hover:bg-gray-200 rounded-full">
                   <FiX size={14} />

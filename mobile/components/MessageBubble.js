@@ -1,5 +1,8 @@
-import React from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, Linking } from 'react-native';
+import React, { useRef } from 'react';
+import {
+  View, Text, Image, TouchableOpacity, StyleSheet, Linking,
+  PanResponder, Animated,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../config';
 
@@ -13,7 +16,7 @@ function DeliveryTicks({ status }) {
     return <Ionicons name="alert-circle" size={13} color="#FF3B30" />;
   }
   if (status === 'queued') {
-    return <Ionicons name="cloud-upload-outline" size={12} color="rgba(255,255,255,0.5)" />;
+    return <Ionicons name="cloud-upload-outline" size={12} color="rgba(0,0,0,0.35)" />;
   }
   if (status === 'read') {
     return (
@@ -26,39 +29,72 @@ function DeliveryTicks({ status }) {
   if (status === 'delivered') {
     return (
       <View style={{ flexDirection: 'row' }}>
-        <Ionicons name="checkmark" size={12} color="rgba(255,255,255,0.7)" style={{ marginRight: -5 }} />
-        <Ionicons name="checkmark" size={12} color="rgba(255,255,255,0.7)" />
+        <Ionicons name="checkmark" size={12} color="rgba(0,0,0,0.45)" style={{ marginRight: -5 }} />
+        <Ionicons name="checkmark" size={12} color="rgba(0,0,0,0.45)" />
       </View>
     );
   }
   if (status === 'sent') {
-    return <Ionicons name="checkmark" size={12} color="rgba(255,255,255,0.7)" />;
+    return <Ionicons name="checkmark" size={12} color="rgba(0,0,0,0.45)" />;
   }
-  return <Ionicons name="time-outline" size={10} color="rgba(255,255,255,0.5)" />;
+  return <Ionicons name="time-outline" size={10} color="rgba(0,0,0,0.3)" />;
 }
+
+const SWIPE_THRESHOLD = 48;
 
 export default function MessageBubble({ message, isOwn, onLongPress, onImagePress, onReply }) {
   const {
     content, media_url, media_type, status, created_at,
     latitude, longitude, location_name,
     contact_name, contact_phone,
-    reactions, is_deleted, reply_to,
+    reactions, is_deleted, replied_to,
   } = message;
+
+  const translateX = useRef(new Animated.Value(0)).current;
+  const replyTriggered = useRef(false);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) =>
+        Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+      onPanResponderGrant: () => {
+        replyTriggered.current = false;
+      },
+      onPanResponderMove: (_, g) => {
+        const dx = isOwn ? Math.min(0, g.dx) : Math.max(0, g.dx);
+        const clamped = isOwn ? Math.max(dx, -SWIPE_THRESHOLD * 1.4) : Math.min(dx, SWIPE_THRESHOLD * 1.4);
+        translateX.setValue(clamped);
+        if (!replyTriggered.current && Math.abs(clamped) >= SWIPE_THRESHOLD) {
+          replyTriggered.current = true;
+          onReply?.(message);
+        }
+      },
+      onPanResponderRelease: () => {
+        Animated.spring(translateX, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 200,
+          friction: 20,
+        }).start();
+      },
+    })
+  ).current;
 
   const isFailed = status === 'failed';
   const isQueued = status === 'queued';
-  const bg = isOwn ? (isFailed ? '#FFEBEE' : isQueued ? '#F5F5F5' : COLORS.lightGreen) : '#fff';
-  const textColor = COLORS.dark;
+  const bg = isOwn
+    ? isFailed ? '#FFEBEE' : isQueued ? '#F5F5F5' : COLORS.lightGreen
+    : '#fff';
 
   const renderReplyPreview = () => {
-    if (!reply_to) return null;
+    if (!replied_to) return null;
     return (
       <View style={styles.replyContainer}>
         <View style={styles.replyLine} />
         <View style={styles.replyContent}>
-          <Text style={styles.replySender}>{reply_to.sender_name || 'Unknown'}</Text>
+          <Text style={styles.replySender}>{replied_to.sender_name || 'Unknown'}</Text>
           <Text style={styles.replyText} numberOfLines={1}>
-            {reply_to.content || (reply_to.media_type ? `📎 ${reply_to.media_type}` : 'Message')}
+            {replied_to.content || (replied_to.media_type ? `📎 ${replied_to.media_type}` : 'Message')}
           </Text>
         </View>
       </View>
@@ -74,7 +110,7 @@ export default function MessageBubble({ message, isOwn, onLongPress, onImagePres
       return (
         <TouchableOpacity onPress={() => onImagePress?.(media_url)} activeOpacity={0.9}>
           <Image source={{ uri: media_url }} style={styles.mediaImage} resizeMode="cover" />
-          {content ? <Text style={[styles.text, { color: textColor, marginTop: 4 }]}>{content}</Text> : null}
+          {content ? <Text style={[styles.text, { marginTop: 4 }]}>{content}</Text> : null}
         </TouchableOpacity>
       );
     }
@@ -116,7 +152,7 @@ export default function MessageBubble({ message, isOwn, onLongPress, onImagePres
             <Ionicons name="location" size={20} color="#fff" />
           </View>
           <View>
-            <Text style={[styles.text, { fontWeight: '600', color: textColor }]}>📍 Location</Text>
+            <Text style={[styles.text, { fontWeight: '600' }]}>📍 Location</Text>
             {location_name ? <Text style={[styles.text, { color: COLORS.textGray, fontSize: 12 }]}>{location_name}</Text> : null}
           </View>
         </TouchableOpacity>
@@ -130,7 +166,7 @@ export default function MessageBubble({ message, isOwn, onLongPress, onImagePres
             <Ionicons name="person" size={20} color={COLORS.accent} />
           </View>
           <View>
-            <Text style={[styles.text, { fontWeight: '600', color: textColor }]}>{contact_name || 'Contact'}</Text>
+            <Text style={[styles.text, { fontWeight: '600' }]}>{contact_name || 'Contact'}</Text>
             <Text style={[styles.text, { color: COLORS.textGray, fontSize: 12 }]}>{contact_phone}</Text>
           </View>
         </View>
@@ -138,27 +174,41 @@ export default function MessageBubble({ message, isOwn, onLongPress, onImagePres
     }
 
     if (content) {
-      return <Text style={[styles.text, { color: textColor }]}>{content}</Text>;
+      return <Text style={styles.text}>{content}</Text>;
     }
 
     return null;
   };
 
   return (
-    <TouchableOpacity
-      onPress={() => onReply?.(message)}
-      onLongPress={onLongPress}
-      activeOpacity={0.9}
-      style={[styles.wrapper, isOwn ? styles.wrapperOwn : styles.wrapperOther]}
-    >      
-      <View style={[styles.bubble, { backgroundColor: bg }, isOwn ? styles.bubbleOwn : styles.bubbleOther]}>
-        {renderReplyPreview()}
-        {renderContent()}
-        <View style={styles.footer}>
-          <Text style={[styles.time, isOwn && styles.timeOwn]}>{formatTime(created_at)}</Text>
-          {isOwn && <DeliveryTicks status={status} />}
+    <Animated.View
+      {...panResponder.panHandlers}
+      style={[
+        styles.wrapper,
+        isOwn ? styles.wrapperOwn : styles.wrapperOther,
+        { transform: [{ translateX }] },
+      ]}
+    >
+      <TouchableOpacity
+        onLongPress={onLongPress}
+        activeOpacity={0.85}
+        style={{ flexDirection: isOwn ? 'row-reverse' : 'row', alignItems: 'flex-end' }}
+      >
+        {/* Reply arrow indicator — shows during swipe */}
+        <View style={[styles.replyArrow, isOwn ? styles.replyArrowOwn : styles.replyArrowOther]}>
+          <Ionicons name="return-up-back-outline" size={16} color={COLORS.accent} />
         </View>
-      </View>
+
+        <View style={[styles.bubble, { backgroundColor: bg }, isOwn ? styles.bubbleOwn : styles.bubbleOther]}>
+          {renderReplyPreview()}
+          {renderContent()}
+          <View style={styles.footer}>
+            <Text style={[styles.time, isOwn ? styles.timeOwn : styles.timeOther]}>{formatTime(created_at)}</Text>
+            {isOwn && <DeliveryTicks status={status} />}
+          </View>
+        </View>
+      </TouchableOpacity>
+
       {reactions && reactions.length > 0 && (
         <View style={[styles.reactions, isOwn ? styles.reactionsOwn : styles.reactionsOther]}>
           {reactions.slice(0, 3).map((r, i) => (
@@ -166,32 +216,32 @@ export default function MessageBubble({ message, isOwn, onLongPress, onImagePres
           ))}
         </View>
       )}
-    </TouchableOpacity>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrapper: { marginVertical: 2, marginHorizontal: 8, maxWidth: '80%' },
+  wrapper: { marginVertical: 2, marginHorizontal: 8, maxWidth: '82%' },
   wrapperOwn: { alignSelf: 'flex-end' },
   wrapperOther: { alignSelf: 'flex-start' },
   bubble: {
-    borderRadius: 16,
-    paddingHorizontal: 10,
+    borderRadius: 18,
+    paddingHorizontal: 11,
     paddingTop: 8,
     paddingBottom: 6,
     elevation: 1,
     shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
   },
   bubbleOwn: { borderBottomRightRadius: 4 },
   bubbleOther: { borderBottomLeftRadius: 4 },
-  text: { fontSize: 15, lineHeight: 21 },
+  text: { fontSize: 15, lineHeight: 21, color: '#111' },
   deletedText: { fontSize: 14, fontStyle: 'italic', color: COLORS.gray },
-  mediaImage: { width: 220, height: 160, borderRadius: 10, marginBottom: 2 },
+  mediaImage: { width: 220, height: 160, borderRadius: 12, marginBottom: 2 },
   videoPlaceholder: {
-    width: 220, height: 130, borderRadius: 10, backgroundColor: '#1a1a2e',
+    width: 220, height: 130, borderRadius: 12, backgroundColor: '#1a1a2e',
     alignItems: 'center', justifyContent: 'center',
   },
   videoLabel: { color: '#fff', marginTop: 4, fontSize: 13 },
@@ -214,8 +264,9 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 3 },
-  time: { fontSize: 11, color: COLORS.textGray },
+  time: { fontSize: 11 },
   timeOwn: { color: '#7a8c7a' },
+  timeOther: { color: COLORS.textGray },
   reactions: {
     flexDirection: 'row', backgroundColor: '#fff',
     borderRadius: 10, paddingHorizontal: 5, paddingVertical: 2,
@@ -225,9 +276,19 @@ const styles = StyleSheet.create({
   reactionsOwn: { alignSelf: 'flex-end', marginRight: 8 },
   reactionsOther: { alignSelf: 'flex-start', marginLeft: 8 },
   reaction: { fontSize: 13 },
-  replyContainer: { flexDirection: 'row', marginBottom: 6, paddingBottom: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(0,0,0,0.1)' },
+  replyContainer: {
+    flexDirection: 'row', marginBottom: 6, paddingBottom: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
   replyLine: { width: 3, backgroundColor: COLORS.accent, borderRadius: 1.5, marginRight: 8 },
   replyContent: { flex: 1 },
   replySender: { fontSize: 12, fontWeight: '700', color: COLORS.accent, marginBottom: 2 },
   replyText: { fontSize: 13, color: COLORS.textGray },
+  replyArrow: {
+    width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.06)',
+    alignItems: 'center', justifyContent: 'center', alignSelf: 'center',
+    opacity: 0.7, marginHorizontal: 2,
+  },
+  replyArrowOwn: { marginLeft: 4 },
+  replyArrowOther: { marginRight: 4 },
 });
