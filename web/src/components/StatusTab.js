@@ -7,7 +7,8 @@ import {
   FiChevronRight, FiZap, FiLink, FiEdit3, FiSmile, FiStar,
   FiSliders, FiBellOff, FiBell, FiChevronDown, FiCheck,
   FiAlignCenter, FiAlignLeft, FiAlignRight, FiUsers, FiLock,
-  FiGlobe, FiRefreshCw, FiMusic,
+  FiGlobe, FiRefreshCw, FiMusic, FiVolume2, FiVolumeX,
+  FiDownload, FiSearch, FiPlay, FiPause,
 } from 'react-icons/fi';
 import { useAuthStore } from '../services/store';
 import api from '../services/api';
@@ -366,9 +367,10 @@ function AdSlide({ ad, onSkip, onAdvance }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// StatusViewer — immersive full-screen story viewer
 // ─────────────────────────────────────────────────────────────────────────────
-function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGroupIdx = 0, onNextGroup }) {
+// StatusViewer — immersive full-screen story viewer (advanced)
+// ─────────────────────────────────────────────────────────────────────────────
+function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGroupIdx = 0, onNextGroup, onPrevGroup }) {
   const { user } = useAuthStore();
   const items = useMemo(() => statusGroup?.statuses || [statusGroup], [statusGroup]);
   const [idx, setIdx] = useState(0);
@@ -381,12 +383,18 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
   const [replySending, setReplySending] = useState(false);
   const [adData, setAdData] = useState(null);
   const [showAd, setShowAd] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [hearts, setHearts] = useState([]);        // flying ❤️ for double-tap
+  const [dragY, setDragY] = useState(0);
   const pendingNextIdx = useRef(null);
   const adShownRef = useRef(false);
   const swipeStartRef = useRef(null);
   const timerRef = useRef(null);
   const videoRef = useRef(null);
   const reactionTimeoutRef = useRef(null);
+  const lastTapRef = useRef(0);
+  const holdTimerRef = useRef(null);
   const [musicPlaying, setMusicPlaying] = useState(false);
   const musicRef = useRef(null);
 
@@ -399,9 +407,12 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
     api.get('/ads/feed').then(({ data }) => { if (data?.ad) setAdData(data.ad); }).catch(() => {});
   }, []);
 
+  useEffect(() => { setMyReaction(current?.my_reaction || null); }, [current]);
+
+  // Video mute sync
   useEffect(() => {
-    setMyReaction(current?.my_reaction || null);
-  }, [current]);
+    if (videoRef.current) videoRef.current.muted = muted;
+  }, [muted]);
 
   // Auto-play music
   useEffect(() => {
@@ -409,13 +420,11 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
       musicRef.current.src = current.music_url;
       musicRef.current.play().then(() => setMusicPlaying(true)).catch(() => {});
     }
-    return () => { if (musicRef.current) { musicRef.current.pause(); musicRef.current.src = ''; } };
+    return () => { if (musicRef.current) { musicRef.current.pause(); musicRef.current.src = ''; setMusicPlaying(false); } };
   }, [idx, current]);
 
   const afterAd = useCallback(() => {
-    setShowAd(false);
-    setShowReactions(false);
-    setShowReply(false);
+    setShowAd(false); setShowReactions(false); setShowReply(false);
     const nextIdx = pendingNextIdx.current;
     pendingNextIdx.current = null;
     if (nextIdx === null) return;
@@ -424,24 +433,20 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
   }, [items.length, onNextGroup, onClose]);
 
   const advance = useCallback(() => {
-    setShowReactions(false);
-    setShowReply(false);
+    setShowReactions(false); setShowReply(false); setShowMenu(false);
     const nextIdx = idx + 1;
     if (nextIdx % AD_EVERY_N === 0 && adData && !adShownRef.current) {
-      adShownRef.current = true;
-      pendingNextIdx.current = nextIdx;
-      setShowAd(true);
-      return;
+      adShownRef.current = true; pendingNextIdx.current = nextIdx; setShowAd(true); return;
     }
     if (nextIdx < items.length) setIdx(nextIdx);
     else { if (onNextGroup) onNextGroup(); else onClose(); }
   }, [idx, items.length, onClose, adData, onNextGroup]);
 
   useEffect(() => {
-    if (paused || isVideo || showAd || showReply) return;
+    if (paused || isVideo || showAd || showReply || showMenu) return;
     timerRef.current = setTimeout(advance, DURATION || 6000);
     return () => clearTimeout(timerRef.current);
-  }, [idx, paused, isVideo, advance, DURATION, showAd, showReply]);
+  }, [idx, paused, isVideo, advance, DURATION, showAd, showReply, showMenu]);
 
   useEffect(() => {
     if (current?.id && !isOwn) {
@@ -449,47 +454,53 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
         .then(({ data }) => { if (data?.viewers_count !== undefined) setLiveViewCount(data.viewers_count); })
         .catch(() => {});
     }
-    if (isOwn && current?.id) {
-      setLiveViewCount(current.viewers_count || 0);
-    }
+    if (isOwn && current?.id) setLiveViewCount(current.viewers_count || 0);
   }, [current?.id, isOwn]);
 
-  // Live view-count refresh for own statuses (every 10 s while viewer is open)
   useEffect(() => {
     if (!isOwn || !current?.id) return;
     const t = setInterval(() => {
       api.get(`/status/${current.id}/viewers`).then(({ data }) => {
-        setLiveViewCount(data.count ?? liveViewCount);
+        if (data.count !== undefined) setLiveViewCount(data.count);
       }).catch(() => {});
     }, 10000);
     return () => clearInterval(t);
   }, [isOwn, current?.id]);
 
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = 0;
-      videoRef.current.play().catch(() => {});
-    }
+    if (videoRef.current) { videoRef.current.currentTime = 0; videoRef.current.play().catch(() => {}); }
   }, [idx]);
 
-  const goBack = () => { setShowAd(false); if (idx > 0) setIdx(i => i - 1); else onClose(); };
+  const goBack = () => { setShowAd(false); if (idx > 0) setIdx(i => i - 1); else { if (onPrevGroup) onPrevGroup(); else onClose(); } };
 
   const deleteStatus = async () => {
     if (!window.confirm('Delete this status?')) return;
-    try {
-      await api.delete(`/status/${current.id}`);
-      toast.success('Status deleted');
-      if (items.length <= 1) onClose(); else advance();
-    } catch { toast.error('Failed to delete'); }
+    try { await api.delete(`/status/${current.id}`); toast.success('Status deleted'); if (items.length <= 1) onClose(); else advance(); }
+    catch { toast.error('Failed to delete'); }
   };
 
   const sendReaction = async (emoji) => {
     if (!current?.id) return;
     clearTimeout(reactionTimeoutRef.current);
-    setMyReaction(emoji);
-    setShowReactions(false);
+    setMyReaction(emoji); setShowReactions(false);
     try { await api.post(`/status/${current.id}/react`, { emoji }); } catch { }
-    reactionTimeoutRef.current = setTimeout(advance, 800);
+    reactionTimeoutRef.current = setTimeout(advance, 1200);
+  };
+
+  // Double-tap to react with ❤️ burst
+  const handleDoubleTap = (e) => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 320) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = (e.clientX || e.touches?.[0]?.clientX || rect.width / 2) - rect.left;
+      const y = (e.clientY || e.touches?.[0]?.clientY || rect.height / 2) - rect.top;
+      const id = now;
+      setHearts(h => [...h, { id, x, y }]);
+      setTimeout(() => setHearts(h => h.filter(hh => hh.id !== id)), 1200);
+      if (!isOwn) sendReaction('❤️');
+      if (navigator.vibrate) navigator.vibrate(40);
+    }
+    lastTapRef.current = now;
   };
 
   const sendReply = async () => {
@@ -500,25 +511,55 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
         receiver_id: statusGroup.user_id,
         content: `↩ Re: status\n"${current?.content?.slice(0, 60) || '📸 Photo'}"\n\n${replyText.trim()}`,
       });
-      toast.success('Reply sent!');
-      setReplyText('');
-      setShowReply(false);
+      toast.success('Reply sent!'); setReplyText(''); setShowReply(false);
     } catch { toast.error('Failed to send reply'); }
     finally { setReplySending(false); }
   };
 
-  const handleTouchStart = (e) => { swipeStartRef.current = { y: e.touches[0].clientY, t: Date.now() }; };
-  const handleTouchEnd = (e) => {
+  const saveMedia = () => {
+    if (!current?.media_url) return;
+    const a = document.createElement('a');
+    a.href = current.media_url;
+    a.download = `status_${current.id}.${isVideo ? 'mp4' : 'jpg'}`;
+    a.click();
+  };
+
+  const copyLink = () => {
+    if (current?.link_url) { navigator.clipboard.writeText(current.link_url).then(() => toast.success('Link copied!')); }
+    else { toast('No link in this status'); }
+  };
+
+  // Touch handling — swipe down to close, left/right for next/prev group
+  const handleTouchStart = (e) => {
+    swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+    holdTimerRef.current = setTimeout(() => setPaused(true), 150);
+  };
+  const handleTouchMove = (e) => {
     if (!swipeStartRef.current) return;
+    const dy = e.touches[0].clientY - swipeStartRef.current.y;
+    if (dy > 0) setDragY(Math.min(dy * 0.6, 120));
+  };
+  const handleTouchEnd = (e) => {
+    clearTimeout(holdTimerRef.current);
+    setPaused(false);
+    setDragY(0);
+    if (!swipeStartRef.current) return;
+    const dx = e.changedTouches[0].clientX - swipeStartRef.current.x;
     const dy = e.changedTouches[0].clientY - swipeStartRef.current.y;
     const dt = Date.now() - swipeStartRef.current.t;
-    if (dy > 90 && dt < 500) onClose();
     swipeStartRef.current = null;
+    if (dy > 100 && dt < 500 && Math.abs(dx) < 60) { onClose(); return; }
+    if (Math.abs(dx) > 80 && dt < 400 && Math.abs(dy) < 60) {
+      if (dx < 0) { if (onNextGroup) onNextGroup(); else onClose(); }
+      else { if (onPrevGroup) onPrevGroup(); }
+    }
   };
 
   const fontStyle = getFontStyle(current?.font_style);
   const reactionSummary = current?.reactions || {};
   const totalReactions = Object.values(reactionSummary).reduce((a, b) => a + b, 0);
+
+  const mediaTypeBadge = isVideo ? '🎬' : current?.media_type === 'link' ? '🔗' : current?.media_url ? '📷' : '💬';
 
   if (showAd) {
     return (
@@ -541,25 +582,32 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
 
   return (
     <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black z-50 flex flex-col select-none"
-      onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}
+      initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1, y: dragY }}
+      exit={{ opacity: 0, scale: 0.95, y: 60 }}
+      transition={{ duration: 0.2 }}
+      className="fixed inset-0 bg-black z-50 flex flex-col select-none overflow-hidden"
+      style={{ borderRadius: dragY > 20 ? `${Math.min(dragY / 3, 24)}px` : 0 }}
+      onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
     >
       <audio ref={musicRef} loop style={{ display: 'none' }} />
-      {/* Progress bars — segmented, animated */}
-      <div className="flex gap-[3px] px-3 pt-safe pt-11 pb-2 z-10 relative">
+
+      {/* Top gradient overlay for legibility */}
+      <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/60 to-transparent pointer-events-none z-[5]" />
+
+      {/* Progress bars */}
+      <div className="flex gap-[3px] px-3 pt-safe pt-11 pb-1 z-10 relative">
         {items.map((_, i) => (
-          <div key={i} className="flex-1 h-[4px] bg-white/25 rounded-full overflow-hidden shadow-sm">
+          <div key={i} className="flex-1 h-[3.5px] bg-white/20 rounded-full overflow-hidden">
             <motion.div
               key={`bar-${idx}-${i}`}
               className="h-full rounded-full"
-              style={{ background: i < idx ? '#fff' : 'linear-gradient(90deg,#25D366,#fff)' }}
+              style={{ background: i < idx ? 'rgba(255,255,255,0.9)' : 'linear-gradient(90deg,#25D366 0%,#fff 100%)' }}
               initial={{ width: i < idx ? '100%' : '0%' }}
               animate={{ width: i <= idx ? '100%' : '0%' }}
               transition={
                 i === idx && !paused && !isVideo
                   ? { duration: (DURATION || 6000) / 1000, ease: 'linear' }
-                  : { duration: 0.15 }
+                  : { duration: 0.1 }
               }
             />
           </div>
@@ -567,56 +615,104 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
       </div>
 
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 pb-3 z-10 relative">
-        <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-green-400 to-teal-500 flex-shrink-0">
+      <div className="flex items-center gap-2.5 px-4 pb-3 z-10 relative">
+        <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-green-400 to-teal-600 flex-shrink-0 ring-2 ring-white/20">
           {statusGroup?.owner_avatar
             ? <img src={statusGroup.owner_avatar} alt="" className="w-full h-full object-cover" />
             : <span className="w-full h-full flex items-center justify-center text-white font-bold text-sm">{statusGroup?.owner_name?.[0] || '?'}</span>}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-white font-semibold text-sm">{statusGroup?.owner_name}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-white font-semibold text-sm leading-tight">{statusGroup?.owner_name || (isOwn ? 'My Status' : 'Unknown')}</p>
+            <span className="text-[10px] bg-white/15 rounded px-1 py-0.5 text-white/70">{mediaTypeBadge}</span>
+            {statusGroup?.is_close_friend && (
+              <span className="text-[10px] bg-yellow-400/30 text-yellow-300 rounded px-1 py-0.5 font-medium">⭐ Close</span>
+            )}
+          </div>
           <div className="flex items-center gap-2">
-            <p className="text-white/60 text-xs">
+            <p className="text-white/55 text-xs">
               {current?.created_at ? formatDistanceToNow(new Date(current.created_at), { addSuffix: true }) : ''}
             </p>
-            {current?.expires_at && (
-              <span className="text-white/40 text-[10px]">· {timeLeft(current.expires_at)}</span>
-            )}
+            {current?.expires_at && <span className="text-white/35 text-[10px]">· {timeLeft(current.expires_at)}</span>}
           </div>
         </div>
         {current?.music_name && (
-          <div className="flex items-center gap-1 bg-white/10 rounded-full px-2 py-1">
-            <FiMusic size={11} className={`text-white ${musicPlaying ? 'animate-pulse' : ''}`} />
-            <span className="text-white/80 text-[10px] max-w-[80px] truncate">{current.music_name}</span>
+          <div className="flex items-center gap-1 bg-white/12 rounded-full px-2 py-1 border border-white/10">
+            <FiMusic size={10} className={`text-white/80 ${musicPlaying ? 'animate-pulse' : ''}`} />
+            <span className="text-white/70 text-[10px] max-w-[70px] truncate">{current.music_name}</span>
           </div>
         )}
-        {isOwn && (
-          <button onClick={deleteStatus} className="p-2 hover:bg-white/10 rounded-full transition">
-            <FiTrash2 size={18} className="text-white/80" />
+        {isVideo && (
+          <button onClick={() => setMuted(v => !v)} className="p-1.5 hover:bg-white/15 rounded-full transition">
+            {muted
+              ? <FiVolumeX size={17} className="text-white/70" />
+              : <FiVolume2 size={17} className="text-white/70" />}
           </button>
         )}
-        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition">
-          <FiX size={22} className="text-white" />
+        {/* 3-dot menu */}
+        <div className="relative">
+          <button onClick={() => { setPaused(true); setShowMenu(v => !v); }}
+            className="p-2 hover:bg-white/15 rounded-full transition">
+            <span className="text-white/80 text-lg leading-none">⋮</span>
+          </button>
+          <AnimatePresence>
+            {showMenu && (
+              <motion.div initial={{ opacity: 0, scale: 0.9, y: -5 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: -5 }}
+                className="absolute right-0 top-full mt-1 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-30 min-w-[180px] overflow-hidden">
+                {isOwn && current?.media_url && (
+                  <button onClick={() => { saveMedia(); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/8 transition text-sm text-white/90">
+                    <FiDownload size={15} className="text-[#25D366]" /> Save to Device
+                  </button>
+                )}
+                {current?.link_url && (
+                  <button onClick={() => { copyLink(); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/8 transition text-sm text-white/90">
+                    <FiExternalLink size={15} className="text-blue-400" /> Copy Link
+                  </button>
+                )}
+                {isOwn && (
+                  <button onClick={() => { deleteStatus(); setShowMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/8 transition text-sm text-red-400">
+                    <FiTrash2 size={15} /> Delete Status
+                  </button>
+                )}
+                {!isOwn && (
+                  <button onClick={() => { toast('Report submitted'); setShowMenu(false); setPaused(false); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/8 transition text-sm text-red-400">
+                    <FiFlag size={15} /> Report
+                  </button>
+                )}
+                <button onClick={() => { setShowMenu(false); setPaused(false); }} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/8 transition text-sm text-white/40">
+                  <FiX size={15} /> Cancel
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+        <button onClick={onClose} className="p-2 hover:bg-white/15 rounded-full transition">
+          <FiX size={21} className="text-white" />
         </button>
       </div>
 
       {/* Content */}
-      <div className="flex-1 relative flex items-center justify-center overflow-hidden">
+      <div className="flex-1 relative flex items-center justify-center overflow-hidden"
+        onClick={handleDoubleTap}>
         {isVideo && current?.media_url ? (
-          <video ref={videoRef} src={current.media_url} autoPlay playsInline className="w-full h-full object-contain" onEnded={advance} />
+          <video ref={videoRef} src={current.media_url} autoPlay playsInline muted={muted}
+            className="w-full h-full object-contain" onEnded={advance} />
         ) : current?.media_url && current?.media_type !== 'link' ? (
-          <img src={current.media_url} alt="status" className="w-full h-full object-contain" />
+          <img src={current.media_url} alt="status" className="w-full h-full object-contain" draggable={false} />
         ) : current?.media_type === 'link' ? (
           <div className="w-full h-full flex items-center justify-center px-6"
-            style={{ background: current.background_color?.includes('linear-gradient') ? current.background_color : `linear-gradient(135deg,#075E54,#128C7E)` }}>
-            <div className="bg-white/10 backdrop-blur rounded-2xl overflow-hidden w-full max-w-sm">
+            style={{ background: current.background_color?.includes('gradient') ? current.background_color : 'linear-gradient(135deg,#075E54,#128C7E)' }}>
+            <div className="bg-white/10 backdrop-blur-md rounded-2xl overflow-hidden w-full max-w-sm shadow-2xl border border-white/10">
               {current.link_image && <img src={current.link_image} alt="" className="w-full h-40 object-cover" />}
               <div className="p-4">
-                {current.link_title && <p className="text-white font-bold text-base mb-1">{current.link_title}</p>}
-                {current.link_description && <p className="text-white/70 text-sm mb-3 line-clamp-2">{current.link_description}</p>}
+                {current.link_title && <p className="text-white font-bold text-base mb-1.5 leading-tight">{current.link_title}</p>}
+                {current.link_description && <p className="text-white/65 text-sm mb-3 line-clamp-2">{current.link_description}</p>}
                 <a href={current.link_url} target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-2 text-[#25D366] text-sm font-semibold">
-                  <FiExternalLink size={14} />{new URL(current.link_url || 'https://x.com').hostname}
+                  <FiExternalLink size={14} />
+                  {(() => { try { return new URL(current.link_url || 'https://x').hostname; } catch { return current.link_url; } })()}
                 </a>
               </div>
             </div>
@@ -628,34 +724,72 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
               ...fontStyle,
               color: current?.text_color || '#ffffff',
               textAlign: current?.text_align || 'center',
-              fontSize: 'clamp(20px, 5vw, 36px)',
-              textShadow: '0 2px 8px rgba(0,0,0,0.3)',
+              fontSize: 'clamp(20px, 5vw, 38px)',
+              textShadow: '0 2px 12px rgba(0,0,0,0.4)',
+              lineHeight: 1.35,
             }}>
               {current?.content || ''}
             </p>
           </div>
         )}
 
+        {/* Caption overlay on media */}
         {(current?.media_url && current?.media_type !== 'link') && current?.content && (
-          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-6 pb-20 pt-10">
-            <p className="text-white text-base font-medium text-center">{current.content}</p>
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-6 pb-24 pt-12 pointer-events-none">
+            <p className="text-white text-base font-medium text-center leading-snug drop-shadow">{current.content}</p>
           </div>
         )}
 
-        {/* Tap zones */}
-        <div className="absolute inset-0 flex" style={{ top: 70 }}>
-          <div className="flex-1" onClick={goBack} onPointerDown={() => setPaused(true)} onPointerUp={() => setPaused(false)} onPointerLeave={() => setPaused(false)} />
-          <div className="flex-1" onClick={() => { if (!showReactions) advance(); }} onPointerDown={() => setPaused(true)} onPointerUp={() => setPaused(false)} onPointerLeave={() => setPaused(false)} />
+        {/* Sticker overlays from status data */}
+        {current?.stickers?.map((s, i) => (
+          <div key={i} className="absolute text-3xl pointer-events-none" style={{ left: `${s.x}%`, top: `${s.y}%`, transform: 'translate(-50%,-50%)' }}>
+            {s.emoji}
+          </div>
+        ))}
+
+        {/* Tap zones — left go back, right advance */}
+        <div className="absolute inset-0 flex" style={{ top: 80, bottom: 80 }}>
+          <div className="w-1/3 h-full" onClick={(e) => { e.stopPropagation(); goBack(); }}
+            onPointerDown={() => { holdTimerRef.current = setTimeout(() => setPaused(true), 200); }}
+            onPointerUp={() => { clearTimeout(holdTimerRef.current); setPaused(false); }}
+            onPointerLeave={() => { clearTimeout(holdTimerRef.current); setPaused(false); }} />
+          <div className="flex-1 h-full" />
+          <div className="w-1/3 h-full"
+            onClick={(e) => { e.stopPropagation(); if (!showReactions && !showMenu) advance(); }}
+            onPointerDown={() => { holdTimerRef.current = setTimeout(() => setPaused(true), 200); }}
+            onPointerUp={() => { clearTimeout(holdTimerRef.current); setPaused(false); }}
+            onPointerLeave={() => { clearTimeout(holdTimerRef.current); setPaused(false); }} />
         </div>
+
+        {/* Pause overlay */}
+        {paused && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[6]">
+            <div className="w-16 h-16 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
+              <span className="text-white text-3xl">⏸</span>
+            </div>
+          </div>
+        )}
+
+        {/* Flying ❤️ hearts from double-tap */}
+        {hearts.map(h => (
+          <motion.div key={h.id}
+            initial={{ opacity: 1, scale: 0.5, x: h.x - 24, y: h.y - 24 }}
+            animate={{ opacity: 0, scale: 2, y: h.y - 120 }}
+            transition={{ duration: 1.1, ease: 'easeOut' }}
+            className="absolute text-5xl pointer-events-none z-20">
+            ❤️
+          </motion.div>
+        ))}
 
         {/* Reaction picker */}
         <AnimatePresence>
           {showReactions && (
-            <motion.div initial={{ opacity: 0, y: 20, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.9 }}
-              className="absolute bottom-20 left-1/2 -translate-x-1/2 flex gap-1.5 bg-black/80 backdrop-blur-sm rounded-full px-3 py-2.5 z-20 flex-wrap justify-center max-w-[280px]">
+            <motion.div initial={{ opacity: 0, y: 24, scale: 0.88 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 24, scale: 0.88 }}
+              className="absolute bottom-24 left-1/2 -translate-x-1/2 flex gap-1 bg-black/85 backdrop-blur-md rounded-full px-4 py-3 z-20 shadow-2xl border border-white/10">
               {REACTIONS.map(emoji => (
                 <button key={emoji} onClick={() => sendReaction(emoji)}
-                  className={`text-2xl transition-transform hover:scale-125 active:scale-110 ${myReaction === emoji ? 'scale-125' : ''}`}>
+                  className={`text-[26px] transition-all hover:scale-130 active:scale-110 ${myReaction === emoji ? 'scale-125 drop-shadow-lg' : ''}`}>
                   {emoji}
                 </button>
               ))}
@@ -663,30 +797,37 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
           )}
         </AnimatePresence>
 
+        {/* My reaction badge */}
         {myReaction && !showReactions && (
-          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
-            className="absolute bottom-24 right-5 text-3xl z-20 pointer-events-none">{myReaction}</motion.div>
+          <motion.div key={myReaction} initial={{ scale: 0, rotate: -10 }} animate={{ scale: 1, rotate: 0 }}
+            className="absolute bottom-28 right-5 text-4xl z-20 pointer-events-none drop-shadow-lg">{myReaction}</motion.div>
         )}
 
-        {/* Reaction summary overlay */}
+        {/* Reaction summary */}
         {totalReactions > 0 && !isOwn && (
-          <div className="absolute top-4 right-4 bg-black/50 backdrop-blur rounded-full px-2 py-1 flex items-center gap-1 z-10">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            className="absolute top-5 right-4 bg-black/55 backdrop-blur rounded-full px-2.5 py-1 flex items-center gap-0.5 z-10">
             {Object.entries(reactionSummary).slice(0, 3).map(([emoji, count]) => (
-              <span key={emoji} className="text-xs">{emoji}{count > 1 && <span className="text-white/70 text-[10px] ml-0.5">{count}</span>}</span>
+              <span key={emoji} className="text-sm">{emoji}
+                {count > 1 && <span className="text-white/60 text-[10px] ml-0.5">{count}</span>}
+              </span>
             ))}
-          </div>
+          </motion.div>
         )}
       </div>
+
+      {/* Bottom gradient overlay */}
+      <div className="absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-black/70 to-transparent pointer-events-none z-[4]" />
 
       {/* Reply input */}
       <AnimatePresence>
         {showReply && (
           <motion.div initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }}
-            className="flex items-center gap-2 px-4 py-3 bg-black/90 border-t border-white/10 flex-shrink-0 z-20">
+            className="flex items-center gap-2 px-4 py-3 bg-black/90 backdrop-blur-sm border-t border-white/8 flex-shrink-0 z-20">
             <input autoFocus type="text" value={replyText} onChange={e => setReplyText(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') sendReply(); if (e.key === 'Escape') setShowReply(false); }}
               placeholder={`Reply to ${statusGroup?.owner_name}…`}
-              className="flex-1 bg-white/10 text-white placeholder-white/40 rounded-full px-4 py-2.5 text-sm outline-none border border-white/20 focus:border-white/40 transition" />
+              className="flex-1 bg-white/10 text-white placeholder-white/35 rounded-full px-4 py-2.5 text-sm outline-none border border-white/15 focus:border-[#25D366]/60 transition" />
             <button onClick={sendReply} disabled={!replyText.trim() || replySending}
               className="w-10 h-10 flex items-center justify-center bg-[#25D366] hover:bg-[#1fbd5a] disabled:opacity-40 rounded-full transition">
               <FiSend size={16} className="text-white" />
@@ -695,38 +836,43 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
         )}
       </AnimatePresence>
 
-      {/* Bottom bar */}
+      {/* Bottom action bar */}
       {!showReply && (
-        <div className="flex items-center gap-2 px-4 py-3 flex-shrink-0">
+        <div className="flex items-center gap-2 px-4 py-3 flex-shrink-0 z-10 relative">
           {isOwn ? (
             <>
               <button onClick={() => { setPaused(true); setShowViewers(true); }}
-                className="flex items-center gap-2 text-white/70 hover:text-white transition">
-                <FiEye size={18} />
-                <span className="text-sm">{liveViewCount} view{liveViewCount !== 1 ? 's' : ''}</span>
+                className="flex items-center gap-1.5 text-white/75 hover:text-white transition bg-white/8 hover:bg-white/15 rounded-full px-3 py-2">
+                <FiEye size={16} />
+                <span className="text-sm font-medium">{liveViewCount} view{liveViewCount !== 1 ? 's' : ''}</span>
               </button>
               {totalReactions > 0 && (
                 <button onClick={() => { setPaused(true); setShowViewers(true); }}
-                  className="flex items-center gap-1.5 text-white/70 hover:text-white transition ml-2">
-                  <span className="text-sm">·</span>
-                  {Object.entries(reactionSummary).slice(0, 2).map(([e]) => <span key={e}>{e}</span>)}
-                  <span className="text-xs text-white/60">{totalReactions}</span>
+                  className="flex items-center gap-1 text-white/70 hover:text-white transition bg-white/8 hover:bg-white/15 rounded-full px-3 py-2">
+                  {Object.entries(reactionSummary).slice(0, 3).map(([e]) => <span key={e} className="text-sm">{e}</span>)}
+                  <span className="text-xs text-white/60 ml-0.5">{totalReactions}</span>
+                </button>
+              )}
+              {current?.media_url && (
+                <button onClick={saveMedia} className="ml-auto p-2 hover:bg-white/15 rounded-full transition">
+                  <FiDownload size={18} className="text-white/70" />
                 </button>
               )}
             </>
           ) : (
             <>
               <button onClick={() => { setPaused(true); setShowReactions(v => !v); }}
-                className={`flex items-center gap-1.5 text-sm transition px-3 py-2 rounded-full ${showReactions ? 'bg-white/20 text-white' : 'text-white/70 hover:text-white'}`}>
+                className={`flex items-center gap-1.5 text-lg px-3 py-2 rounded-full transition border ${showReactions ? 'bg-white/20 border-white/30 text-white' : 'border-white/10 text-white/70 hover:border-white/25 hover:text-white'}`}>
                 {myReaction || '😊'}
+                <span className="text-xs text-white/60 font-medium">React</span>
               </button>
               <button onClick={() => { setPaused(true); setShowReply(v => !v); setShowReactions(false); }}
-                className="flex items-center gap-1.5 text-white/70 hover:text-white text-sm transition">
-                <FiMessageCircle size={18} /><span>Reply</span>
+                className="flex items-center gap-1.5 text-white/70 hover:text-white text-sm transition border border-white/10 hover:border-white/25 rounded-full px-3 py-2">
+                <FiMessageCircle size={16} /><span>Reply</span>
               </button>
             </>
           )}
-          <span className="ml-auto text-white/40 text-xs">{idx + 1} / {items.length}</span>
+          <span className="ml-auto text-white/35 text-xs font-medium">{idx + 1} / {items.length}</span>
         </div>
       )}
 
@@ -734,8 +880,8 @@ function StatusViewer({ statusGroup, onClose, isOwn, allGroups = [], currentGrou
         {showViewers && current?.id && (
           <ViewerListModal
             statusId={current.id}
-            viewerCount={current.viewers_count || 0}
-            reactionCount={current.total_reactions || 0}
+            viewerCount={liveViewCount}
+            reactionCount={totalReactions}
             onClose={() => { setShowViewers(false); setPaused(false); }}
           />
         )}
@@ -866,6 +1012,142 @@ function DrawingCanvas({ onSave, onClose }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MusicPickerModal — attach background music to a status
+// ─────────────────────────────────────────────────────────────────────────────
+const PRESET_TRACKS = [
+  { title: 'Happy Vibes',    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
+  { title: 'Chill Waves',    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },
+  { title: 'Upbeat Flow',    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3' },
+  { title: 'Smooth Jazz',    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3' },
+  { title: 'Electric Pop',   url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3' },
+];
+
+function MusicPickerModal({ onAttach, onClose }) {
+  const [tab, setTab]               = useState('presets'); // presets | url
+  const [customUrl, setCustomUrl]   = useState('');
+  const [customTitle, setCustomTitle] = useState('');
+  const [previewAudio, setPreviewAudio] = useState(null); // track being previewed
+  const [playing, setPlaying]       = useState(null);     // track url playing
+  const [search, setSearch]         = useState('');
+  const audioRef = useRef(null);
+
+  const filtered = PRESET_TRACKS.filter(t =>
+    t.title.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const togglePreview = (track) => {
+    if (playing === track.url) {
+      audioRef.current?.pause();
+      setPlaying(null);
+    } else {
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = track.url; audioRef.current.play().catch(() => {}); }
+      setPlaying(track.url);
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => () => audioRef.current?.pause(), []);
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center"
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <motion.div initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }}
+        className="w-full max-w-md bg-[#1a1a1a] rounded-t-3xl sm:rounded-2xl border border-white/10 shadow-2xl overflow-hidden">
+        <audio ref={audioRef} onEnded={() => setPlaying(null)} />
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-3">
+          <div className="flex items-center gap-2">
+            <FiMusic size={18} className="text-[#25D366]" />
+            <h3 className="text-white font-bold text-base">Add Music</h3>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-full">
+            <FiX size={18} className="text-white/60" />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-white/8 mx-5 mb-3">
+          {[['presets','🎵 Presets'],['url','🔗 Custom URL']].map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)}
+              className={`flex-1 py-2 text-sm font-semibold transition border-b-2 ${tab === id ? 'border-[#25D366] text-white' : 'border-transparent text-white/40'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="px-5 pb-6 max-h-[55vh] overflow-y-auto space-y-2">
+          {tab === 'presets' && (
+            <>
+              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2 mb-3">
+                <FiSearch size={14} className="text-white/40" />
+                <input value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="Search tracks…" className="flex-1 bg-transparent text-white text-sm outline-none placeholder-white/30" />
+              </div>
+              {filtered.map(track => (
+                <div key={track.url} className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/6 transition border border-white/6">
+                  <button onClick={() => togglePreview(track)}
+                    className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition ${playing === track.url ? 'bg-[#25D366]' : 'bg-white/10 hover:bg-white/20'}`}>
+                    {playing === track.url
+                      ? <FiPause size={14} className="text-white" />
+                      : <FiPlay size={14} className="text-white ml-0.5" />}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-medium truncate">{track.title}</p>
+                    {playing === track.url && (
+                      <div className="flex items-center gap-0.5 mt-1">
+                        {[1,2,3,4,5].map(i => (
+                          <motion.div key={i} className="w-[3px] bg-[#25D366] rounded-full"
+                            animate={{ height: [4, 12, 6, 14, 4] }}
+                            transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.1 }} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => { audioRef.current?.pause(); onAttach(track.url, track.title); }}
+                    className="px-3 py-1.5 bg-[#25D366] hover:bg-[#1fbd5a] text-white text-xs font-bold rounded-full transition">
+                    Use
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
+
+          {tab === 'url' && (
+            <div className="space-y-3 pt-1">
+              <div>
+                <label className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1.5 block">Track Title</label>
+                <input value={customTitle} onChange={e => setCustomTitle(e.target.value)}
+                  placeholder="e.g. My Favourite Song"
+                  className="w-full bg-white/5 border border-white/10 focus:border-[#25D366]/50 rounded-xl px-4 py-2.5 text-sm text-white outline-none transition placeholder-white/25" />
+              </div>
+              <div>
+                <label className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-1.5 block">Audio URL (.mp3 / .ogg)</label>
+                <input value={customUrl} onChange={e => setCustomUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full bg-white/5 border border-white/10 focus:border-[#25D366]/50 rounded-xl px-4 py-2.5 text-sm text-white outline-none transition placeholder-white/25" />
+              </div>
+              {customUrl && (
+                <button onClick={() => { if (audioRef.current) { audioRef.current.src = customUrl; audioRef.current.play().catch(() => {}); setPlaying(customUrl); } }}
+                  className="flex items-center gap-2 text-[#25D366] text-sm">
+                  <FiPlay size={13} /> Test audio
+                </button>
+              )}
+              <button onClick={() => { if (customUrl) { audioRef.current?.pause(); onAttach(customUrl, customTitle || 'Custom track'); } else { toast('Enter a URL'); } }}
+                disabled={!customUrl}
+                className="w-full py-3 bg-[#25D366] hover:bg-[#1fbd5a] disabled:opacity-40 text-white font-bold rounded-xl transition text-sm">
+                Attach Track
+              </button>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // StatusComposer — advanced full-featured status creator
 // ─────────────────────────────────────────────────────────────────────────────
 function StatusComposer({ onClose, onPosted }) {
@@ -892,6 +1174,10 @@ function StatusComposer({ onClose, onPosted }) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [posting, setPosting] = useState(false);
+  const [musicUrl, setMusicUrl] = useState('');
+  const [musicTitle, setMusicTitle] = useState('');
+  const [musicAttached, setMusicAttached] = useState(false);
+  const [showMusicPicker, setShowMusicPicker] = useState(false);
 
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -969,6 +1255,8 @@ function StatusComposer({ onClose, onPosted }) {
         text_align: textAlign,
         privacy,
         duration_hours: duration,
+        music_url: musicAttached ? musicUrl : undefined,
+        music_name: musicAttached ? musicTitle : undefined,
       };
 
       if (mode === 'link') {
@@ -1342,6 +1630,28 @@ function StatusComposer({ onClose, onPosted }) {
           </div>
         )}
 
+        {/* Music row — always visible */}
+        <div className="mb-3">
+          {musicAttached ? (
+            <div className="flex items-center gap-2 bg-white/10 border border-white/15 rounded-2xl px-3 py-2.5">
+              <FiMusic size={14} className="text-[#25D366] animate-pulse flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-white text-xs font-semibold truncate">{musicTitle || 'Background music'}</p>
+                <p className="text-white/40 text-[10px] truncate">{musicUrl}</p>
+              </div>
+              <button onClick={() => { setMusicAttached(false); setMusicUrl(''); setMusicTitle(''); }}
+                className="p-1 hover:bg-white/15 rounded-full">
+                <FiX size={13} className="text-white/60" />
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setShowMusicPicker(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-white/8 hover:bg-white/15 border border-white/10 rounded-2xl transition text-white/60 hover:text-white text-sm">
+              <FiMusic size={14} /> Add Music
+            </button>
+          )}
+        </div>
+
         {/* Upload progress */}
         {uploading && (
           <div className="mb-3">
@@ -1365,6 +1675,21 @@ function StatusComposer({ onClose, onPosted }) {
           <span>{duration}h</span>
         </div>
       </div>
+
+      {/* Music Picker Modal */}
+      <AnimatePresence>
+        {showMusicPicker && (
+          <MusicPickerModal
+            onAttach={(url, title) => {
+              setMusicUrl(url);
+              setMusicTitle(title);
+              setMusicAttached(true);
+              setShowMusicPicker(false);
+            }}
+            onClose={() => setShowMusicPicker(false)}
+          />
+        )}
+      </AnimatePresence>
 
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={e => handleFileSelect(e.target.files?.[0])} />
       <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={e => handleFileSelect(e.target.files?.[0])} />
@@ -1491,6 +1816,11 @@ function StatusTab() {
     const next = viewingGroupIdx + 1;
     if (next >= 0 && next < statuses.length) openStatusGroup(statuses[next], next, false);
     else setViewingGroup(null);
+  };
+
+  const handlePrevGroup = () => {
+    const prev = viewingGroupIdx - 1;
+    if (prev >= 0 && prev < statuses.length) openStatusGroup(statuses[prev], prev, false);
   };
 
   const handleMute = async (targetUserId, mute) => {
@@ -1659,6 +1989,7 @@ function StatusTab() {
             allGroups={statuses}
             currentGroupIdx={viewingGroupIdx}
             onNextGroup={!viewingOwn ? handleNextGroup : null}
+            onPrevGroup={!viewingOwn ? handlePrevGroup : null}
           />
         )}
       </AnimatePresence>

@@ -75,44 +75,154 @@ function Avatar({ name, src, size = 8, className = '' }) {
 }
 
 // ── Upload Modal ───────────────────────────────────────────────────────────────
+// Extract a video frame at a given time (seconds) using canvas — no ffmpeg needed
+async function extractVideoFrame(videoEl, atSec) {
+  return new Promise((resolve) => {
+    const onSeeked = () => {
+      videoEl.removeEventListener('seeked', onSeeked);
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = videoEl.videoWidth || 1280;
+        canvas.height = videoEl.videoHeight || 720;
+        canvas.getContext('2d').drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      } catch { resolve(null); }
+    };
+    videoEl.addEventListener('seeked', onSeeked);
+    videoEl.currentTime = atSec;
+  });
+}
+
+// Convert a data-URL to a File object for upload
+function dataURLtoFile(dataUrl, filename) {
+  const [header, data] = dataUrl.split(',');
+  const mime = header.match(/:(.*?);/)[1];
+  const bytes = atob(data);
+  const buf = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) buf[i] = bytes.charCodeAt(i);
+  return new File([buf], filename, { type: mime });
+}
+
 function UploadModal({ onClose, categories = [] }) {
-  const [step, setStep] = useState('select');
-  const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [title, setTitle] = useState('');
+  const [step, setStep]           = useState('select');
+  const [file, setFile]           = useState(null);
+  const [preview, setPreview]     = useState(null);
+  const [title, setTitle]         = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('general');
-  const [tags, setTags] = useState('');
-  const [progress, setProgress] = useState(0);
-  const [dragOver, setDragOver] = useState(false);
-  const fileInputRef = useRef(null);
+  const [category, setCategory]   = useState('general');
+  const [tagInput, setTagInput]   = useState('');
+  const [tagList, setTagList]     = useState([]);
+  const [tagSuggestions, setTagSuggestions] = useState([]);
+  const [progress, setProgress]   = useState(0);
+  const [progressLabel, setProgressLabel] = useState('');
+  const [dragOver, setDragOver]   = useState(false);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [thumbnailFrames, setThumbnailFrames] = useState([]);   // [{dataUrl, time}]
+  const [selectedThumb, setSelectedThumb] = useState(null);    // index or null
+  const [extractingFrames, setExtractingFrames] = useState(false);
+  const [visibility, setVisibility] = useState('public');      // public | followers
+  const previewVideoRef = useRef(null);
+  const fileInputRef    = useRef(null);
+
+  // Load trending hashtags for suggestions
+  useEffect(() => {
+    api.get('/trends/hashtags/trending?limit=10')
+      .then(({ data }) => {
+        const tags = (data.hashtags || data || []).map(h => (typeof h === 'string' ? h : h.tag || h.name || '').replace(/^#+/, '').trim()).filter(Boolean);
+        setTagSuggestions(tags);
+      })
+      .catch(() => {});
+  }, []);
+
+  const addTag = (t) => {
+    const cleaned = t.trim().toLowerCase().replace(/^#+/, '');
+    if (cleaned && !tagList.includes(cleaned) && tagList.length < 10) {
+      setTagList(prev => [...prev, cleaned]);
+    }
+  };
+
+  const handleTagKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      addTag(tagInput);
+      setTagInput('');
+    } else if (e.key === 'Backspace' && !tagInput && tagList.length > 0) {
+      setTagList(prev => prev.slice(0, -1));
+    }
+  };
 
   const handleFile = (f) => {
     if (!f) return;
     if (!f.type.startsWith('video/')) { toast.error('Please select a video file'); return; }
+    if (f.size > 100 * 1024 * 1024) { toast.error('File too large (max 100 MB)'); return; }
     setFile(f);
     setTitle(f.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '));
     setPreview(URL.createObjectURL(f));
+    setThumbnailFrames([]);
+    setSelectedThumb(null);
     setStep('details');
+  };
+
+  // Extract 3 thumbnail frames once the hidden video loads metadata
+  const handleVideoLoaded = async (e) => {
+    const vid = e.target;
+    const dur = vid.duration || 0;
+    setVideoDuration(dur);
+    if (dur > 0 && thumbnailFrames.length === 0) {
+      setExtractingFrames(true);
+      const times = [dur * 0.1, dur * 0.4, dur * 0.75].map(t => Math.floor(t * 10) / 10);
+      const frames = [];
+      for (const t of times) {
+        const dataUrl = await extractVideoFrame(vid, t);
+        if (dataUrl) frames.push({ dataUrl, time: t });
+      }
+      setThumbnailFrames(frames);
+      if (frames.length) setSelectedThumb(0);
+      setExtractingFrames(false);
+    }
   };
 
   const handleSubmit = async () => {
     if (!title.trim()) { toast.error('Add a title'); return; }
     setStep('uploading');
     try {
+      // Step 1 — upload video
+      setProgressLabel('Uploading video…');
       const formData = new FormData();
       formData.append('file', file);
       const { data: uploadData } = await api.post('/upload/video', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (e) => setProgress(Math.round((e.loaded * 80) / (e.total || 1))),
+        onUploadProgress: (e) => setProgress(Math.round((e.loaded * 75) / (e.total || 1))),
       });
+      setProgress(78);
+
+      // Step 2 — upload thumbnail (canvas frame) if available
+      let thumbnailUrl = null;
+      if (selectedThumb !== null && thumbnailFrames[selectedThumb]) {
+        setProgressLabel('Uploading thumbnail…');
+        try {
+          const thumbFile = dataURLtoFile(thumbnailFrames[selectedThumb].dataUrl, 'thumb.jpg');
+          const thumbFd = new FormData();
+          thumbFd.append('file', thumbFile);
+          const { data: thumbData } = await api.post('/upload/image', thumbFd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+          thumbnailUrl = thumbData.url;
+        } catch { /* thumbnail upload is optional */ }
+      }
       setProgress(90);
+
+      // Step 3 — register metadata
+      setProgressLabel('Finalizing…');
       await api.post('/trends/upload', {
         title: title.trim(),
         description: description.trim(),
         video_url: uploadData.url,
+        thumbnail_url: thumbnailUrl,
         category: category === 'all' ? 'general' : category,
-        tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+        tags: tagList,
+        duration_sec: Math.round(videoDuration) || 30,
+        visibility,
       });
       setProgress(100);
       setStep('done');
@@ -124,107 +234,237 @@ function UploadModal({ onClose, categories = [] }) {
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
+  const fmtDur = (s) => s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`;
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/88 backdrop-blur-md z-50 flex items-center justify-center p-4"
       onClick={e => e.target === e.currentTarget && onClose()}>
       <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }}
-        className="bg-[#111] border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
-        <div className="flex items-center justify-between p-5 border-b border-white/8">
+        className="bg-[#111] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-white/8 flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#25D366]/20 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#25D366]/30 to-[#075E54]/30 flex items-center justify-center">
               <FiUpload size={16} className="text-[#25D366]" />
             </div>
-            <h2 className="text-base font-bold">Upload Video</h2>
+            <div>
+              <h2 className="text-base font-bold text-white">Upload to VipTrends</h2>
+              {file && <p className="text-white/35 text-[11px]">{(file.size / 1024 / 1024).toFixed(1)} MB · {file.name.slice(-28)}</p>}
+            </div>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-white/8 flex items-center justify-center text-white/50 hover:text-white transition">
             <FiX size={18} />
           </button>
         </div>
 
+        {/* SELECT step */}
         {step === 'select' && (
           <div className="p-6">
             <div onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)} onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }}
               onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center gap-4 cursor-pointer transition-all ${dragOver ? 'border-[#25D366] bg-[#25D366]/8' : 'border-white/15 hover:border-white/30 hover:bg-white/3'}`}>
-              <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center">
-                <FiUpload size={26} className="text-white/30" />
-              </div>
+              className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center gap-4 cursor-pointer transition-all ${dragOver ? 'border-[#25D366] bg-[#25D366]/8 scale-[1.01]' : 'border-white/12 hover:border-white/28 hover:bg-white/3'}`}>
+              <motion.div animate={dragOver ? { scale: 1.15 } : { scale: 1 }}
+                className="w-18 h-18 rounded-2xl bg-white/5 flex items-center justify-center">
+                <FiUpload size={30} className="text-white/30" />
+              </motion.div>
               <div className="text-center">
-                <p className="text-white font-semibold">Drag & drop or click to select</p>
-                <p className="text-white/35 text-sm mt-1">MP4, MOV, AVI, WebM · up to 100MB</p>
+                <p className="text-white font-semibold text-base">Drag & drop your video</p>
+                <p className="text-white/35 text-sm mt-1.5">or click to browse</p>
+                <div className="flex items-center justify-center gap-2 mt-3 flex-wrap">
+                  {['MP4','MOV','AVI','WebM'].map(f => (
+                    <span key={f} className="text-[10px] bg-white/8 text-white/50 rounded px-2 py-0.5 font-mono">{f}</span>
+                  ))}
+                  <span className="text-[10px] text-white/30">· up to 100 MB</span>
+                </div>
               </div>
             </div>
             <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={e => handleFile(e.target.files[0])} />
           </div>
         )}
 
+        {/* DETAILS step */}
         {step === 'details' && (
-          <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
-            {preview && <video src={preview} className="w-full aspect-video rounded-xl bg-black object-contain" muted controls />}
+          <div className="overflow-y-auto flex-1 p-5 space-y-4">
+            {/* Hidden video for frame extraction */}
+            {preview && (
+              <video src={preview} className="hidden" ref={previewVideoRef}
+                onLoadedMetadata={handleVideoLoaded} muted preload="metadata" />
+            )}
+
+            {/* Video preview + thumbnail strip */}
+            {preview && (
+              <div className="relative rounded-xl overflow-hidden bg-black aspect-video">
+                <video src={preview} className="w-full h-full object-contain" muted controls />
+                {videoDuration > 0 && (
+                  <div className="absolute bottom-2 right-2 bg-black/70 rounded px-2 py-0.5 text-white/70 text-[11px] font-mono">
+                    {fmtDur(videoDuration)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Thumbnail selector */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-bold text-white/40 uppercase tracking-wider">Cover Thumbnail</label>
+                {extractingFrames && (
+                  <span className="text-[10px] text-white/30 flex items-center gap-1">
+                    <span className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin inline-block" />
+                    Extracting frames…
+                  </span>
+                )}
+              </div>
+              {thumbnailFrames.length > 0 ? (
+                <div className="flex gap-2">
+                  {thumbnailFrames.map((frame, i) => (
+                    <button key={i} onClick={() => setSelectedThumb(i)}
+                      className={`flex-1 aspect-video rounded-xl overflow-hidden border-2 transition-all ${selectedThumb === i ? 'border-[#25D366] ring-2 ring-[#25D366]/30' : 'border-white/10 hover:border-white/30'}`}>
+                      <img src={frame.dataUrl} alt={`Frame at ${fmtDur(frame.time)}`} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                  <button onClick={() => setSelectedThumb(null)}
+                    className={`flex-1 aspect-video rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition-all text-white/40 text-[10px] ${selectedThumb === null ? 'border-[#25D366] bg-[#25D366]/8 text-[#25D366]' : 'border-white/10 hover:border-white/25'}`}>
+                    <FiX size={14} /> None
+                  </button>
+                </div>
+              ) : !extractingFrames ? (
+                <div className="h-16 rounded-xl border border-dashed border-white/12 flex items-center justify-center text-white/25 text-xs">
+                  Loading frames…
+                </div>
+              ) : null}
+            </div>
+
+            {/* Title */}
             <div>
               <label className="text-xs font-bold text-white/40 mb-1.5 block uppercase tracking-wider">Title *</label>
-              <input value={title} onChange={e => setTitle(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 focus:border-[#25D366]/60 rounded-xl px-4 py-3 text-sm outline-none transition placeholder-white/25"
+              <input value={title} onChange={e => setTitle(e.target.value.slice(0, 100))}
+                className="w-full bg-white/5 border border-white/10 focus:border-[#25D366]/60 rounded-xl px-4 py-3 text-sm outline-none transition placeholder-white/25 text-white"
                 placeholder="Give your video a catchy title" />
+              <p className="text-right text-[10px] text-white/25 mt-0.5">{title.length}/100</p>
             </div>
+
+            {/* Description */}
             <div>
               <label className="text-xs font-bold text-white/40 mb-1.5 block uppercase tracking-wider">Description</label>
               <textarea value={description} onChange={e => setDescription(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 focus:border-[#25D366]/60 rounded-xl px-4 py-3 text-sm outline-none transition resize-none placeholder-white/25"
-                placeholder="Tell viewers what your video is about..." rows={3} />
+                className="w-full bg-white/5 border border-white/10 focus:border-[#25D366]/60 rounded-xl px-4 py-2.5 text-sm outline-none transition resize-none placeholder-white/25 text-white"
+                placeholder="Tell viewers what this is about…" rows={2} />
             </div>
+
+            {/* Category + Visibility */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-bold text-white/40 mb-1.5 block uppercase tracking-wider">Category</label>
                 <select value={category} onChange={e => setCategory(e.target.value)}
-                  className="w-full bg-[#1a1a1a] border border-white/10 focus:border-[#25D366]/60 rounded-xl px-4 py-3 text-sm outline-none transition text-white">
+                  className="w-full bg-[#1a1a1a] border border-white/10 focus:border-[#25D366]/60 rounded-xl px-3 py-3 text-sm outline-none transition text-white">
                   {(categories.length ? categories : Object.keys(CATEGORY_META)).filter(id => id !== 'all').map(id => (
                     <option key={id} value={id}>{CATEGORY_META[id]?.label || id}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="text-xs font-bold text-white/40 mb-1.5 block uppercase tracking-wider">Tags</label>
-                <input value={tags} onChange={e => setTags(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 focus:border-[#25D366]/60 rounded-xl px-4 py-3 text-sm outline-none transition placeholder-white/25"
-                  placeholder="music, trending..." />
+                <label className="text-xs font-bold text-white/40 mb-1.5 block uppercase tracking-wider">Visibility</label>
+                <select value={visibility} onChange={e => setVisibility(e.target.value)}
+                  className="w-full bg-[#1a1a1a] border border-white/10 focus:border-[#25D366]/60 rounded-xl px-3 py-3 text-sm outline-none transition text-white">
+                  <option value="public">🌍 Public</option>
+                  <option value="followers">👥 Followers only</option>
+                </select>
               </div>
             </div>
+
+            {/* Tags chip input */}
+            <div>
+              <label className="text-xs font-bold text-white/40 mb-1.5 block uppercase tracking-wider">Hashtags</label>
+              <div className="flex flex-wrap gap-1.5 p-2.5 bg-white/5 border border-white/10 focus-within:border-[#25D366]/50 rounded-xl min-h-[44px] transition">
+                {tagList.map(t => (
+                  <span key={t} className="flex items-center gap-1 bg-[#25D366]/20 text-[#25D366] text-xs rounded-full px-2.5 py-1 font-semibold">
+                    #{t}
+                    <button onClick={() => setTagList(p => p.filter(x => x !== t))} className="hover:text-white transition">
+                      <FiX size={10} />
+                    </button>
+                  </span>
+                ))}
+                <input
+                  value={tagInput}
+                  onChange={e => setTagInput(e.target.value)}
+                  onKeyDown={handleTagKeyDown}
+                  placeholder={tagList.length ? '' : 'Type a tag, press Enter…'}
+                  className="flex-1 min-w-[100px] bg-transparent text-white text-sm outline-none placeholder-white/25"
+                />
+              </div>
+              {/* Trending suggestions */}
+              {tagSuggestions.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {tagSuggestions.filter(t => !tagList.includes(t)).slice(0, 8).map(t => (
+                    <button key={t} onClick={() => addTag(t)}
+                      className="text-[11px] bg-white/6 hover:bg-[#25D366]/20 text-white/50 hover:text-[#25D366] rounded-full px-2.5 py-1 transition border border-white/8 hover:border-[#25D366]/30">
+                      +#{t}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="flex gap-3 pt-1">
-              <button onClick={() => setStep('select')} className="flex-1 py-3 bg-white/5 hover:bg-white/10 font-bold rounded-xl transition text-sm">Back</button>
+              <button onClick={() => setStep('select')} className="flex-1 py-3 bg-white/5 hover:bg-white/10 font-bold rounded-xl transition text-sm text-white">
+                ← Back
+              </button>
               <button onClick={handleSubmit} disabled={!title.trim()}
-                className="flex-1 py-3 bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold rounded-xl transition disabled:opacity-40 text-sm">
-                Upload Video
+                className="flex-2 flex-1 py-3 bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold rounded-xl transition disabled:opacity-40 text-sm flex items-center justify-center gap-2">
+                <FiUpload size={15} /> Upload Video
               </button>
             </div>
           </div>
         )}
 
+        {/* UPLOADING step */}
         {step === 'uploading' && (
           <div className="p-12 flex flex-col items-center gap-5">
-            <div className="w-18 h-18 rounded-full bg-[#25D366]/10 flex items-center justify-center">
-              <div className="w-10 h-10 border-3 border-[#25D366] border-t-transparent rounded-full animate-spin" />
-            </div>
-            <div className="w-full space-y-2">
-              <div className="w-full bg-white/8 rounded-full h-2 overflow-hidden">
-                <motion.div className="bg-[#25D366] h-2 rounded-full" style={{ width: `${progress}%` }} />
+            <div className="relative w-20 h-20">
+              <svg className="absolute inset-0 -rotate-90" viewBox="0 0 80 80">
+                <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="6" />
+                <motion.circle cx="40" cy="40" r="34" fill="none" stroke="#25D366" strokeWidth="6"
+                  strokeLinecap="round"
+                  strokeDasharray={`${2 * Math.PI * 34}`}
+                  animate={{ strokeDashoffset: `${2 * Math.PI * 34 * (1 - progress / 100)}` }}
+                  transition={{ ease: 'easeOut' }}
+                />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-white font-bold text-sm">{Math.round(progress)}%</span>
               </div>
-              <p className="text-white/40 text-xs text-center">{progress < 85 ? `Uploading… ${progress}%` : 'Finalizing…'}</p>
+            </div>
+            <div className="text-center space-y-1">
+              <p className="text-white font-semibold">{progressLabel || 'Uploading…'}</p>
+              <p className="text-white/35 text-xs">Please don't close this window</p>
+            </div>
+            <div className="w-full bg-white/6 rounded-full h-1.5 overflow-hidden">
+              <motion.div className="bg-gradient-to-r from-[#25D366] to-emerald-400 h-full rounded-full"
+                animate={{ width: `${progress}%` }} transition={{ ease: 'easeOut' }} />
             </div>
           </div>
         )}
 
+        {/* DONE step */}
         {step === 'done' && (
           <div className="p-12 flex flex-col items-center gap-4">
-            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring' }}
-              className="w-18 h-18 rounded-full bg-[#25D366]/20 flex items-center justify-center">
-              <FiCheck size={32} className="text-[#25D366]" />
+            <motion.div initial={{ scale: 0, rotate: -10 }} animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: 'spring', stiffness: 200 }}
+              className="w-20 h-20 rounded-full bg-[#25D366]/15 border border-[#25D366]/30 flex items-center justify-center">
+              <FiCheck size={36} className="text-[#25D366]" />
             </motion.div>
-            <h3 className="text-lg font-bold">Video Uploaded!</h3>
-            <p className="text-white/40 text-sm text-center">Your video is live and ready to be discovered.</p>
-            <button onClick={onClose} className="mt-1 px-8 py-2.5 bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold rounded-full transition text-sm">Done</button>
+            <h3 className="text-xl font-bold text-white">Live on VipTrends! 🎉</h3>
+            <p className="text-white/40 text-sm text-center leading-relaxed">
+              Your video is published and ready to be discovered by the community.
+            </p>
+            <button onClick={onClose}
+              className="mt-2 px-10 py-3 bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold rounded-full transition">
+              Done
+            </button>
           </div>
         )}
       </motion.div>
