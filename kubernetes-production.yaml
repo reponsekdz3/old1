@@ -16,9 +16,14 @@ metadata:
   namespace: vipchat-production
 data:
   SHARD_COUNT: "256"
+  # Redis cluster bootstrap connection string (backend uses redis URL)
+  # NOTE: for real Redis Cluster environments, you may need a cluster-capable client URL.
   REDIS_URL: "redis://redis-cluster:6379/0"
   JANUS_URL: "http://janus-gateway:8088/janus"
   AWS_REGION: "us-east-1"
+        # Ensure backend uses production settings in container image entrypoint
+  
+
 
 ---
 # Secret - Sensitive Configuration
@@ -79,6 +84,16 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
+        # Force critical production paths
+        - name: FLASK_ENV
+          value: "production"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        # Reduce runtime surprises from optional enterprise integrations
+        - name: FEATURE_PAYMENTS
+          value: "false"
+        - name: FEATURE_MARKETPLACE
+          value: "true"
         resources:
           requests:
             cpu: "1"

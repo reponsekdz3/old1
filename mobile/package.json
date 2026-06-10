@@ -6,7 +6,15 @@
     "start": "expo start --port 8080",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web --port 8080"
+    "web": "expo start --web --port 8080",
+    "build:android": "eas build --platform android --profile production",
+    "build:ios": "eas build --platform ios --profile production",
+    "build:all": "eas build --platform all --profile production",
+    "build:android-aab": "eas build --platform android --profile production-aab",
+    "build:preview": "eas build --platform all --profile preview",
+    "submit:android": "eas submit --platform android",
+    "submit:ios": "eas submit --platform ios",
+    "update": "eas update"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.0.0",

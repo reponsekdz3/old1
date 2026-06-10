@@ -15,12 +15,20 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.vipchat.app",
+      "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "VipChat needs camera access to scan QR codes and send photos.",
         "NSMicrophoneUsageDescription": "VipChat needs microphone access for voice messages and calls.",
         "NSPhotoLibraryUsageDescription": "VipChat needs photo library access to send images.",
         "NSPhotoLibraryAddUsageDescription": "VipChat needs to save images to your photo library.",
-        "NSContactsUsageDescription": "VipChat needs access to your contacts to show which of your friends are on VipChat."
+        "NSContactsUsageDescription": "VipChat needs access to your contacts to show which of your friends are on VipChat.",
+        "UIBackgroundModes": ["audio", "voip", "remote-notification"],
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false
+        }
+      },
+      "config": {
+        "usesNonExemptEncryption": false
       }
     },
     "android": {
@@ -29,6 +37,7 @@
         "backgroundColor": "#075E54"
       },
       "package": "com.vipchat.app",
+      "versionCode": 1,
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
@@ -38,8 +47,18 @@
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
         "USE_FULL_SCREEN_INTENT",
-        "POST_NOTIFICATIONS"
-      ]
+        "POST_NOTIFICATIONS",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "WAKE_LOCK",
+        "FOREGROUND_SERVICE"
+      ],
+      "blockedPermissions": [],
+      "config": {
+        "googleMaps": {
+          "apiKey": "YOUR_GOOGLE_MAPS_API_KEY"
+        }
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -91,8 +110,18 @@
         "origin": false
       },
       "eas": {
-        "projectId": "vipchat-mobile"
+        "projectId": "YOUR_EAS_PROJECT_ID"
       }
-    }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/YOUR_EAS_PROJECT_ID",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "owner": "vipchat"
   }
 }
