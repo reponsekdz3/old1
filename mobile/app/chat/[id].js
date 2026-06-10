@@ -185,7 +185,7 @@ export default function ChatScreen() {
         mediaUrl, 
         mediaType, 
         tempId,
-        reply_to_id: replyingTo?.id 
+        replied_to_id: replyingTo?.id 
       });
       updateMessage(id, tempId, { status: 'queued' });
       setSending(false);
@@ -197,7 +197,7 @@ export default function ChatScreen() {
         content: content || undefined,
         media_url: mediaUrl || undefined,
         media_type: mediaType || undefined,
-        reply_to_id: replyingTo?.id || undefined,
+        replied_to_id: replyingTo?.id || undefined,
       });
       updateMessage(id, tempId, { ...data, id: data.id || tempId });
       await Cache.appendMessage(id, { ...data });
@@ -222,6 +222,7 @@ export default function ChatScreen() {
             content: item.content || undefined,
             media_url: item.mediaUrl || undefined,
             media_type: item.mediaType || undefined,
+            replied_to_id: item.replied_to_id || undefined,
           });
           updateMessage(id, item.tempId, { ...data, id: data.id || item.tempId });
           await Cache.removeFromOfflineQueue(item.id);
