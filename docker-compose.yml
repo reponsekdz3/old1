@@ -7,21 +7,21 @@ services:
     container_name: vipchat-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-RootPassword123!}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-VipChat_Root_2024!}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-vipchat}
       MYSQL_USER: ${MYSQL_USER:-vipchat}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-StrongPassword123!}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-VipChat_DB_Password_2024!}
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "3306:3306"
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --max-connections=500
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-RootPassword123!}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-VipChat_Root_2024!}"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 40s
     networks:
       - vipchat-network
 
@@ -30,7 +30,7 @@ services:
     image: redis:7-alpine
     container_name: vipchat-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-RedisPassword123!}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-VipChat_Redis_2024!}
     volumes:
       - redis_data:/data
     ports:
@@ -51,51 +51,31 @@ services:
     container_name: vipchat-backend
     restart: unless-stopped
     environment:
-      # Flask
       FLASK_APP: run.py
-      FLASK_ENV: ${FLASK_ENV:-production}
-      
-      # Database
+      FLASK_ENV: ${FLASK_ENV:-development}
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_USER: ${MYSQL_USER:-vipchat}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-StrongPassword123!}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-VipChat_DB_Password_2024!}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-vipchat}
-      
-      # Redis
-      REDIS_URL: redis://:${REDIS_PASSWORD:-RedisPassword123!}@redis:6379/0
-      
-      # Security
-      SECRET_KEY: ${SECRET_KEY:-change-this-to-64-random-hex-chars-in-production}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-jwt-secret-to-64-random-hex-chars}
-      
-      # Stripe
+      REDIS_URL: redis://:${REDIS_PASSWORD:-VipChat_Redis_2024!}@redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-123456789abcdef}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-jwt-secret-key-987654321fedcba}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
-      
-      # PayPal
       PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
       PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
       PAYPAL_MODE: ${PAYPAL_MODE:-sandbox}
-      
-      # Flutterwave
       FLUTTERWAVE_SECRET_KEY: ${FLUTTERWAVE_SECRET_KEY:-}
       FLUTTERWAVE_WEBHOOK_HASH: ${FLUTTERWAVE_WEBHOOK_HASH:-}
-      
-      # Africa's Talking SMS
       AFRICAN_TALKING_USERNAME: ${AFRICAN_TALKING_USERNAME:-sandbox}
       AFRICAN_TALKING_API_KEY: ${AFRICAN_TALKING_API_KEY:-}
-      
-      # Web Push VAPID
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
-      VAPID_CLAIMS_EMAIL: ${VAPID_CLAIMS_EMAIL:-admin@vipchat.app}
-      
-      # App Config
+      VAPID_CLAIMS_EMAIL: ${VAPID_CLAIMS_EMAIL:-admin@vipchat.local}
       APP_URL: ${APP_URL:-http://localhost}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost,http://localhost:5000,http://localhost:3000}
-      
     volumes:
       - ./backend/uploads:/app/uploads
       - ./backend/logs:/app/logs
@@ -111,7 +91,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     networks:
       - vipchat-network
 
@@ -131,23 +111,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    networks:
-      - vipchat-network
-
-  # Nginx Reverse Proxy (Optional - for SSL termination and load balancing)
-  nginx:
-    image: nginx:alpine
-    container_name: vipchat-nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro
-    depends_on:
-      - frontend
-      - backend
     networks:
       - vipchat-network
 

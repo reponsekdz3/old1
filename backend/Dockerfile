@@ -21,7 +21,7 @@ WORKDIR /app
 
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 curl \
+    libpq5 curl default-mysql-client redis-tools \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -r vipchat && useradd -r -g vipchat vipchat
 
