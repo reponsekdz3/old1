@@ -1,0 +1,1 @@
+- [Voice transcription architecture](voice-transcription.md) — Web Speech API on web (no AI); transcript stored in existing content field; mobile uses @react-native-voice/voice with graceful fallback.

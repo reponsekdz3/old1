@@ -8,6 +8,7 @@ import {
   FiUser, FiStar, FiShare2, FiEdit2, FiTrash2, FiCopy,
   FiCornerUpLeft, FiCheck, FiChevronDown, FiInfo,
   FiCamera, FiDownload, FiRefreshCw, FiMessageSquare, FiLock, FiLink, FiMusic, FiClock,
+  FiPlay, FiAlignLeft,
 } from 'react-icons/fi';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, isToday, isYesterday, isSameDay } from 'date-fns';
@@ -60,43 +61,155 @@ function DateSeparator({ date }) {
 }
 
 // ── Voice note player ─────────────────────────────────────────────────────────
-function VoiceNote({ src, isOwn }) {
+function VoiceNote({ src, isOwn, transcript, duration: initialDuration }) {
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [speed, setSpeed] = useState(1);
+  const [txExpanded, setTxExpanded] = useState(false);
   const audioRef = useRef(null);
+  const waveRef = useRef(null);
+  const [waveData] = useState(() =>
+    Array.from({ length: 50 }, (_, i) => {
+      const x = i / 50;
+      return 0.1 + Math.abs(Math.sin(x * 9.7 + 1.2)) * 0.5 + Math.abs(Math.sin(x * 3.1)) * 0.3 + Math.random() * 0.1;
+    })
+  );
+
+  const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
   const toggle = () => {
     if (!audioRef.current) return;
     if (playing) { audioRef.current.pause(); setPlaying(false); }
-    else { audioRef.current.play(); setPlaying(true); }
+    else { audioRef.current.playbackRate = speed; audioRef.current.play(); setPlaying(true); }
   };
 
-  const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  const cycleSpeed = () => {
+    const speeds = [1, 1.5, 2, 0.75];
+    const next = speeds[(speeds.indexOf(speed) + 1) % speeds.length];
+    setSpeed(next);
+    if (audioRef.current) audioRef.current.playbackRate = next;
+  };
+
+  const handleSeek = (e) => {
+    if (!waveRef.current || !audioRef.current?.duration) return;
+    const rect = waveRef.current.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    audioRef.current.currentTime = ratio * audioRef.current.duration;
+    setProgress(ratio * 100);
+  };
+
+  const handleDownload = () => {
+    const a = document.createElement('a');
+    a.href = src;
+    a.download = `voice_${Date.now()}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const copyTranscript = () => {
+    if (!transcript) return;
+    navigator.clipboard.writeText(transcript).then(() => toast.success('Transcript copied'));
+  };
+
+  const ownBg = isOwn ? 'bg-white/20' : 'bg-[#25D366]';
+  const ownText = isOwn ? 'text-white/70' : 'text-gray-500';
+  const playedColor = isOwn ? 'bg-white' : 'bg-[#25D366]';
+  const unplayedColor = isOwn ? 'bg-white/30' : 'bg-gray-300';
 
   return (
-    <div className="flex items-center gap-2 min-w-[180px]">
+    <div className="min-w-[220px] max-w-[280px]">
       <audio
         ref={audioRef}
         src={src}
-        onTimeUpdate={() => setProgress((audioRef.current?.currentTime / audioRef.current?.duration) * 100 || 0)}
+        onTimeUpdate={() => {
+          const el = audioRef.current;
+          if (el?.duration) setProgress((el.currentTime / el.duration) * 100);
+        }}
         onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
         onEnded={() => { setPlaying(false); setProgress(0); }}
       />
-      <button onClick={toggle} className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${isOwn ? 'bg-white/20' : 'bg-[#25D366]'}`}>
-        {playing
-          ? <span className={`w-3 h-3 border-2 ${isOwn ? 'border-white' : 'border-white'} rounded-sm`} />
-          : <FiMic size={14} className="text-white ml-0.5" />
-        }
-      </button>
-      <div className="flex-1">
-        <div className={`h-1 rounded-full ${isOwn ? 'bg-white/30' : 'bg-gray-200'}`}>
-          <div className={`h-full rounded-full ${isOwn ? 'bg-white' : 'bg-[#25D366]'}`} style={{ width: `${progress}%` }} />
+
+      {/* Main player row */}
+      <div className="flex items-center gap-2">
+        <button onClick={toggle}
+          className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition ${ownBg}`}>
+          {playing
+            ? <span className="flex gap-[3px]">
+                <span className="w-[3px] h-3 bg-white rounded-full" />
+                <span className="w-[3px] h-3 bg-white rounded-full" />
+              </span>
+            : <FiPlay size={13} className="text-white translate-x-[1px]" />}
+        </button>
+
+        {/* Seekable waveform */}
+        <div ref={waveRef} className="flex items-center gap-[1.5px] flex-1 h-8 cursor-pointer" onClick={handleSeek}>
+          {waveData.map((v, i) => {
+            const played = (i / waveData.length) * 100 < progress;
+            return (
+              <div key={i}
+                className={`flex-1 rounded-full transition-colors duration-75 ${played ? playedColor : unplayedColor}`}
+                style={{ height: `${Math.max(3, v * 28)}px` }}
+              />
+            );
+          })}
         </div>
-        <span className={`text-[10px] mt-0.5 block ${isOwn ? 'text-white/70' : 'text-gray-500'}`}>
+
+        <span className={`text-[10px] font-mono flex-shrink-0 tabular-nums ${ownText}`}>
           {fmtTime(playing ? (audioRef.current?.currentTime || 0) : duration)}
         </span>
       </div>
+
+      {/* Controls row */}
+      <div className="flex items-center justify-between mt-1.5">
+        <button onClick={cycleSpeed}
+          className={`text-[10px] font-black px-2 py-0.5 rounded-md transition ${isOwn ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+          {speed}×
+        </button>
+
+        <div className="flex items-center gap-1.5">
+          {transcript && (
+            <button onClick={() => setTxExpanded(v => !v)}
+              className={`text-[10px] font-semibold flex items-center gap-1 px-1.5 py-0.5 rounded-md transition ${isOwn ? 'bg-white/15 text-white/80 hover:bg-white/25' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              <FiAlignLeft size={9} />
+              {txExpanded ? 'Hide' : 'Text'}
+            </button>
+          )}
+          <button onClick={handleDownload} title="Download"
+            className={`w-5 h-5 rounded flex items-center justify-center transition ${isOwn ? 'hover:bg-white/20' : 'hover:bg-gray-100'}`}>
+            <FiDownload size={10} className={isOwn ? 'text-white/60' : 'text-gray-400'} />
+          </button>
+        </div>
+      </div>
+
+      {/* Transcript panel */}
+      <AnimatePresence>
+        {txExpanded && transcript && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="overflow-hidden"
+          >
+            <div className={`mt-2 pt-2 border-t ${isOwn ? 'border-white/20' : 'border-gray-200'}`}>
+              <div className="flex items-center justify-between mb-1">
+                <span className={`text-[9px] uppercase tracking-widest font-bold ${isOwn ? 'text-white/50' : 'text-gray-400'}`}>
+                  Transcript
+                </span>
+                <button onClick={copyTranscript}
+                  className={`w-5 h-5 flex items-center justify-center rounded transition ${isOwn ? 'hover:bg-white/20' : 'hover:bg-gray-100'}`}>
+                  <FiCopy size={9} className={isOwn ? 'text-white/50' : 'text-gray-400'} />
+                </button>
+              </div>
+              <p className={`text-xs leading-relaxed ${isOwn ? 'text-white/85' : 'text-gray-700'}`}>
+                {transcript}
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -363,7 +476,12 @@ const MessageBubble = memo(function MessageBubble({
           {/* Media: voice */}
           {message.media_type === 'voice' && message.media_url && !isDeleted && (
             <div className="mb-1">
-              <VoiceNote src={message.media_url} isOwn={isOwn} />
+              <VoiceNote
+                src={message.media_url}
+                isOwn={isOwn}
+                transcript={message.content}
+                duration={message.media_duration}
+              />
             </div>
           )}
 

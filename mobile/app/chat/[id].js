@@ -237,18 +237,37 @@ export default function ChatScreen() {
     if (text.trim()) sendMessage(text.trim(), null, null);
   };
 
-  const handleVoiceSend = async ({ uri, duration }) => {
+  const handleVoiceSend = async ({ uri, duration, transcript }) => {
     setShowVoice(false);
+    const tempId = `temp_voice_${Date.now()}`;
+    const tempMsg = {
+      id: tempId,
+      sender_id: user?.id,
+      receiver_id: id,
+      content: transcript || null,
+      media_url: uri,
+      media_type: 'voice',
+      media_duration: duration,
+      status: 'sending',
+      created_at: new Date().toISOString(),
+    };
+    addMessage(id, tempMsg);
     try {
       const formData = new FormData();
-      formData.append('audio', { uri, name: 'voice.m4a', type: 'audio/m4a' });
+      const ext = uri?.endsWith('.m4a') ? 'm4a' : uri?.endsWith('.webm') ? 'webm' : 'm4a';
+      formData.append('media', { uri, name: `voice_${Date.now()}.${ext}`, type: ext === 'm4a' ? 'audio/m4a' : 'audio/webm' });
+      formData.append('media_type', 'voice');
+      formData.append('media_duration', String(duration));
       formData.append('receiver_id', id);
-      formData.append('duration', String(duration));
-      const { data } = await api.post('/messages/voice', formData, {
+      if (transcript) formData.append('content', transcript);
+      const { data } = await api.post('/messages/send', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      addMessage(id, data);
+      updateMessage(id, tempId, { ...data, id: data.id || tempId });
+      const socket = getSocket();
+      if (socket) socket.emit('private_message', data.message || data);
     } catch (err) {
+      updateMessage(id, tempId, { status: 'failed' });
       Alert.alert('Error', 'Failed to send voice message');
     }
   };
