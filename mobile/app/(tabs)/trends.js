@@ -15,16 +15,17 @@ const { width: SW } = Dimensions.get('window');
 const CARD_W = (SW - 48) / 2;
 const ACCENT = '#25D366';
 
-const CATEGORIES = [
-  { id: 'all', label: 'All', icon: 'grid-outline' },
-  { id: 'music', label: 'Music', icon: 'musical-notes-outline' },
-  { id: 'sports', label: 'Sports', icon: 'football-outline' },
-  { id: 'gaming', label: 'Gaming', icon: 'game-controller-outline' },
-  { id: 'news', label: 'News', icon: 'newspaper-outline' },
-  { id: 'comedy', label: 'Comedy', icon: 'happy-outline' },
-  { id: 'education', label: 'Learn', icon: 'book-outline' },
-  { id: 'tech', label: 'Tech', icon: 'hardware-chip-outline' },
-];
+// Icon metadata per category ID — UI-only lookup, not mock data
+const CATEGORY_META = {
+  all:       { label: 'All',     icon: 'grid-outline' },
+  music:     { label: 'Music',   icon: 'musical-notes-outline' },
+  sports:    { label: 'Sports',  icon: 'football-outline' },
+  gaming:    { label: 'Gaming',  icon: 'game-controller-outline' },
+  news:      { label: 'News',    icon: 'newspaper-outline' },
+  comedy:    { label: 'Comedy',  icon: 'happy-outline' },
+  education: { label: 'Learn',   icon: 'book-outline' },
+  tech:      { label: 'Tech',    icon: 'hardware-chip-outline' },
+};
 
 function VideoCard({ video, onPress }) {
   const duration = video.duration_sec || 30;
@@ -82,8 +83,10 @@ export default function TrendsScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [stats, setStats] = useState(null);
+  const [categories, setCategories] = useState([]);
   const [trendingHashtags, setTrendingHashtags] = useState([]);
   const [topCreators, setTopCreators] = useState([]);
+  const [selectedVideo, setSelectedVideo] = useState(null);
   const [uploadVisible, setUploadVisible] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploadCategory, setUploadCategory] = useState('general');
@@ -115,6 +118,9 @@ export default function TrendsScreen() {
     api.get('/trends/stats').then(r => setStats(r.data)).catch(() => {});
     api.get('/trends/hashtags/trending?limit=8').then(r => setTrendingHashtags(r.data.hashtags || [])).catch(() => {});
     api.get('/trends/creators/top?limit=4').then(r => setTopCreators(r.data.creators || [])).catch(() => {});
+    api.get('/trends/categories')
+      .then(r => setCategories(r.data.categories || []))
+      .catch(() => setCategories(Object.keys(CATEGORY_META)));
   }, [category, sort, searchQuery]));
 
   const handleUpload = async () => {
@@ -164,8 +170,8 @@ export default function TrendsScreen() {
     const next = videos[index + 1];
     return (
       <View style={styles.row}>
-        <VideoCard video={item} onPress={() => {}} />
-        {next && <VideoCard video={next} onPress={() => {}} />}
+        <VideoCard video={item} onPress={() => setSelectedVideo(item)} />
+        {next && <VideoCard video={next} onPress={() => setSelectedVideo(next)} />}
       </View>
     );
   };
@@ -193,22 +199,23 @@ export default function TrendsScreen() {
         </View>
       </View>
 
-      {/* Categories */}
+      {/* Categories — IDs from API, icons from CATEGORY_META lookup */}
       <FlatList
         horizontal
-        data={CATEGORIES}
-        keyExtractor={i => i.id}
+        data={categories.length ? categories : Object.keys(CATEGORY_META)}
+        keyExtractor={id => id}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.catList}
-        renderItem={({ item }) => {
-          const isActive = category === item.id;
+        renderItem={({ item: id }) => {
+          const meta = CATEGORY_META[id] || { label: id, icon: 'grid-outline' };
+          const isActive = category === id;
           return (
             <TouchableOpacity
-              onPress={() => { setCategory(item.id); setSearchQuery(''); setSearch(''); }}
+              onPress={() => { setCategory(id); setSearchQuery(''); setSearch(''); }}
               style={[styles.catBtn, isActive && styles.catBtnActive]}
             >
-              <Ionicons name={item.icon} size={14} color={isActive ? '#fff' : '#666'} />
-              <Text style={[styles.catLabel, isActive && { color: '#fff' }]}>{item.label}</Text>
+              <Ionicons name={meta.icon} size={14} color={isActive ? '#fff' : '#666'} />
+              <Text style={[styles.catLabel, isActive && { color: '#fff' }]}>{meta.label}</Text>
             </TouchableOpacity>
           );
         }}
@@ -311,6 +318,57 @@ export default function TrendsScreen() {
         </View>
       )}
 
+      {/* Video Player Modal */}
+      <Modal visible={!!selectedVideo} transparent animationType="fade" onRequestClose={() => setSelectedVideo(null)}>
+        <View style={styles.playerOverlay}>
+          <View style={styles.playerSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle} numberOfLines={2}>{selectedVideo?.title}</Text>
+              <TouchableOpacity onPress={() => setSelectedVideo(null)}>
+                <Ionicons name="close" size={22} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            {selectedVideo?.video_url ? (
+              <View style={styles.playerBox}>
+                <Ionicons name="play-circle" size={64} color="rgba(255,255,255,0.7)" />
+                <Text style={styles.playerNote}>Tap to open in browser</Text>
+                <TouchableOpacity
+                  style={styles.uploadBtn}
+                  onPress={() => {
+                    const { Linking } = require('react-native');
+                    Linking.openURL(selectedVideo.video_url);
+                    api.post(`/trends/video/${selectedVideo.id}/view`).catch(() => {});
+                  }}>
+                  <Ionicons name="open-outline" size={16} color="#fff" />
+                  <Text style={styles.uploadBtnText}>Watch Video</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.playerBox}>
+                <Text style={styles.playerNote}>No video URL available</Text>
+              </View>
+            )}
+            <View style={styles.playerMeta}>
+              <View style={styles.metaItem}>
+                <Ionicons name="play-outline" size={14} color="#888" />
+                <Text style={styles.metaText}>{(selectedVideo?.views || 0).toLocaleString()} views</Text>
+              </View>
+              <View style={styles.metaItem}>
+                <Ionicons name="heart-outline" size={14} color="#888" />
+                <Text style={styles.metaText}>{(selectedVideo?.likes || 0).toLocaleString()}</Text>
+              </View>
+              <View style={styles.metaItem}>
+                <Ionicons name="chatbubble-outline" size={14} color="#888" />
+                <Text style={styles.metaText}>{(selectedVideo?.comments_count || 0).toLocaleString()}</Text>
+              </View>
+            </View>
+            {selectedVideo?.description ? (
+              <Text style={styles.playerDesc} numberOfLines={3}>{selectedVideo.description}</Text>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
+
       {/* Upload Modal */}
       <Modal visible={uploadVisible} transparent animationType="slide" onRequestClose={() => setUploadVisible(false)}>
         <View style={styles.modalOverlay}>
@@ -335,12 +393,18 @@ export default function TrendsScreen() {
               <View>
                 <Text style={styles.inputLabel}>Category</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
-                  {CATEGORIES.filter(c => c.id !== 'all').map(c => (
-                    <TouchableOpacity key={c.id} onPress={() => setUploadCategory(c.id)}
-                      style={[styles.catBtn, uploadCategory === c.id && styles.catBtnActive, { marginRight: 8 }]}>
-                      <Text style={[styles.catLabel, uploadCategory === c.id && { color: '#fff' }]}>{c.label}</Text>
-                    </TouchableOpacity>
-                  ))}
+                  {(categories.length ? categories : Object.keys(CATEGORY_META))
+                    .filter(id => id !== 'all')
+                    .map(id => {
+                      const meta = CATEGORY_META[id] || { label: id };
+                      return (
+                        <TouchableOpacity key={id} onPress={() => setUploadCategory(id)}
+                          style={[styles.catBtn, uploadCategory === id && styles.catBtnActive, { marginRight: 8 }]}>
+                          <Text style={[styles.catLabel, uploadCategory === id && { color: '#fff' }]}>{meta.label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })
+                  }
                 </ScrollView>
               </View>
               <View>
@@ -430,6 +494,13 @@ const styles = StyleSheet.create({
   uploadBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: ACCENT, paddingVertical: 14, borderRadius: 14, marginTop: 4 },
   uploadBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
   uploadNote: { color: '#555', fontSize: 12, textAlign: 'center', lineHeight: 16 },
+  // Video player modal
+  playerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  playerSheet: { backgroundColor: '#111', borderRadius: 20, padding: 20, width: '100%', maxHeight: '80%' },
+  playerBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 32, gap: 12 },
+  playerNote: { color: '#888', fontSize: 13, textAlign: 'center' },
+  playerMeta: { flexDirection: 'row', gap: 20, marginTop: 16, justifyContent: 'center' },
+  playerDesc: { color: '#888', fontSize: 13, lineHeight: 20, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#2a2a2a' },
   // Guest banner
   guestBanner: {
     position: 'absolute', bottom: 0, left: 0, right: 0,

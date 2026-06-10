@@ -15,16 +15,17 @@ import api from '../services/api';
 import { useAuthStore } from '../services/store';
 import toast from 'react-hot-toast';
 
-const CATEGORIES = [
-  { id: 'all', label: 'All', icon: FiGrid, color: 'text-orange-400' },
-  { id: 'music', label: 'Music', icon: FiMusic, color: 'text-pink-400' },
-  { id: 'sports', label: 'Sports', icon: FiActivity, color: 'text-green-400' },
-  { id: 'gaming', label: 'Gaming', icon: FiZap, color: 'text-purple-400' },
-  { id: 'news', label: 'News', icon: FiRss, color: 'text-blue-400' },
-  { id: 'comedy', label: 'Comedy', icon: FiSmile, color: 'text-yellow-400' },
-  { id: 'education', label: 'Learn', icon: FiBook, color: 'text-teal-400' },
-  { id: 'tech', label: 'Tech', icon: FiCpu, color: 'text-sky-400' },
-];
+// Icon/colour metadata for each category ID — UI-only, no business logic
+const CATEGORY_META = {
+  all:       { label: 'All',     icon: FiGrid,     color: 'text-orange-400' },
+  music:     { label: 'Music',   icon: FiMusic,    color: 'text-pink-400' },
+  sports:    { label: 'Sports',  icon: FiActivity, color: 'text-green-400' },
+  gaming:    { label: 'Gaming',  icon: FiZap,      color: 'text-purple-400' },
+  news:      { label: 'News',    icon: FiRss,      color: 'text-blue-400' },
+  comedy:    { label: 'Comedy',  icon: FiSmile,    color: 'text-yellow-400' },
+  education: { label: 'Learn',   icon: FiBook,     color: 'text-teal-400' },
+  tech:      { label: 'Tech',    icon: FiCpu,      color: 'text-sky-400' },
+};
 
 // ── Skeleton shimmer ──────────────────────────────────────────────────────────
 function Skeleton({ className = '' }) {
@@ -32,7 +33,7 @@ function Skeleton({ className = '' }) {
 }
 
 // ── Upload Modal ──────────────────────────────────────────────────────────────
-function UploadModal({ onClose }) {
+function UploadModal({ onClose, categories: propCats = [] }) {
   const [step, setStep] = useState('select');
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -149,9 +150,10 @@ function UploadModal({ onClose }) {
               <label className="text-xs font-bold text-white/50 mb-1 block">Category</label>
               <select value={category} onChange={e => setCategory(e.target.value)}
                 className="w-full bg-[#1a1a1a] border border-white/10 focus:border-[#25D366] rounded-xl px-4 py-3 text-sm outline-none transition text-white">
-                {CATEGORIES.filter(c => c.id !== 'all').map(c => (
-                  <option key={c.id} value={c.id}>{c.label}</option>
-                ))}
+                {propCats.filter(id => id !== 'all').map(id => {
+                  const meta = CATEGORY_META[id] || { label: id };
+                  return <option key={id} value={id}>{meta.label}</option>;
+                })}
               </select>
             </div>
             <div>
@@ -265,17 +267,21 @@ function VideoCard({ video, isActive, onLike, isLoggedIn }) {
 
   useEffect(() => {
     if (isActive && videoRef.current) {
+      // Persist view count for all users
+      api.post(`/trends/video/${video.id}/view`).catch(() => {});
       if (!isLoggedIn) {
         api.get(`/trends/video/${video.id}`).then(({ data }) => {
           if (data.pre_roll_ad) { setPreRollAd(data.pre_roll_ad); setShowAd(true); }
           else playVideo();
         }).catch(() => playVideo());
-      } else playVideo();
+      } else {
+        playVideo();
+      }
     } else if (!isActive && videoRef.current) {
       videoRef.current.pause();
       setPlaying(false);
     }
-  }, [isActive]);
+  }, [isActive]); // eslint-disable-line
 
   const playVideo = () => {
     if (videoRef.current) videoRef.current.play().then(() => setPlaying(true)).catch(() => {});
@@ -307,10 +313,16 @@ function VideoCard({ video, isActive, onLike, isLoggedIn }) {
   };
 
   const handleShare = async () => {
-    const url = `${window.location.origin}/trends?v=${video.id}`;
-    if (navigator.share) navigator.share({ title: video.title, url });
-    else { navigator.clipboard.writeText(url); toast.success('Link copied!'); }
-    try { await api.post(`/trends/video/${video.id}/track`, { event: 'share' }); } catch {}
+    try {
+      const { data } = await api.post(`/trends/video/${video.id}/share`);
+      const shareUrl = `${window.location.origin}${data.share_url}`;
+      if (navigator.share) navigator.share({ title: video.title, url: shareUrl });
+      else { navigator.clipboard.writeText(shareUrl); toast.success('Link copied!'); }
+    } catch {
+      const fallback = `${window.location.origin}/trends?v=${video.id}`;
+      navigator.clipboard?.writeText(fallback);
+      toast.success('Link copied!');
+    }
   };
 
   const loadComments = async () => {
@@ -568,6 +580,9 @@ export default function TrendsPage() {
   const [feedType, setFeedType] = useState('for-you');
   const [uploadOpen, setUploadOpen] = useState(false);
 
+  // API-backed categories
+  const [categories, setCategories] = useState([]);
+
   // Sidebar real data
   const [trendingHashtags, setTrendingHashtags] = useState([]);
   const [topCreators, setTopCreators] = useState([]);
@@ -584,15 +599,17 @@ export default function TrendsPage() {
   const observerRef = useRef(null);
   const loadingMore = useRef(false);
 
-  // Fetch sidebar data once
+  // Fetch sidebar data + category list once
   useEffect(() => {
     setSidebarLoading(true);
     Promise.all([
       api.get('/trends/hashtags/trending?limit=8').catch(() => ({ data: { hashtags: [] } })),
       api.get('/trends/creators/top?limit=5').catch(() => ({ data: { creators: [] } })),
-    ]).then(([hashRes, creatRes]) => {
+      api.get('/trends/categories').catch(() => ({ data: { categories: Object.keys(CATEGORY_META) } })),
+    ]).then(([hashRes, creatRes, catRes]) => {
       setTrendingHashtags(hashRes.data.hashtags || []);
       setTopCreators(creatRes.data.creators || []);
+      setCategories(catRes.data.categories || Object.keys(CATEGORY_META));
     }).finally(() => setSidebarLoading(false));
   }, []);
 
@@ -682,7 +699,7 @@ export default function TrendsPage() {
 
       {/* ── Upload Modal ── */}
       <AnimatePresence>
-        {uploadOpen && <UploadModal onClose={() => setUploadOpen(false)} />}
+        {uploadOpen && <UploadModal onClose={() => setUploadOpen(false)} categories={categories} />}
       </AnimatePresence>
 
       {/* ── Left Sidebar ── */}
@@ -769,17 +786,21 @@ export default function TrendsPage() {
 
         <div className="h-px bg-white/5 mx-6 my-4" />
 
-        {/* Categories */}
+        {/* Categories — IDs from API, icons from local lookup */}
         <div className="px-6 py-2">
           <p className="text-white/40 text-xs font-bold uppercase mb-4 tracking-wider">Explore Topics</p>
           <div className="space-y-1">
-            {CATEGORIES.map(cat => (
-              <button key={cat.id} onClick={() => setCategory(cat.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${category === cat.id ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5 hover:text-white'}`}>
-                <cat.icon className={category === cat.id ? 'text-[#25D366]' : cat.color} size={14} />
-                {cat.label}
-              </button>
-            ))}
+            {(categories.length ? categories : Object.keys(CATEGORY_META)).map(id => {
+              const meta = CATEGORY_META[id] || { label: id, icon: FiGrid, color: 'text-white/40' };
+              const Icon = meta.icon;
+              return (
+                <button key={id} onClick={() => setCategory(id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${category === id ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5 hover:text-white'}`}>
+                  <Icon className={category === id ? 'text-[#25D366]' : meta.color} size={14} />
+                  {meta.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 

@@ -8,7 +8,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_req
 from app.models.models import db, User
 from datetime import datetime, timedelta
 from sqlalchemy import func
-import uuid
+import uuid, secrets
 
 trends_bp = Blueprint('trends', __name__, url_prefix='/api/trends')
 
@@ -34,6 +34,7 @@ class TrendVideo(db.Model):
     likes = Column(Integer, default=0)
     shares = Column(Integer, default=0)
     comments_count = Column(Integer, default=0)
+    share_token = Column(String(16), nullable=True, unique=True)
     is_active = Column(Boolean, default=True)
     is_featured = Column(Boolean, default=False)
     is_ad = Column(Boolean, default=False)
@@ -392,7 +393,7 @@ def post_comment(video_id):
         return jsonify({'error': str(e)}), 500
 
 
-# ── Track share / ad events ───────────────────────────────────────────────────
+# ── Track ad events ───────────────────────────────────────────────────────────
 @trends_bp.route('/video/<video_id>/track', methods=['POST'])
 def track_event(video_id):
     try:
@@ -401,12 +402,51 @@ def track_event(video_id):
         video = TrendVideo.query.get(video_id)
         if not video:
             return jsonify({'error': 'Not found'}), 404
-        if event == 'share':
-            video.shares = (video.shares or 0) + 1
+        if event in ('ad_view', 'ad_click', 'ad_skip'):
             db.session.commit()
         return jsonify({'ok': True}), 200
-    except Exception:
-        return jsonify({'ok': True}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Persistent view tracking ──────────────────────────────────────────────────
+@trends_bp.route('/video/<video_id>/view', methods=['POST'])
+def track_view(video_id):
+    try:
+        video = TrendVideo.query.get(video_id)
+        if not video:
+            return jsonify({'error': 'Not found'}), 404
+        video.views = (video.views or 0) + 1
+        db.session.commit()
+        return jsonify({'views': video.views}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Persistent share link ─────────────────────────────────────────────────────
+@trends_bp.route('/video/<video_id>/share', methods=['POST'])
+def create_share_link(video_id):
+    try:
+        video = TrendVideo.query.get(video_id)
+        if not video:
+            return jsonify({'error': 'Not found'}), 404
+        if not video.share_token:
+            token = secrets.token_urlsafe(8)
+            while TrendVideo.query.filter_by(share_token=token).first():
+                token = secrets.token_urlsafe(8)
+            video.share_token = token
+        video.shares = (video.shares or 0) + 1
+        db.session.commit()
+        return jsonify({
+            'share_token': video.share_token,
+            'share_url': f'/trends?s={video.share_token}',
+            'total_shares': video.shares,
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 
 # ── Upload video (any logged-in user; non-admins go to pending) ───────────────
@@ -494,6 +534,14 @@ def search_videos():
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ── Category list ─────────────────────────────────────────────────────────────
+VALID_CATEGORIES = ['all', 'music', 'sports', 'gaming', 'news', 'comedy', 'education', 'tech']
+
+@trends_bp.route('/categories', methods=['GET'])
+def get_categories():
+    return jsonify({'categories': VALID_CATEGORIES}), 200
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
