@@ -288,70 +288,121 @@ function ChatPage() {
   const showCallScreen = ['outgoing', 'active', 'ringing'].includes(callState) && !incomingCallData;
 
   return (
-    <div className="flex h-screen bg-gray-100 overflow-hidden">
-      {/* Left Sidebar */}
-      <div className={`
-        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
-        md:translate-x-0 fixed md:relative
-        w-full md:w-[400px] lg:w-[420px] h-full
-        bg-white border-r border-gray-200
-        transition-transform duration-300 z-40 flex flex-col
-      `}>
-        <button
-          onClick={() => setIsMobileMenuOpen(false)}
-          className="md:hidden absolute top-4 right-4 z-50 p-2 bg-white rounded-full shadow-lg"
+    <div className="flex h-screen bg-[#f0f2f5] overflow-hidden">
+      {/* Three-pane layout */}
+      <div className="flex w-full h-full">
+        
+        {/* Pane 1: Left Icon Rail + Content Panel (Sidebar) */}
+        <motion.div
+          initial={false}
+          animate={{ x: 0 }}
+          className={`
+            fixed md:relative z-40
+            ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+            w-full md:w-[420px] lg:w-[450px] h-full
+            flex-shrink-0 flex
+            transition-transform duration-300 ease-in-out
+          `}
         >
-          <FiX size={24} />
-        </button>
-        <MainNavigation
-          socket={socket}
-          onChatSelect={(chatId) => { setActiveChat(chatId); setIsMobileMenuOpen(false); }}
-          onNewChat={() => setShowNewChat(true)}
-          onProfileClick={() => setShowProfile(true)}
-          onLogout={handleLogout}
-          onStartGroupCall={handleStartGroupCall}
-        />
-      </div>
-
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col relative">
-        {activeChat ? (
-          <>
-            <button
-              onClick={() => setIsMobileMenuOpen(true)}
-              className="md:hidden absolute top-4 left-4 z-30 p-2 bg-white rounded-full shadow-lg"
-            >
-              <FiMenu size={24} />
-            </button>
-            <ChatWindow
+          <div className="flex-1 h-full shadow-2xl md:shadow-none border-r border-gray-200">
+            <MainNavigation
               socket={socket}
-              onContactInfoClick={() => setShowContactInfo(true)}
-              onBack={() => { setActiveChat(null); setActiveChatData(null); }}
-              onStartCall={handleStartCall}
+              onChatSelect={(chatId) => { setActiveChat(chatId); setIsMobileMenuOpen(false); }}
+              onNewChat={() => setShowNewChat(true)}
+              onProfileClick={() => setShowProfile(true)}
+              onLogout={handleLogout}
               onStartGroupCall={handleStartGroupCall}
             />
-          </>
-        ) : (
-          <WelcomeScreen onOpenMenu={() => setIsMobileMenuOpen(true)} />
-        )}
+          </div>
+          
+          {/* Mobile close button */}
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="md:hidden absolute top-4 right-4 z-50 p-2 bg-white rounded-full shadow-lg"
+          >
+            <FiX size={24} />
+          </button>
+        </motion.div>
+
+        {/* Pane 2: Main Chat Area */}
+        <div className="flex-1 flex flex-col relative bg-[#f0f2f5] min-w-0">
+          <AnimatePresence mode="wait">
+            {activeChat ? (
+              <motion.div
+                key={activeChat}
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                transition={{ duration: 0.2 }}
+                className="h-full w-full flex flex-col"
+              >
+                <ChatWindow
+                  socket={socket}
+                  onContactInfoClick={() => setShowContactInfo(v => !v)}
+                  onBack={() => { setActiveChat(null); setActiveChatData(null); }}
+                  onStartCall={handleStartCall}
+                  onStartGroupCall={handleStartGroupCall}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="welcome"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="h-full w-full"
+              >
+                <WelcomeScreen onOpenMenu={() => setIsMobileMenuOpen(true)} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Pane 3: Contact Info (Right Panel) */}
+        <AnimatePresence>
+          {showContactInfo && activeChatData && (
+            <motion.div
+              initial={{ x: 400, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 400, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="hidden lg:block w-[400px] border-l border-gray-200 bg-white z-20 h-full flex-shrink-0"
+            >
+              <ContactInfo contact={activeChatData} onClose={() => setShowContactInfo(false)} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* Right Sidebar — Contact Info */}
-      {showContactInfo && activeChatData && (
-        <>
-          <div className="hidden lg:block w-[400px] border-l border-gray-200 bg-white">
+      {/* Mobile Right Sidebar Modal */}
+      <AnimatePresence>
+        {showContactInfo && activeChatData && (
+          <motion.div
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'tween', duration: 0.3 }}
+            className="lg:hidden fixed inset-0 bg-white z-[60]"
+          >
             <ContactInfo contact={activeChatData} onClose={() => setShowContactInfo(false)} />
-          </div>
-          <div className="lg:hidden fixed inset-0 bg-white z-50">
-            <ContactInfo contact={activeChatData} onClose={() => setShowContactInfo(false)} />
-          </div>
-        </>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Profile Panel */}
+      {/* Overlays & Modals */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="md:hidden fixed inset-0 bg-black/40 backdrop-blur-[2px] z-30"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
       {showProfile && <ProfilePanel onClose={() => setShowProfile(false)} />}
-
-      {/* New Chat Modal */}
+      
       {showNewChat && (
         <NewChatModal
           onClose={() => setShowNewChat(false)}
@@ -359,15 +410,7 @@ function ChatPage() {
         />
       )}
 
-      {/* Mobile Sidebar Overlay */}
-      {isMobileMenuOpen && (
-        <div
-          className="md:hidden fixed inset-0 bg-black bg-opacity-50 z-30"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
-      )}
-
-      {/* ── INCOMING 1-to-1 CALL ── */}
+      {/* Call Screens */}
       <AnimatePresence>
         {incomingCallData && callState === 'ringing' && (
           <IncomingCall
@@ -379,7 +422,6 @@ function ChatPage() {
         )}
       </AnimatePresence>
 
-      {/* ── ACTIVE 1-to-1 CALL SCREEN ── */}
       <AnimatePresence>
         {showCallScreen && (
           <CallScreen
@@ -391,7 +433,6 @@ function ChatPage() {
         )}
       </AnimatePresence>
 
-      {/* ── INCOMING GROUP CALL ── */}
       <AnimatePresence>
         {groupCallState === 'incoming' && incomingGroupCallData && (
           <IncomingGroupCall
@@ -402,7 +443,6 @@ function ChatPage() {
         )}
       </AnimatePresence>
 
-      {/* ── ACTIVE GROUP CALL SCREEN ── */}
       <AnimatePresence>
         {(groupCallState === 'active' || groupCallActive) && (
           <GroupCallScreen

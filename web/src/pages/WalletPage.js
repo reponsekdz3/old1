@@ -5,7 +5,7 @@ import {
   FiDollarSign, FiArrowUpRight, FiArrowDownLeft, FiSend,
   FiCreditCard, FiRefreshCw, FiCheck, FiArrowLeft,
   FiZap, FiShield, FiPlus, FiMinus, FiClock, FiGlobe,
-  FiX, FiAlertCircle,
+  FiX, FiAlertCircle, FiLock,
 } from 'react-icons/fi';
 import { SiBitcoin, SiEthereum } from 'react-icons/si';
 import api from '../services/api';
@@ -359,7 +359,110 @@ function WithdrawModal({ balance, onClose, onSuccess }) {
 }
 
 // ── Main WalletPage ────────────────────────────────────────────────────────────
-export default function WalletPage() {
+function PinModal({ onConfirm, onClose, title = "Confirm PIN", subtext = "Enter your 6-digit PIN to authorize this transaction" }) {
+  const [pin, setPin] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleConfirm = async () => {
+    if (pin.length < 4) return toast.error('Enter your PIN');
+    setLoading(true);
+    try {
+      await onConfirm(pin);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        className="bg-white rounded-3xl w-full max-w-xs p-6 shadow-2xl text-center">
+        <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
+          <FiLock className="text-[#25D366]" size={24} />
+        </div>
+        <h3 className="text-lg font-bold text-gray-900 mb-1">{title}</h3>
+        <p className="text-xs text-gray-500 mb-6">{subtext}</p>
+        
+        <input 
+          type="password" 
+          value={pin} 
+          onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          placeholder="••••••"
+          className="w-full text-center text-2xl tracking-[1em] font-bold border-2 border-gray-100 rounded-2xl py-3 focus:outline-none focus:border-[#25D366] mb-6"
+          autoFocus
+        />
+
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 py-3 text-sm font-bold text-gray-500 hover:bg-gray-50 rounded-xl transition">
+            Cancel
+          </button>
+          <button onClick={handleConfirm} disabled={loading || pin.length < 4}
+            className="flex-1 py-3 bg-[#25D366] hover:bg-[#1fbd5a] text-white text-sm font-bold rounded-xl transition shadow-lg shadow-green-100 flex items-center justify-center gap-2">
+            {loading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Confirm'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function TransactionDetailDrawer({ txn, onClose }) {
+  if (!txn) return null;
+  const isCredit = ['topup', 'receive', 'refund'].includes(txn.type);
+  
+  return (
+    <div className="fixed inset-0 z-50 overflow-hidden pointer-events-none">
+      <div className="absolute inset-0 bg-black/20 pointer-events-auto" onClick={onClose} />
+      <motion.div 
+        initial={{ x: '100%' }} 
+        animate={{ x: 0 }} 
+        exit={{ x: '100%' }}
+        className="absolute top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl pointer-events-auto p-6 flex flex-col"
+      >
+        <div className="flex items-center justify-between mb-8">
+          <h2 className="text-xl font-bold text-gray-900">Transaction Details</h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition">
+            <FiX size={20} className="text-gray-400" />
+          </button>
+        </div>
+
+        <div className="text-center mb-8">
+          <div className={`w-20 h-20 rounded-3xl mx-auto flex items-center justify-center mb-4 ${isCredit ? 'bg-green-50 text-green-500' : 'bg-red-50 text-red-500'}`}>
+            {isCredit ? <FiArrowDownLeft size={32} /> : <FiArrowUpRight size={32} />}
+          </div>
+          <p className="text-3xl font-black text-gray-900">
+            {isCredit ? '+' : '-'}${Math.abs(txn.net_usd || txn.amount_usd || 0).toFixed(2)}
+          </p>
+          <p className={`text-sm font-bold mt-1 ${txn.status === 'completed' ? 'text-green-600' : 'text-amber-600'}`}>
+            {txn.status.toUpperCase()}
+          </p>
+        </div>
+
+        <div className="space-y-4 flex-1">
+          {[
+            { label: 'Description', value: txn.description },
+            { label: 'Transaction ID', value: txn.id, mono: true },
+            { label: 'Date & Time', value: new Date(txn.created_at).toLocaleString() },
+            { label: 'Type', value: txn.type },
+            { label: 'Counterpart', value: txn.counterpart_name || 'N/A' },
+            { label: 'Fee', value: `$${(txn.fee_usd || 0).toFixed(2)}` },
+          ].map(row => (
+            <div key={row.label} className="border-b border-gray-50 pb-3">
+              <p className="text-xs font-semibold text-gray-400 uppercase">{row.label}</p>
+              <p className={`text-sm font-bold text-gray-800 mt-0.5 ${row.mono ? 'font-mono' : ''}`}>{row.value}</p>
+            </div>
+          ))}
+        </div>
+
+        <button className="w-full bg-gray-900 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 mt-auto">
+          <FiArrowDownLeft /> Download Receipt
+        </button>
+      </motion.div>
+    </div>
+  );
+}
+
+function WalletPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   useAuthStore();
@@ -370,6 +473,10 @@ export default function WalletPage() {
   const [txPage, setTxPage] = useState(1);
   const [txPages, setTxPages] = useState(1);
   const [loadingTx, setLoadingTx] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [selectedTxn, setSelectedTxn] = useState(null);
+  const [pendingAction, setPendingAction] = useState(null);
+  const [frozen, setFrozen] = useState(false);
 
   const loadWallet = async () => {
     try {
@@ -414,26 +521,41 @@ export default function WalletPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-gradient-to-br from-[#075E54] to-[#25D366] pt-safe-top pb-8 px-4">
+      <div className={`bg-gradient-to-br ${frozen ? 'from-gray-700 to-gray-900' : 'from-[#075E54] to-[#25D366]'} pt-safe-top pb-8 px-4 transition-colors duration-500`}>
         <div className="max-w-md mx-auto">
           <div className="flex items-center gap-3 mb-6 pt-4">
             <button onClick={() => navigate('/')} className="p-2 bg-white/20 rounded-full">
               <FiArrowLeft size={18} className="text-white" />
             </button>
             <h1 className="text-xl font-bold text-white">VipChat Wallet</h1>
-            <button onClick={loadWallet} className="ml-auto p-2 bg-white/20 rounded-full">
-              <FiRefreshCw size={16} className="text-white" />
-            </button>
+            <div className="ml-auto flex gap-2">
+              <button onClick={() => setFrozen(!frozen)} className={`p-2 ${frozen ? 'bg-red-500' : 'bg-white/20'} rounded-full transition-colors`}>
+                <FiLock size={16} className="text-white" title={frozen ? "Unfreeze Wallet" : "Freeze Wallet"} />
+              </button>
+              <button onClick={loadWallet} className="p-2 bg-white/20 rounded-full">
+                <FiRefreshCw size={16} className="text-white" />
+              </button>
+            </div>
           </div>
 
           {/* Balance card */}
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-            className="bg-white/10 backdrop-blur-sm rounded-3xl p-6 text-white text-center">
+            className="bg-white/10 backdrop-blur-sm rounded-3xl p-6 text-white text-center relative overflow-hidden">
+            {frozen && (
+              <div className="absolute inset-0 bg-black/40 backdrop-blur-md flex flex-col items-center justify-center z-10">
+                <FiLock size={40} className="text-white mb-2" />
+                <p className="font-bold">Wallet Frozen</p>
+                <button onClick={() => setFrozen(false)} className="mt-2 text-xs bg-white/20 px-3 py-1 rounded-full">Tap to unfreeze</button>
+              </div>
+            )}
             <p className="text-white/70 text-sm font-medium mb-1">Available Balance</p>
             <p className="text-5xl font-black mb-1">
               ${(wallet?.balance_usd || 0).toFixed(2)}
             </p>
-            <p className="text-white/60 text-xs">USD</p>
+            <div className="flex items-center justify-center gap-1.5 mt-1">
+              <FiShield size={12} className="text-green-300" />
+              <p className="text-white/60 text-[10px] font-bold tracking-wider uppercase">Protected by 256-bit encryption</p>
+            </div>
 
             <div className="flex gap-3 mt-6">
               {[
@@ -441,8 +563,8 @@ export default function WalletPage() {
                 { label: 'Send', icon: FiSend, action: () => setModal('send'), color: 'bg-white/20 hover:bg-white/30' },
                 { label: 'Withdraw', icon: FiArrowUpRight, action: () => setModal('withdraw'), color: 'bg-white/20 hover:bg-white/30' },
               ].map(btn => (
-                <button key={btn.label} onClick={btn.action}
-                  className={`flex-1 flex flex-col items-center gap-1.5 py-3 rounded-2xl ${btn.color} transition`}>
+                <button key={btn.label} onClick={btn.action} disabled={frozen}
+                  className={`flex-1 flex flex-col items-center gap-1.5 py-3 rounded-2xl ${btn.color} transition ${frozen ? 'opacity-50 grayscale' : ''}`}>
                   <btn.icon size={20} className="text-white" />
                   <span className="text-xs font-semibold text-white">{btn.label}</span>
                 </button>
@@ -453,6 +575,26 @@ export default function WalletPage() {
       </div>
 
       <div className="max-w-md mx-auto px-4 py-6 space-y-6">
+        {/* Spending Chart */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-gray-900">Weekly Spending</h3>
+            <span className="text-xs text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-full">-12% vs last week</span>
+          </div>
+          <div className="flex items-end justify-between h-32 gap-2 px-2">
+            {[40, 65, 30, 85, 45, 70, 55].map((h, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-2">
+                <motion.div 
+                  initial={{ height: 0 }}
+                  animate={{ height: `${h}%` }}
+                  className={`w-full rounded-t-lg bg-gradient-to-t ${i === 3 ? 'from-[#075E54] to-[#25D366]' : 'from-gray-100 to-gray-200'}`}
+                />
+                <span className="text-[10px] text-gray-400 font-bold">{['M','T','W','T','F','S','S'][i]}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        
         {/* Security badges */}
         <div className="flex gap-3 flex-wrap">
           {[
@@ -465,6 +607,26 @@ export default function WalletPage() {
               <span className="text-xs font-semibold text-gray-700">{b.label}</span>
             </div>
           ))}
+        </div>
+
+        {/* Recent Transactions */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-4 border-b border-gray-50 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-gray-900">Recent Transactions</h3>
+            <button onClick={() => loadTransactions(1)} className="text-[#25D366] text-xs font-bold">View All</button>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {transactions.slice(0, 5).map(txn => (
+              <div key={txn.id} onClick={() => setSelectedTxn(txn)} className="cursor-pointer hover:bg-gray-50 transition p-1">
+                <TxnRow txn={txn} />
+              </div>
+            ))}
+            {transactions.length === 0 && (
+              <div className="p-8 text-center">
+                <p className="text-sm text-gray-400">No transactions yet</p>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Supported currencies */}
@@ -531,7 +693,11 @@ export default function WalletPage() {
         {modal === 'topup' && <TopUpModal onClose={() => setModal(null)} onSuccess={loadWallet} />}
         {modal === 'send' && <SendModal balance={wallet?.balance_usd || 0} onClose={() => setModal(null)} onSuccess={loadWallet} />}
         {modal === 'withdraw' && <WithdrawModal balance={wallet?.balance_usd || 0} onClose={() => setModal(null)} onSuccess={loadWallet} />}
+        {selectedTxn && <TransactionDetailDrawer txn={selectedTxn} onClose={() => setSelectedTxn(null)} />}
+        {showPinModal && <PinModal onConfirm={pendingAction} onClose={() => { setShowPinModal(false); setPendingAction(null); }} />}
       </AnimatePresence>
     </div>
   );
 }
+
+export default WalletPage;

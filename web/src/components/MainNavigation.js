@@ -5,7 +5,7 @@ import {
   FiCode, FiVolume2, FiZap, FiSettings, FiLogOut, FiUser,
   FiStar, FiShield, FiPlus, FiGrid,
   FiActivity, FiMusic, FiCpu, FiRss, FiSmile, FiBook,
-  FiBell,
+  FiBell, FiSearch, FiFilter, FiArchive,
 } from 'react-icons/fi';
 import ChatsTab from './ChatsTab';
 import CommunitiesTab from './CommunitiesTab';
@@ -34,9 +34,9 @@ function NavBtn({ icon: Icon, label, active, onClick, badge, danger, accent, pul
       <button
         onClick={onClick}
         title={label}
-        className={`relative w-11 h-11 flex items-center justify-center rounded-xl transition-all duration-150 outline-none ${
+        className={`relative w-11 h-11 flex items-center justify-center rounded-xl transition-all duration-300 outline-none ${
           active
-            ? 'bg-white/15 text-white shadow-inner'
+            ? 'bg-white/15 text-white shadow-lg shadow-black/20'
             : danger
               ? 'text-red-400/70 hover:bg-red-500/15 hover:text-red-400'
               : accent
@@ -44,17 +44,27 @@ function NavBtn({ icon: Icon, label, active, onClick, badge, danger, accent, pul
                 : 'text-white/45 hover:bg-white/10 hover:text-white/90'
         }`}
       >
-        {active && (
-          <span className="absolute -left-0.5 top-1/2 -translate-y-1/2 w-[3px] h-7 bg-[#25D366] rounded-r-full" />
-        )}
-        <Icon size={19} strokeWidth={active ? 2.2 : 1.8} />
+        <AnimatePresence>
+          {active && (
+            <motion.span
+              layoutId="active-indicator"
+              className="absolute -left-0.5 top-1/2 -translate-y-1/2 w-[3px] h-7 bg-[#25D366] rounded-r-full shadow-[0_0_8px_rgba(37,211,102,0.6)]"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 28 }}
+              exit={{ opacity: 0, height: 0 }}
+            />
+          )}
+        </AnimatePresence>
+        <div className={active ? 'scale-110 transition-transform duration-300' : ''}>
+          <Icon size={19} strokeWidth={active ? 2.2 : 1.8} className={accent && !active ? 'opacity-80' : ''} />
+        </div>
         {badge > 0 && (
           <span className="absolute -top-1 -right-1 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center px-1 leading-none border border-[#111b21]">
             {badge > 99 ? '99+' : badge}
           </span>
         )}
         {pulse && !badge && (
-          <span className="absolute top-2 right-2 w-1.5 h-1.5 bg-[#25D366] rounded-full animate-pulse" />
+          <span className="absolute top-2 right-2 w-1.5 h-1.5 bg-[#25D366] rounded-full animate-pulse shadow-[0_0_4px_#25D366]" />
         )}
       </button>
       <Tooltip label={label} />
@@ -166,14 +176,19 @@ function MainNavigation({ socket, onChatSelect, onNewChat, onProfileClick, onLog
         <div className="relative group w-full flex justify-center mb-2 mt-1">
           <button
             onClick={() => setShowProfileMenu(v => !v)}
-            className="w-9 h-9 rounded-full overflow-hidden border-2 border-white/20 hover:border-[#25D366]/70 transition-all duration-200 flex-shrink-0"
+            className="relative w-10 h-10 rounded-full p-[2px] transition-all duration-300 hover:scale-110"
           >
-            {user?.avatar_url
-              ? <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
-              : <div className="w-full h-full bg-gradient-to-br from-[#25D366] to-[#075E54] flex items-center justify-center text-white font-bold text-sm">
-                  {initials}
-                </div>
-            }
+            {/* Online Status Ring */}
+            <div className="absolute inset-0 rounded-full border-2 border-[#25D366] animate-pulse opacity-50" />
+            
+            <div className="w-full h-full rounded-full overflow-hidden border border-white/20 flex-shrink-0 relative z-10">
+              {user?.avatar_url
+                ? <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+                : <div className="w-full h-full bg-gradient-to-br from-[#25D366] to-[#075E54] flex items-center justify-center text-white font-bold text-sm">
+                    {initials}
+                  </div>
+              }
+            </div>
           </button>
           <Tooltip label={user?.full_name || 'Profile'} />
         </div>
@@ -317,16 +332,27 @@ function MainNavigation({ socket, onChatSelect, onNewChat, onProfileClick, onLog
         </div>
 
         {/* Tab Content */}
-        <div className="flex-1 overflow-hidden">
-          {activeTab === 'chats' && (
-            <ChatsTab socket={socket} onChatSelect={onChatSelect} onNewChat={onNewChat} />
-          )}
-          {activeTab === 'calls' && (
-            <CallsTab onStartCall={(u) => { if (onChatSelect) onChatSelect(u.id); }} />
-          )}
-          {activeTab === 'status' && <StatusTab />}
-          {activeTab === 'communities' && <CommunitiesTab socket={socket} />}
-          {activeTab === 'channels' && <ChannelsTab socket={socket} />}
+        <div className="flex-1 overflow-hidden relative">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.2, ease: 'easeInOut' }}
+              className="h-full w-full"
+            >
+              {activeTab === 'chats' && (
+                <ChatsTab socket={socket} onChatSelect={onChatSelect} onNewChat={onNewChat} />
+              )}
+              {activeTab === 'calls' && (
+                <CallsTab onStartCall={(u) => { if (onChatSelect) onChatSelect(u.id); }} />
+              )}
+              {activeTab === 'status' && <StatusTab />}
+              {activeTab === 'communities' && <CommunitiesTab socket={socket} />}
+              {activeTab === 'channels' && <ChannelsTab socket={socket} />}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </div>
     </div>

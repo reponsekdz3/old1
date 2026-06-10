@@ -2,6 +2,7 @@ import { useRef, useCallback } from 'react';
 import { useCallStore } from '../services/store';
 import { getSocket } from '../services/socket';
 import api from '../services/api';
+import toast from 'react-hot-toast';
 
 // Public STUN servers for NAT traversal
 const ICE_SERVERS = {
@@ -56,6 +57,7 @@ export function useWebRTC(currentUser) {
   const createPeerConnection = useCallback((targetUserId) => {
     const pc = new RTCPeerConnection(ICE_SERVERS);
     peerConnectionRef.current = pc;
+    window._peerConnection = pc; // Expose for screen sharing support
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
@@ -146,6 +148,9 @@ export function useWebRTC(currentUser) {
       setCallId(data.call?.id);
 
       const stream = await getUserMedia(type);
+      if (!stream) {
+        throw new Error('Could not acquire local stream');
+      }
       const pc = createPeerConnection(targetUser.id);
 
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
@@ -168,6 +173,7 @@ export function useWebRTC(currentUser) {
       });
     } catch (err) {
       console.error('[WebRTC] initiateCall error:', err);
+      toast.error('Could not start call: ' + (err.overconstrainedError || err.message || 'Permission denied'));
       cleanup();
     }
   }, [currentUser, setCallType, setCallee, setCallState, setCallId, getUserMedia, createPeerConnection, cleanup]);

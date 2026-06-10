@@ -110,26 +110,31 @@ function AdBanner({ ad }) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="relative rounded-2xl overflow-hidden cursor-pointer group shadow-sm"
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      whileHover={{ scale: 1.01 }}
+      className="relative rounded-3xl overflow-hidden cursor-pointer group shadow-xl mb-6 aspect-[21/9] sm:aspect-[3/1]"
       style={{ background: 'linear-gradient(135deg, #075E54 0%, #128C7E 50%, #25D366 100%)' }}
       onClick={handleClick}
     >
       {ad.image_url && (
-        <img src={ad.image_url} alt={ad.title} className="absolute inset-0 w-full h-full object-cover opacity-20" />
+        <img src={ad.image_url} alt={ad.title} className="absolute inset-0 w-full h-full object-cover mix-blend-overlay opacity-60 group-hover:scale-105 transition-transform duration-700" />
       )}
-      <div className="relative z-10 flex items-center justify-between p-4 gap-4">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <Badge color="amber">Sponsored</Badge>
-          </div>
-          <div className="font-bold text-white text-sm truncate">{ad.title}</div>
-          {ad.description && <div className="text-green-100 text-xs mt-0.5 line-clamp-1">{ad.description}</div>}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+      <div className="relative z-10 flex flex-col justify-end h-full p-6">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="bg-white/20 backdrop-blur-md text-white text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-full border border-white/20">Sponsored</span>
+          {ad.badge && <Badge color="amber">{ad.badge}</Badge>}
         </div>
-        <button className="flex-shrink-0 bg-white text-[#075E54] text-xs font-bold px-3 py-1.5 rounded-xl hover:bg-green-50 transition whitespace-nowrap">
-          {ad.cta_text || 'View'}
-        </button>
+        <div className="flex items-end justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <h2 className="font-black text-white text-xl sm:text-2xl md:text-3xl leading-tight truncate drop-shadow-lg">{ad.title}</h2>
+            {ad.description && <p className="text-green-50 text-xs sm:text-sm mt-1 line-clamp-2 max-w-xl opacity-90">{ad.description}</p>}
+          </div>
+          <button className="flex-shrink-0 bg-white text-[#075E54] text-sm font-bold px-6 py-2.5 rounded-2xl hover:shadow-lg hover:scale-105 transition active:scale-95 whitespace-nowrap">
+            {ad.cta_text || 'Explore Now'}
+          </button>
+        </div>
       </div>
     </motion.div>
   );
@@ -146,52 +151,75 @@ function ProductCard({ product, onView, onWishlist, wishlisted, isPromoted }) {
   };
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`bg-white rounded-2xl shadow-sm hover:shadow-md transition-all overflow-hidden cursor-pointer group border ${isPromoted ? 'border-amber-200 ring-1 ring-amber-200' : 'border-gray-100'}`}
+      whileHover={{ y: -5 }}
+      className={`bg-white rounded-[2rem] shadow-sm hover:shadow-2xl transition-all duration-300 overflow-hidden cursor-pointer group border ${isPromoted ? 'border-amber-200 ring-2 ring-amber-100' : 'border-gray-100'}`}
       onClick={() => onView(product)}
     >
-      <div className="aspect-video bg-gradient-to-br from-gray-50 to-gray-100 relative overflow-hidden">
+      <div className="aspect-[4/3] bg-gray-50 relative overflow-hidden">
         {product.preview_url || product.thumbnail_url ? (
-          <img src={product.preview_url || product.thumbnail_url} alt={product.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+          <img src={product.preview_url || product.thumbnail_url} alt={product.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-200">
             <FileIcon type={product.file_type} />
           </div>
         )}
+        
+        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+
         {isPromoted && (
-          <div className="absolute top-2 left-2">
-            <Badge color="amber">⚡ Featured</Badge>
+          <div className="absolute top-4 left-4">
+            <div className="bg-amber-400 text-amber-950 text-[10px] font-black px-2 py-1 rounded-lg uppercase tracking-wider flex items-center gap-1 shadow-lg">
+              <FiZap size={10} fill="currentColor" /> Featured
+            </div>
           </div>
         )}
-        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition">
+        
+        <div className="absolute top-4 right-4 translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
           <button onClick={toggleWish} disabled={wishLoading}
-            className={`w-7 h-7 rounded-full flex items-center justify-center shadow ${wishlisted ? 'bg-red-500 text-white' : 'bg-white text-gray-400 hover:text-red-500'}`}>
-            {wishLoading ? <Spinner /> : <FiHeart size={13} fill={wishlisted ? 'white' : 'none'} />}
+            className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-xl backdrop-blur-md transition ${wishlisted ? 'bg-red-500 text-white' : 'bg-white/80 text-gray-900 hover:bg-white hover:text-red-500'}`}>
+            {wishLoading ? <Spinner /> : <FiHeart size={18} fill={wishlisted ? 'currentColor' : 'none'} />}
           </button>
         </div>
+
+        <div className="absolute bottom-4 left-4 right-4 translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
+           <button className="w-full bg-[#075E54] text-white py-2.5 rounded-xl text-xs font-bold shadow-lg flex items-center justify-center gap-2">
+             <FiShoppingBag size={14} /> Quick View
+           </button>
+        </div>
       </div>
-      <div className="p-3">
-        <div className="flex items-start justify-between gap-2">
+
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-2 mb-1">
           <div className="flex-1 min-w-0">
-            <div className="font-semibold text-gray-900 text-sm truncate">{product.title}</div>
-            <div className="text-xs text-gray-400 mt-0.5 truncate">{product.category} · by {product.seller_name}</div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">{product.category}</div>
+            <div className="font-bold text-gray-900 text-base truncate group-hover:text-[#075E54] transition-colors">{product.title}</div>
           </div>
-          {product.seller_verified && <FiAward size={14} className="text-blue-500 flex-shrink-0 mt-0.5" title="Verified" />}
+          {product.seller_verified && (
+            <div className="w-6 h-6 bg-blue-50 rounded-full flex items-center justify-center flex-shrink-0" title="Verified Seller">
+              <FiCheck size={12} className="text-blue-600 font-bold" />
+            </div>
+          )}
         </div>
-        <div className="flex items-center gap-2 mt-2">
-          {product.rating_count > 0 ? (
-            <StarRow rating={product.rating_avg} size={11} />
-          ) : <span className="text-xs text-gray-300">No reviews</span>}
-          {product.rating_count > 0 && <span className="text-xs text-gray-400">({product.rating_count})</span>}
+
+        <div className="flex items-center gap-2 mb-3">
+          <StarRow rating={product.rating_avg || 5} size={12} />
+          <span className="text-[11px] font-semibold text-gray-400">({product.rating_count || 0})</span>
         </div>
-        <div className="flex items-center justify-between mt-2">
-          <div className="font-bold text-[#075E54]">
-            {product.is_free ? <span className="text-green-600">Free</span> : fmtMoney(product.price)}
+
+        <div className="flex items-center justify-between pt-3 border-t border-gray-50">
+          <div className="flex flex-col">
+            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Price</span>
+            <div className="font-black text-xl text-[#075E54]">
+              {product.is_free ? <span className="text-green-500">FREE</span> : fmtMoney(product.price)}
+            </div>
           </div>
-          <div className="flex items-center gap-1 text-xs text-gray-400">
-            <FiDownload size={11} />{fmt(product.download_count || 0)}
-            <FiEye size={11} className="ml-1" />{fmt(product.view_count || 0)}
+          <div className="flex items-center gap-3">
+             <div className="flex flex-col items-end">
+               <span className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Sales</span>
+               <div className="text-xs font-bold text-gray-700 flex items-center gap-1"><FiDownload size={10} />{fmt(product.download_count || 0)}</div>
+             </div>
           </div>
         </div>
       </div>
@@ -203,32 +231,54 @@ function ProductCard({ product, onView, onWishlist, wishlisted, isPromoted }) {
 function B2BCard({ listing, onView }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
+      initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer p-4"
+      whileHover={{ scale: 1.01 }}
+      className="bg-white rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-xl transition-all cursor-pointer p-6 group"
       onClick={() => onView(listing)}
     >
-      <div className="flex items-start gap-3">
-        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center flex-shrink-0">
-          <FiBriefcase size={22} className="text-indigo-600" />
+      <div className="flex flex-col sm:flex-row items-start gap-5">
+        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-50 to-blue-100 flex items-center justify-center flex-shrink-0 group-hover:rotate-3 transition-transform">
+          <FiBriefcase size={28} className="text-indigo-600" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-gray-900 text-sm truncate">{listing.title}</div>
-          <div className="text-xs text-gray-400 mt-0.5">{listing.industry} · {listing.category}</div>
-          <div className="flex items-center gap-3 mt-2">
-            <span className="text-sm font-bold text-[#075E54]">${listing.unit_price}/unit</span>
-            <Badge color="blue">MOQ: {listing.min_order_qty}</Badge>
-            {listing.sample_available && <Badge color="green">Sample ✓</Badge>}
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{listing.industry}</span>
+            {listing.is_verified && (
+              <div className="flex items-center gap-1 bg-blue-50 text-blue-600 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase">
+                <FiCheck size={10} /> Verified Supplier
+              </div>
+            )}
           </div>
-          <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
-            <span className="flex items-center gap-1"><FiClock size={11} />{listing.lead_time_days}d lead</span>
-            <span className="flex items-center gap-1"><FiEye size={11} />{listing.view_count} views</span>
-            <span className="flex items-center gap-1"><FiMessageCircle size={11} />{listing.inquiry_count} inquiries</span>
+          <h3 className="font-bold text-gray-900 text-lg truncate group-hover:text-indigo-600 transition-colors">{listing.title}</h3>
+          <p className="text-xs text-gray-500 mt-1 line-clamp-1">{listing.description || 'Professional supplier listing on VipChat B2B.'}</p>
+          
+          <div className="flex flex-wrap items-center gap-4 mt-4">
+            <div className="flex flex-col">
+              <span className="text-[9px] font-bold text-gray-400 uppercase">Unit Price</span>
+              <span className="text-base font-black text-[#075E54]">${listing.unit_price}</span>
+            </div>
+            <div className="w-px h-8 bg-gray-100" />
+            <div className="flex flex-col">
+              <span className="text-[9px] font-bold text-gray-400 uppercase">Min. Order</span>
+              <span className="text-sm font-bold text-gray-700">{listing.min_order_qty} units</span>
+            </div>
+            <div className="w-px h-8 bg-gray-100" />
+            <div className="flex flex-col">
+              <span className="text-[9px] font-bold text-gray-400 uppercase">Lead Time</span>
+              <span className="text-sm font-bold text-gray-700">{listing.lead_time_days} days</span>
+            </div>
           </div>
         </div>
-        {listing.is_verified && (
-          <Badge color="blue">Verified</Badge>
-        )}
+        <div className="w-full sm:w-auto flex flex-col items-center justify-center gap-2 sm:pl-6 sm:border-l border-gray-100">
+           <div className="text-center">
+             <div className="text-[9px] font-bold text-gray-400 uppercase mb-1">Inquiries</div>
+             <div className="text-lg font-black text-gray-900">{listing.inquiry_count || 0}</div>
+           </div>
+           <button className="w-full sm:w-auto bg-indigo-50 text-indigo-600 text-[10px] font-black px-4 py-2 rounded-xl uppercase tracking-wider hover:bg-indigo-600 hover:text-white transition-colors">
+             Contact
+           </button>
+        </div>
       </div>
     </motion.div>
   );
@@ -346,6 +396,8 @@ function ProductModal({ product, onClose, user }) {
   const [reviewText, setReviewText] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
   const [reviews, setReviews] = useState(product?.reviews || []);
+  const [activeImg, setActiveImg] = useState(0);
+  const images = [product.preview_url || product.thumbnail_url, product.preview_url, product.thumbnail_url].filter(Boolean);
 
   const handleBuy = async () => {
     if (!user) { toast.error('Please login'); return; }
@@ -377,133 +429,191 @@ function ProductModal({ product, onClose, user }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-hidden">
       <motion.div
-        initial={{ opacity: 0, y: 40 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 40 }}
-        className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto"
+        initial={{ opacity: 0, scale: 0.9, y: 40 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.9, y: 40 }}
+        className="bg-white rounded-t-[2.5rem] sm:rounded-[3rem] w-full sm:max-w-4xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl"
       >
-        <div className="sticky top-0 bg-white border-b flex items-center justify-between px-4 py-3 z-10">
-          <div className="font-bold text-gray-900 truncate flex-1 mr-2">{product.title}</div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200"><FiX size={16} /></button>
+        <div className="absolute top-4 right-4 z-50">
+          <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-2xl bg-white/20 backdrop-blur-md text-white hover:bg-white hover:text-gray-900 transition-all border border-white/30 shadow-xl"><FiX size={20} /></button>
         </div>
 
-        <div className="p-4 space-y-4">
-          {/* Preview */}
-          {(product.preview_url || product.thumbnail_url) ? (
-            <img src={product.preview_url || product.thumbnail_url} alt={product.title}
-              className="w-full rounded-xl object-cover max-h-64" />
-          ) : (
-            <div className="w-full h-32 rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
-              <FileIcon type={product.file_type} />
-            </div>
-          )}
-
-          {/* Meta */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <Badge color="gray">{product.category}</Badge>
-            <Badge color="gray">{product.license_type}</Badge>
-            {product.seller_verified && <Badge color="blue">✓ Verified Seller</Badge>}
-            {product.file_type && <Badge color="gray">.{product.file_type}</Badge>}
-          </div>
-
-          <p className="text-gray-600 text-sm leading-relaxed">{product.description}</p>
-
-          {/* Stats row */}
-          <div className="grid grid-cols-3 gap-3 text-center">
-            {[
-              { label: 'Downloads', value: fmt(product.download_count || 0), icon: FiDownload },
-              { label: 'Views', value: fmt(product.view_count || 0), icon: FiEye },
-              { label: 'Rating', value: product.rating_avg?.toFixed(1) || '—', icon: FiStar },
-            ].map(s => (
-              <div key={s.label} className="bg-gray-50 rounded-xl p-2">
-                <s.icon size={16} className="mx-auto mb-1 text-gray-400" />
-                <div className="font-bold text-gray-900 text-sm">{s.value}</div>
-                <div className="text-xs text-gray-400">{s.label}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Tags */}
-          {product.tags?.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {product.tags.map((t, i) => <span key={i} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{t}</span>)}
-            </div>
-          )}
-
-          {/* Purchase */}
-          <div className="bg-gradient-to-r from-[#075E54] to-[#25D366] rounded-2xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-white font-bold text-xl">
-                  {product.is_free ? 'Free' : fmtMoney(product.price)}
-                </div>
-                <div className="text-green-100 text-xs">{product.currency || 'USD'}</div>
-              </div>
-              <button onClick={handleBuy} disabled={buying}
-                className="bg-white text-[#075E54] font-bold px-6 py-2.5 rounded-xl hover:bg-green-50 transition flex items-center gap-2">
-                {buying ? <Spinner /> : product.is_free ? <><FiDownload size={16} />Download</> : <><FiDollarSign size={16} />Stripe</>}
-              </button>
-            </div>
-            {!product.is_free && user && (
-              <div>
-                {!showPayPal ? (
-                  <button onClick={() => setShowPayPal(true)}
-                    className="w-full bg-[#FFC439] text-[#003087] font-bold py-2 rounded-xl text-sm flex items-center justify-center gap-2 hover:bg-yellow-300 transition">
-                    <span className="font-bold">Pay</span><span className="font-light">Pal</span>
-                  </button>
+        <div className="flex-1 overflow-y-auto">
+          <div className="flex flex-col md:flex-row">
+            {/* Left: Image Gallery */}
+            <div className="md:w-1/2 p-4 sm:p-8 bg-gray-50">
+              <div className="aspect-square rounded-3xl overflow-hidden shadow-inner bg-white relative group">
+                {images.length > 0 ? (
+                  <img src={images[activeImg]} alt={product.title} className="w-full h-full object-cover" />
                 ) : (
-                  <div className="bg-white rounded-xl p-2">
-                    <PayPalCheckout product={product} user={user} onSuccess={onClose} />
+                  <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                    <FileIcon type={product.file_type} />
+                  </div>
+                )}
+                {product.seller_verified && (
+                  <div className="absolute top-4 left-4 bg-white/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white shadow-sm flex items-center gap-1.5">
+                    <FiCheck size={12} className="text-blue-600" />
+                    <span className="text-[10px] font-black text-gray-900 uppercase tracking-widest">Verified Seller</span>
                   </div>
                 )}
               </div>
-            )}
+              {images.length > 1 && (
+                <div className="flex gap-3 mt-4 overflow-x-auto pb-2">
+                  {images.map((img, idx) => (
+                    <button key={idx} onClick={() => setActiveImg(idx)} className={`w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border-2 transition ${activeImg === idx ? 'border-[#075E54] scale-105' : 'border-transparent opacity-60'}`}>
+                      <img src={img} alt="" className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-8 space-y-4 hidden md:block">
+                 <div className="font-black text-gray-900 text-lg uppercase tracking-widest border-b border-gray-200 pb-2">Technical Details</div>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                       <div className="text-[9px] font-black text-gray-400 uppercase mb-1">File Type</div>
+                       <div className="text-sm font-bold text-gray-900">{product.file_type?.toUpperCase() || 'N/A'}</div>
+                    </div>
+                    <div className="p-3 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                       <div className="text-[9px] font-black text-gray-400 uppercase mb-1">License</div>
+                       <div className="text-sm font-bold text-gray-900">{product.license_type || 'Standard'}</div>
+                    </div>
+                 </div>
+              </div>
+            </div>
+
+            {/* Right: Content */}
+            <div className="md:w-1/2 p-6 sm:p-10 flex flex-col">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge color="blue">{product.category}</Badge>
+                  <div className="flex items-center gap-1">
+                    <StarRow rating={product.rating_avg || 5} size={14} />
+                    <span className="text-xs font-bold text-gray-400">({product.rating_count || 0})</span>
+                  </div>
+                </div>
+                <h1 className="text-3xl font-black text-gray-900 mb-4 leading-tight">{product.title}</h1>
+                <p className="text-gray-500 text-sm leading-relaxed mb-6 font-medium">{product.description}</p>
+
+                <div className="grid grid-cols-3 gap-4 mb-8">
+                  {[
+                    { label: 'Downloads', value: fmt(product.download_count || 0), icon: FiDownload, color: 'text-blue-600' },
+                    { label: 'Views', value: fmt(product.view_count || 0), icon: FiEye, color: 'text-purple-600' },
+                    { label: 'Rating', value: product.rating_avg?.toFixed(1) || '5.0', icon: FiStar, color: 'text-amber-500' },
+                  ].map(s => (
+                    <div key={s.label} className="bg-white rounded-2xl p-3 border border-gray-100 shadow-sm text-center group hover:shadow-md transition">
+                      <s.icon size={18} className={`mx-auto mb-2 ${s.color}`} />
+                      <div className="font-black text-gray-900 text-sm">{s.value}</div>
+                      <div className="text-[9px] font-black text-gray-400 uppercase tracking-tighter">{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap gap-2 mb-8">
+                  {product.tags?.map((t, i) => (
+                    <span key={i} className="px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-[10px] font-black uppercase tracking-widest">{t}</span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Purchase Card */}
+              <div className="bg-gray-900 rounded-[2rem] p-6 shadow-xl relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:rotate-12 transition-transform">
+                   <FiZap size={80} className="text-white" />
+                </div>
+                <div className="relative z-10 flex items-center justify-between gap-6">
+                  <div>
+                    <div className="text-white/60 text-[10px] font-black uppercase tracking-[0.2em] mb-1">Instant Access</div>
+                    <div className="text-3xl font-black text-white">
+                      {product.is_free ? 'FREE' : fmtMoney(product.price)}
+                    </div>
+                  </div>
+                  <div className="flex-1 max-w-[180px] space-y-2">
+                    <button onClick={handleBuy} disabled={buying}
+                      className="w-full bg-[#25D366] text-black font-black py-3 rounded-2xl hover:bg-[#1fb355] transition-all transform active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-green-500/20">
+                      {buying ? <Spinner /> : product.is_free ? <><FiDownload size={18} /> DOWNLOAD</> : <><FiDollarSign size={18} /> BUY NOW</>}
+                    </button>
+                    {!product.is_free && (
+                      <button onClick={() => setShowPayPal(true)} className="w-full bg-[#FFC439] text-[#003087] font-bold py-2.5 rounded-2xl text-xs flex items-center justify-center gap-2 hover:bg-yellow-400 transition transform active:scale-95 shadow-lg shadow-yellow-500/10">
+                         <span className="font-bold">Pay</span><span className="font-light">Pal</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {showPayPal && !product.is_free && (
+                   <div className="mt-4 bg-white rounded-2xl p-4 overflow-hidden">
+                      <PayPalCheckout product={product} user={user} onSuccess={onClose} />
+                      <button onClick={() => setShowPayPal(false)} className="w-full text-[10px] font-black text-gray-400 uppercase tracking-widest mt-2 hover:text-gray-900">Cancel PayPal</button>
+                   </div>
+                )}
+              </div>
+            </div>
           </div>
 
-          {/* Reviews */}
-          {product.reviews?.length > 0 && (
-            <div>
-              <div className="font-semibold text-gray-900 mb-3">Reviews ({product.rating_count})</div>
-              <div className="space-y-3">
-                {product.reviews.slice(0, 5).map(r => (
-                  <div key={r.id} className="bg-gray-50 rounded-xl p-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      <div className="w-6 h-6 rounded-full bg-[#075E54] text-white text-xs flex items-center justify-center">
-                        {r.reviewer_name?.[0] || '?'}
-                      </div>
-                      <span className="text-xs font-medium text-gray-700">{r.reviewer_name}</span>
-                      <StarRow rating={r.rating} size={11} />
-                    </div>
-                    <p className="text-xs text-gray-600">{r.comment}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* Reviews Section */}
+          <div className="p-6 sm:p-10 bg-white border-t border-gray-100">
+             <div className="flex items-center justify-between mb-8">
+                <div>
+                   <h2 className="text-2xl font-black text-gray-900">Customer Reviews</h2>
+                   <div className="text-sm font-medium text-gray-500 mt-1">Based on {product.rating_count || 0} reviews</div>
+                </div>
+                <div className="hidden sm:flex items-center gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                   <div className="text-center border-r border-gray-200 pr-4">
+                      <div className="text-2xl font-black text-gray-900">{product.rating_avg?.toFixed(1) || '5.0'}</div>
+                      <StarRow rating={product.rating_avg || 5} size={12} />
+                   </div>
+                   <div className="text-xs font-bold text-gray-400 uppercase tracking-widest leading-none">Overall<br/>Rating</div>
+                </div>
+             </div>
 
-          {/* Write review */}
-          {user && (
-            <div className="border-t pt-4">
-              <div className="font-semibold text-gray-900 mb-2">Leave a Review</div>
-              <div className="flex gap-1 mb-2">
-                {[1,2,3,4,5].map(i => (
-                  <button key={i} onClick={() => setRating(i)}>
-                    <FiStar size={22} fill={i <= rating ? STAR_COLOR : 'none'} stroke={i <= rating ? STAR_COLOR : '#d1d5db'} />
-                  </button>
-                ))}
-              </div>
-              <textarea value={reviewText} onChange={e => setReviewText(e.target.value)}
-                placeholder="Share your experience..."
-                className="w-full border border-gray-200 rounded-xl p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#25D366]"
-                rows={3} />
-              <button onClick={submitReview} disabled={submittingReview || !reviewText}
-                className="mt-2 w-full bg-[#075E54] text-white font-semibold py-2 rounded-xl hover:bg-[#128C7E] transition flex items-center justify-center gap-2">
-                {submittingReview ? <Spinner /> : 'Post Review'}
-              </button>
-            </div>
-          )}
+             <div className="grid md:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  {product.reviews?.length > 0 ? (
+                    product.reviews.slice(0, 5).map(r => (
+                      <div key={r.id} className="bg-gray-50 rounded-[2rem] p-6 border border-gray-100 hover:border-gray-200 transition">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#075E54] to-[#25D366] text-white font-black flex items-center justify-center shadow-lg">
+                            {r.reviewer_name?.[0] || '?'}
+                          </div>
+                          <div>
+                            <div className="text-sm font-black text-gray-900">{r.reviewer_name}</div>
+                            <StarRow rating={r.rating} size={10} />
+                          </div>
+                        </div>
+                        <p className="text-sm text-gray-600 leading-relaxed italic">"{r.comment}"</p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-10 bg-gray-50 rounded-[2rem] border border-dashed border-gray-200">
+                       <FiMessageCircle size={32} className="mx-auto text-gray-300 mb-2" />
+                       <div className="text-sm font-bold text-gray-400">No reviews yet. Be the first!</div>
+                    </div>
+                  )}
+                </div>
+
+                {user && (
+                   <div className="bg-[#075E54]/5 rounded-[2.5rem] p-8 border border-[#075E54]/10 h-fit sticky top-4">
+                      <h3 className="text-lg font-black text-[#075E54] uppercase tracking-widest mb-4">Post a Review</h3>
+                      <div className="flex gap-2 mb-4">
+                        {[1,2,3,4,5].map(i => (
+                          <button key={i} onClick={() => setRating(i)} className="transform hover:scale-110 transition active:scale-95">
+                            <FiStar size={28} fill={i <= rating ? STAR_COLOR : 'none'} stroke={i <= rating ? STAR_COLOR : '#d1d5db'} />
+                          </button>
+                        ))}
+                      </div>
+                      <textarea value={reviewText} onChange={e => setReviewText(e.target.value)}
+                        placeholder="Your feedback matters..."
+                        className="w-full bg-white border border-gray-100 rounded-[1.5rem] p-4 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-[#25D366]/20 transition-all shadow-sm mb-4" rows={4} />
+                      <button onClick={submitReview} disabled={submittingReview || !reviewText.trim()}
+                        className="w-full bg-[#075E54] text-white font-black py-3 rounded-2xl hover:bg-[#128C7E] transition-all transform active:scale-95 flex items-center justify-center gap-2 shadow-lg disabled:opacity-50">
+                        {submittingReview ? <Spinner /> : 'SUBMIT REVIEW'}
+                      </button>
+                   </div>
+                )}
+             </div>
+          </div>
         </div>
       </motion.div>
     </div>
@@ -1118,94 +1228,149 @@ export default function MarketplacePage() {
 
   // ── Render sections ───────────────────────────────────────────────────────
   const renderDiscover = () => (
-    <div className="space-y-5">
-      {/* Ads */}
-      {ads.length > 0 && (
-        <div className="space-y-2">
-          {ads.slice(0, 2).map(ad => <AdBanner key={ad.id} ad={ad} />)}
-        </div>
-      )}
+    <div className="space-y-6">
+      {/* Hero Banner */}
+      <div className="relative rounded-[3rem] overflow-hidden bg-gray-900 h-[400px] flex items-center px-8 sm:px-16 shadow-2xl group">
+        <div className="absolute inset-0 bg-gradient-to-r from-black via-black/40 to-transparent z-10" />
+        <img src="https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=2000&auto=format&fit=crop" className="absolute inset-0 w-full h-full object-cover opacity-50 group-hover:scale-110 transition-transform duration-1000" alt="" />
+        <div className="relative z-20 max-w-2xl">
+          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}>
+            <span className="bg-[#25D366] text-black text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-[0.2em] mb-4 inline-block">Premium Marketplace</span>
+            <h1 className="text-4xl sm:text-6xl font-black text-white leading-tight mb-6">Discover Digital <span className="text-[#25D366]">Excellence</span></h1>
+            
+            {/* Main Search */}
+            <div className="relative max-w-xl group/search">
+              <FiSearch size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within/search:text-[#25D366] transition-colors" />
+              <input value={search} onChange={handleSearch} placeholder="Search high-quality assets, templates, code..."
+                className="w-full pl-14 pr-6 py-5 bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl text-white placeholder:text-gray-400 focus:outline-none focus:ring-4 focus:ring-[#25D366]/30 focus:bg-white/20 transition-all text-lg shadow-2xl" />
+            </div>
 
-      {/* Global stats */}
-      {globalStats && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatCard icon={FiPackage} label="Products" value={fmt(globalStats.total_products)} color="#075E54" />
-          <StatCard icon={FiUsers} label="Sellers" value={fmt(globalStats.total_sellers)} color="#7C3AED" />
-          <StatCard icon={FiDownload} label="Sales" value={fmt(globalStats.total_sales)} color="#2563EB" />
-          <StatCard icon={FiBriefcase} label="B2B Listings" value={fmt(globalStats.total_b2b_listings)} color="#D97706" />
+            <div className="flex flex-wrap gap-3 mt-8">
+               {['Trending', 'New Arrivals', 'Best Sellers', 'Freebies'].map(chip => (
+                 <button key={chip} className="px-4 py-2 bg-white/5 hover:bg-white/10 backdrop-blur-md border border-white/10 rounded-2xl text-[10px] font-black text-white uppercase tracking-widest transition-all">
+                    {chip}
+                 </button>
+               ))}
+            </div>
+          </motion.div>
         </div>
-      )}
+      </div>
 
-      {/* Featured */}
+      {/* Categories Bar */}
+      <div className="flex items-center gap-4 bg-white p-3 rounded-[2rem] shadow-sm border border-gray-100 overflow-x-auto no-scrollbar">
+        <div className="flex-shrink-0 px-4 border-r border-gray-100 mr-2">
+           <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Categories</div>
+        </div>
+        <div className="flex gap-2">
+          {CATEGORIES.map(c => (
+            <button key={c} onClick={() => handleCategory(c)}
+              className={`flex-shrink-0 px-5 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all ${category === c ? 'bg-gray-900 text-white shadow-lg shadow-gray-900/20 scale-105' : 'bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-gray-900'}`}>{c}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Featured Section */}
       {featured.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-bold text-gray-900 flex items-center gap-2"><FiZap size={16} className="text-amber-500" />Featured Products</h3>
+        <div className="pt-4">
+          <div className="flex items-center justify-between mb-6 px-2">
+            <div>
+              <h2 className="text-2xl font-black text-gray-900 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center">
+                  <FiZap size={20} className="text-amber-500" fill="currentColor" />
+                </div>
+                Featured Assets
+              </h2>
+              <p className="text-sm font-medium text-gray-400 mt-1 ml-13">Handpicked premium content for you</p>
+            </div>
+            <button className="text-xs font-black text-[#075E54] uppercase tracking-widest hover:underline transition">View All</button>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
             {featured.map((p, i) => (
-              <ProductCard key={p.id} product={p} isPromoted={i < 2}
+              <ProductCard key={p.id} product={p} isPromoted={true}
                 onView={setSelectedProduct} onWishlist={toggleWishlist} wishlisted={wishlist.has(p.id)} />
             ))}
           </div>
         </div>
       )}
 
-      {/* Search + Filters */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3 shadow-sm">
-        <div className="relative">
-          <FiSearch size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input value={search} onChange={handleSearch} placeholder="Search products..."
-            className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#25D366]" />
-        </div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {CATEGORIES.map(c => (
-            <button key={c} onClick={() => handleCategory(c)}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition ${category === c ? 'bg-[#075E54] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{c}</button>
-          ))}
-        </div>
-        <div className="flex items-center justify-between">
-          <div className="flex gap-1">
-            {SORTS.map(s => (
-              <button key={s.value} onClick={() => handleSort(s.value)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${sort === s.value ? 'bg-[#075E54] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s.label}</button>
-            ))}
-          </div>
-          <div className="flex gap-1">
-            {[['grid', FiGrid], ['list', FiList]].map(([v, Icon]) => (
-              <button key={v} onClick={() => setViewMode(v)}
-                className={`w-7 h-7 rounded-lg flex items-center justify-center transition ${viewMode === v ? 'bg-[#075E54] text-white' : 'bg-gray-100 text-gray-500'}`}>
-                <Icon size={14} />
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Products grid */}
-      {loading ? (
-        <div className="flex items-center justify-center py-16"><div className="w-8 h-8 border-2 border-[#25D366] border-t-transparent rounded-full animate-spin" /></div>
-      ) : products.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <FiShoppingBag size={40} className="mx-auto mb-3 opacity-30" />
-          <div className="font-medium">No products found</div>
-          <div className="text-sm mt-1">Try different search terms or categories</div>
-        </div>
-      ) : (
-        <div className={viewMode === 'grid' ? 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3' : 'space-y-3'}>
-          {products.map(p => (
-            <ProductCard key={p.id} product={p}
-              onView={setSelectedProduct} onWishlist={toggleWishlist} wishlisted={wishlist.has(p.id)} />
-          ))}
+      {/* Global stats - Modernized */}
+      {globalStats && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 py-6">
+          <StatCard icon={FiPackage} label="Curated Assets" value={fmt(globalStats.total_products)} color="#075E54" />
+          <StatCard icon={FiUsers} label="Verified Sellers" value={fmt(globalStats.total_sellers)} color="#7C3AED" />
+          <StatCard icon={FiDownload} label="Asset Sales" value={fmt(globalStats.total_sales)} color="#2563EB" />
+          <StatCard icon={FiBriefcase} label="B2B Connections" value={fmt(globalStats.total_b2b_listings)} color="#D97706" />
         </div>
       )}
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
-          <button onClick={() => handlePage(page - 1)} disabled={page <= 1} className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 disabled:opacity-40"><FiChevronLeft size={14} /></button>
-          <span className="text-sm text-gray-600">Page {page} of {totalPages}</span>
-          <button onClick={() => handlePage(page + 1)} disabled={page >= totalPages} className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 disabled:opacity-40"><FiChevronRight size={14} /></button>
+      {/* All Products Section */}
+      <div className="pt-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 px-2">
+          <div>
+            <h2 className="text-2xl font-black text-gray-900">Explore Collection</h2>
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-400 mt-1">
+              <span>{products.length} products found</span>
+              <span className="w-1 h-1 rounded-full bg-gray-300" />
+              <button className="hover:text-gray-900 transition underline underline-offset-4">Reset filters</button>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3 bg-white p-2 rounded-2xl border border-gray-100 shadow-sm">
+            <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-xl border border-gray-100">
+              {SORTS.map(s => (
+                <button key={s.value} onClick={() => handleSort(s.value)}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${sort === s.value ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>{s.label}</button>
+              ))}
+            </div>
+            <div className="w-px h-6 bg-gray-100 mx-1" />
+            <div className="flex gap-1">
+              {[ ['grid', FiGrid], ['list', FiList] ].map(([v, Icon]) => (
+                <button key={v} onClick={() => setViewMode(v)}
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${viewMode === v ? 'bg-gray-900 text-white shadow-lg' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}>
+                  <Icon size={16} />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Products grid */}
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-32 gap-4">
+             <div className="w-12 h-12 border-4 border-[#25D366] border-t-transparent rounded-full animate-spin" />
+             <div className="text-xs font-black text-gray-400 uppercase tracking-widest">Loading Assets...</div>
+          </div>
+        ) : products.length === 0 ? (
+          <div className="text-center py-32 bg-white rounded-[3rem] border border-dashed border-gray-200">
+            <FiShoppingBag size={64} className="mx-auto mb-6 text-gray-200" />
+            <div className="text-xl font-black text-gray-900 mb-2">No matching assets</div>
+            <p className="text-sm font-medium text-gray-400 max-w-xs mx-auto">Try adjusting your search or category filters to find what you're looking for.</p>
+          </div>
+        ) : (
+          <div className={viewMode === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8' : 'space-y-6'}>
+            {products.map(p => (
+              <ProductCard key={p.id} product={p}
+                onView={setSelectedProduct} onWishlist={toggleWishlist} wishlisted={wishlist.has(p.id)} />
+            ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-4 mt-16">
+            <button onClick={() => handlePage(page - 1)} disabled={page <= 1} className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white border border-gray-100 shadow-sm disabled:opacity-30 hover:bg-gray-50 transition active:scale-90"><FiChevronLeft size={20} /></button>
+            <div className="bg-white px-6 py-3 rounded-2xl border border-gray-100 shadow-sm text-sm font-black text-gray-900 uppercase tracking-widest">
+              Page {page} <span className="text-gray-300 mx-2">/</span> {totalPages}
+            </div>
+            <button onClick={() => handlePage(page + 1)} disabled={page >= totalPages} className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white border border-gray-100 shadow-sm disabled:opacity-30 hover:bg-gray-50 transition active:scale-90"><FiChevronRight size={20} /></button>
+          </div>
+        )}
+      </div>
+
+      {/* Secondary Ad */}
+      {ads.length > 1 && (
+        <div className="mt-16">
+           <AdBanner ad={ads[1]} />
         </div>
       )}
     </div>

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   FiMic, FiMicOff, FiVideo, FiVideoOff, FiPhoneOff,
   FiVolume2, FiVolumeX, FiRefreshCw,
-  FiMinimize2, FiMonitor, FiStopCircle,
+  FiMinimize2, FiMonitor, FiStopCircle, FiLock,
 } from 'react-icons/fi';
 import { useCallStore } from '../services/store';
 import advancedRinging from '../services/advancedRinging';
@@ -220,31 +220,41 @@ function CallScreen({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[90] bg-black flex flex-col"
+      className="fixed inset-0 z-[90] bg-black flex flex-col overflow-hidden"
       onClick={isVideoCall ? resetControlsTimer : undefined}
     >
       <audio ref={remoteAudioRef} autoPlay />
 
+      {/* ── BACKGROUND BLUR (Premium Look) ── */}
+      <div className="absolute inset-0 z-0">
+        <div className="absolute inset-0 bg-black/60 z-10" />
+        {remote?.avatar_url ? (
+          <img src={remote.avatar_url} alt="" className="w-full h-full object-cover blur-3xl scale-110 opacity-40" />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-green-900/40 to-teal-900/40 blur-3xl opacity-40" />
+        )}
+      </div>
+
       {/* ── VIDEO CALL LAYOUT ── */}
       {isVideoCall ? (
-        <>
+        <div className="relative flex-1 z-10">
           {/* Screen share takes full view, remote goes to PiP */}
           {isScreenSharing && screenStream ? (
             <>
               <video
                 ref={screenVideoRef}
                 autoPlay playsInline muted
-                className="absolute inset-0 w-full h-full object-contain bg-black"
+                className="absolute inset-0 w-full h-full object-contain bg-black/40"
               />
               {/* Remote video small PiP in top-left */}
               {remoteStream && (
                 <motion.div drag dragConstraints={{ top: 60, bottom: -100, left: -60, right: 60 }}
-                  className="absolute top-20 left-4 w-28 h-40 rounded-xl overflow-hidden border-2 border-white shadow-lg z-10 cursor-grab">
+                  className="absolute top-20 left-4 w-32 h-48 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl z-10 cursor-grab active:cursor-grabbing backdrop-blur-md">
                   <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
                 </motion.div>
               )}
               {/* Screen share indicator banner */}
-              <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 bg-red-500/90 backdrop-blur-sm text-white text-xs font-bold px-4 py-1.5 rounded-full flex items-center gap-2">
+              <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 bg-red-500/90 backdrop-blur-md text-white text-xs font-bold px-4 py-1.5 rounded-full flex items-center gap-2 shadow-lg border border-white/10">
                 <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
                 Sharing your screen
               </div>
@@ -255,72 +265,74 @@ function CallScreen({
               {remoteStream ? (
                 <video ref={remoteVideoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
               ) : (
-                <div className="absolute inset-0 bg-gradient-to-b from-gray-900 to-black flex items-center justify-center">
-                  <div className="text-center">
-                    <div className="w-28 h-28 rounded-full bg-gradient-to-br from-green-400 to-teal-500 flex items-center justify-center text-white font-bold text-5xl mx-auto mb-4 overflow-hidden shadow-2xl">
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="text-center relative z-10">
+                    <motion.div
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      className="w-32 h-32 rounded-full bg-gradient-to-br from-green-400 to-teal-500 flex items-center justify-center text-white font-bold text-5xl mx-auto mb-6 overflow-hidden shadow-[0_0_40px_rgba(37,211,102,0.3)] border-2 border-white/20"
+                    >
                       {remote?.avatar_url ? <img src={remote.avatar_url} alt="" className="w-full h-full object-cover" /> : avatarInitial}
-                    </div>
-                    <p className="text-white font-bold text-2xl mb-2">{remote?.full_name}</p>
+                    </motion.div>
+                    <h2 className="text-white font-bold text-3xl mb-2 drop-shadow-md">{remote?.full_name}</h2>
                     <motion.p animate={{ opacity: [1, 0.4, 1] }} transition={{ repeat: Infinity, duration: 1.5 }}
-                      className="text-green-400 text-sm">{stateLabel}</motion.p>
+                      className="text-[#25D366] text-lg font-medium tracking-wide drop-shadow-sm">{stateLabel}</motion.p>
                   </div>
                 </div>
               )}
               {/* Local PiP */}
               {localStream && !isCameraOff && (
                 <motion.div drag dragConstraints={{ top: 60, bottom: -100, left: -60, right: 60 }}
-                  className="absolute top-20 right-4 w-28 h-40 rounded-xl overflow-hidden border-2 border-white shadow-lg z-10 cursor-grab">
+                  className="absolute top-20 right-4 w-32 h-48 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl z-10 cursor-grab active:cursor-grabbing backdrop-blur-md">
                   <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
                 </motion.div>
               )}
             </>
           )}
 
-          {/* Gradient overlays */}
-          <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/60 to-transparent pointer-events-none" />
-          <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
-
-          {/* Top bar */}
-          <AnimatePresence>
-            {showControls && (
-              <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
-                className="absolute top-0 inset-x-0 flex items-center justify-between px-5 pt-12 pb-4 z-20">
-                <div>
-                  <p className="text-white font-bold text-lg">{remote?.full_name}</p>
-                  <p className="text-green-400 text-sm font-mono">{stateLabel}</p>
-                </div>
-                <button onClick={() => setMinimized(true)} className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center">
-                  <FiMinimize2 size={16} className="text-white" />
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </>
+          {/* Gradient overlays for UI visibility */}
+          <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/70 to-transparent pointer-events-none" />
+          <div className="absolute inset-x-0 bottom-0 h-60 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
+        </div>
       ) : (
         /* ── AUDIO CALL LAYOUT ── */
-        <div className="flex-1 bg-gradient-to-b from-gray-900 via-gray-900 to-black flex flex-col items-center justify-center">
-          <div className="relative mb-8">
+        <div className="relative flex-1 z-10 flex flex-col items-center justify-center">
+          <div className="relative mb-10">
             {callState !== 'active' && [0, 1, 2].map(i => (
-              <motion.div key={i} className="absolute inset-0 rounded-full border border-green-400/30"
-                animate={{ scale: [1, 2.5], opacity: [0.5, 0] }}
-                transition={{ duration: 2, delay: i * 0.6, repeat: Infinity }} />
+              <motion.div key={i} className="absolute inset-0 rounded-full border-2 border-[#25D366]/40"
+                animate={{ scale: [1, 3], opacity: [0.6, 0] }}
+                transition={{ duration: 3, delay: i * 1, repeat: Infinity, ease: 'easeOut' }} />
             ))}
-            <div className="w-32 h-32 rounded-full bg-gradient-to-br from-green-400 to-teal-600 flex items-center justify-center text-white font-bold text-5xl overflow-hidden shadow-2xl">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="w-40 h-40 rounded-full bg-gradient-to-br from-[#25D366] to-[#075E54] flex items-center justify-center text-white font-bold text-6xl overflow-hidden shadow-[0_0_60px_rgba(37,211,102,0.4)] border-2 border-white/20 relative z-10"
+            >
               {remote?.avatar_url ? <img src={remote.avatar_url} alt="" className="w-full h-full object-cover" /> : avatarInitial}
-            </div>
+            </motion.div>
           </div>
-          <p className="text-white font-bold text-2xl mb-1">{remote?.full_name}</p>
+          <h2 className="text-white font-bold text-3xl mb-2 drop-shadow-md">{remote?.full_name}</h2>
           <motion.p animate={callState !== 'active' ? { opacity: [1, 0.4, 1] } : {}}
-            transition={{ repeat: Infinity, duration: 1.5 }} className="text-green-400 text-lg font-mono mb-2">
+            transition={{ repeat: Infinity, duration: 1.5 }} className="text-[#25D366] text-xl font-mono mb-4 drop-shadow-sm">
             {stateLabel}
           </motion.p>
-          <p className="text-gray-500 text-sm mb-2">VipChat {callType === 'video' ? 'Video' : 'Voice'} Call</p>
-          <div className="flex items-center gap-1.5 bg-gray-800/60 rounded-full px-3 py-1.5 mt-2">
-            <svg className="w-3 h-3 text-green-400" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-            </svg>
-            <span className="text-green-400 text-xs font-medium">End-to-end encrypted</span>
+          
+          <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md rounded-full px-4 py-2 mt-4 border border-white/10">
+            <FiLock size={14} className="text-[#25D366]" />
+            <span className="text-white/80 text-xs font-medium uppercase tracking-widest">End-to-end encrypted</span>
           </div>
+
+          {/* Connection Quality Indicator */}
+          {callState === 'active' && (
+             <div className="absolute top-14 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/30 backdrop-blur-sm border border-white/5">
+                <div className="flex gap-0.5 items-end h-3">
+                  <div className="w-1 h-1 bg-green-500 rounded-full" />
+                  <div className="w-1 h-2 bg-green-500 rounded-full" />
+                  <div className="w-1 h-3 bg-green-500 rounded-full" />
+                </div>
+                <span className="text-[10px] text-white/60 font-bold uppercase tracking-tighter">HD Secure</span>
+             </div>
+          )}
         </div>
       )}
 

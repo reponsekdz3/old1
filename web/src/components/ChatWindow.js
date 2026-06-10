@@ -411,6 +411,7 @@ const MessageBubble = memo(function MessageBubble({
           {/* Timestamp + status row */}
           <div className="flex items-center justify-end gap-1 mt-0.5">
             {isEdited && !isDeleted && <span className="text-[10px] text-gray-400">edited</span>}
+            {message.is_e2ee && isOwn && !isDeleted && <FiLock size={8} className="text-gray-400" title="End-to-end encrypted" />}
             <span className="text-[10px] text-gray-400">{format(new Date(message.created_at), 'HH:mm')}</span>
             {isOwn && !isDeleted && <Ticks status={message.status} />}
           </div>
@@ -495,7 +496,6 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
   const [showAttach, setShowAttach] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showWallpaper, setShowWallpaper] = useState(false);
-  const [contact, setContact] = useState(null);
   const [contactUser, setContactUser] = useState(null);
   const [loading, setLoading] = useState(false);
   const [replyTo, setReplyTo] = useState(null);
@@ -518,6 +518,33 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
   const typingTimeoutRef = useRef(null);
   const prevActiveChatRef = useRef(null);
 
+  // ── Mark all messages as read ──────────────────────────────────────────
+  useEffect(() => {
+    if (activeChat) loadContactInfo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChat]);
+
+  const [contact, setContact] = useState(null);
+
+  const loadContactInfo = async () => {
+    if (!activeChat) return;
+    try {
+      const { data } = await api.get(`/contacts/${activeChat}`);
+      setContact(data);
+      if (data.contact_info) setContactUser(data.contact_info);
+    } catch {
+      // Not in contacts — try fetching user directly
+      try {
+        const { data } = await api.get(`/auth/user/${activeChat}`).catch(() => ({ data: null }));
+        if (data) setContactUser(data);
+      } catch {}
+    }
+  };
+
+  const chatName = contact?.contact_name || contactUser?.full_name || 'Unknown';
+  const chatAvatar = contactUser?.avatar_url;
+  const isOnline = contactUser?.status === 'available';
+
   // ── Load chat on activeChat change ──────────────────────────────────────
   useEffect(() => {
     if (!activeChat || activeChat === prevActiveChatRef.current) return;
@@ -527,10 +554,25 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
     setReplyTo(null);
     setEditingMessage(null);
     loadChatHistory(1, true);
-    loadContactInfo();
     // Mark all messages as read
     api.put(`/messages/chat/${activeChat}/read-all`).catch(() => {});
   }, [activeChat]);
+
+  const loadChatHistory = async (pg = 1, reset = false) => {
+    if (!activeChat) return;
+    try {
+      if (pg === 1) setLoading(true);
+      const { data } = await api.get(`/messages/chat/${activeChat}?page=${pg}&per_page=50`);
+      const msgs = data.messages || [];
+      if (reset || pg === 1) setMessages(msgs);
+      else setMessages(prev => [...msgs, ...prev]);
+      setHasMore(data.has_prev);
+    } catch {
+      toast.error('Failed to load messages');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ── Socket: receive new messages ────────────────────────────────────────
   useEffect(() => {
@@ -607,37 +649,6 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const loadChatHistory = async (pg = 1, reset = false) => {
-    if (!activeChat) return;
-    try {
-      if (pg === 1) setLoading(true);
-      const { data } = await api.get(`/messages/chat/${activeChat}?page=${pg}&per_page=50`);
-      const msgs = data.messages || [];
-      if (reset || pg === 1) setMessages(msgs);
-      else setMessages(prev => [...msgs, ...prev]);
-      setHasMore(data.has_prev);
-    } catch {
-      toast.error('Failed to load messages');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadContactInfo = async () => {
-    if (!activeChat) return;
-    try {
-      const { data } = await api.get(`/contacts/${activeChat}`);
-      setContact(data);
-      if (data.contact_info) setContactUser(data.contact_info);
-    } catch {
-      // Not in contacts — try fetching user directly
-      try {
-        const { data } = await api.get(`/auth/user/${activeChat}`).catch(() => ({ data: null }));
-        if (data) setContactUser(data);
-      } catch {}
-    }
   };
 
   // ── Send message ─────────────────────────────────────────────────────────
@@ -824,9 +835,6 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
     setShowWallpaper(false);
   };
 
-  const chatName = contact?.contact_name || contactUser?.full_name || 'Unknown';
-  const chatAvatar = contactUser?.avatar_url;
-  const isOnline = contactUser?.status === 'available';
   const isTyping = typing[activeChat];
 
   // ── Group messages by date ───────────────────────────────────────────────
@@ -848,361 +856,336 @@ function ChatWindow({ socket, onStartCall, onContactInfoClick, onBack }) {
   if (!activeChat) {
     return (
       <div className="flex flex-col items-center justify-center h-full bg-[#f0f2f5]">
-        <div className="text-center">
-          <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
-            <FiMessageSquare size={40} className="text-gray-400" />
+        <div className="text-center px-8">
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="w-24 h-24 bg-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm border border-gray-100"
+          >
+            <FiMessageSquare size={40} className="text-[#25D366]" />
+          </motion.div>
+          <h2 className="text-3xl font-light text-gray-700 mb-3">VipChat Web</h2>
+          <p className="text-gray-500 text-sm mb-2 max-w-xs mx-auto">Select a chat to start messaging or start a new conversation with your contacts.</p>
+          <p className="text-gray-400 text-xs mb-8">Your personal messages are end-to-end encrypted.</p>
+          <div className="flex items-center justify-center gap-2 text-gray-400">
+            <FiLock size={12} className="text-green-500" />
+            <span className="text-xs">End-to-end encrypted</span>
           </div>
-          <h2 className="text-xl font-light text-gray-500 mb-2">VipChat Web</h2>
-          <p className="text-gray-400 text-sm max-w-xs">Select a chat to start messaging</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-[#e5ddd5] relative overflow-hidden">
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div className="bg-[#f0f2f5] border-b border-gray-200 px-3 py-2 flex items-center gap-3 flex-shrink-0">
+      <div className="bg-[#f0f2f5] border-b border-gray-200 px-3 py-2 flex items-center gap-3 flex-shrink-0 z-20 shadow-sm">
         {/* Back button (mobile) */}
-        <button onClick={onBack} className="md:hidden p-1.5 hover:bg-gray-200 rounded-full">
+        <button onClick={onBack} className="md:hidden p-1.5 hover:bg-gray-200 rounded-full transition">
           <FiArrowLeft size={20} className="text-gray-600" />
         </button>
 
         {/* Avatar */}
-        <button onClick={onContactInfoClick} className="flex-shrink-0">
-          <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-green-400 to-teal-500 flex items-center justify-center text-white font-bold text-sm">
+        <button onClick={onContactInfoClick} className="flex-shrink-0 relative">
+          <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-green-400 to-teal-500 flex items-center justify-center text-white font-bold text-sm shadow-sm">
             {chatAvatar
               ? <img src={chatAvatar} alt="" className="w-full h-full object-cover" />
               : (chatName?.[0]?.toUpperCase() || '?')}
           </div>
+          {isOnline && (
+            <div className="absolute bottom-0 right-0 w-3 h-3 bg-[#25D366] rounded-full border-2 border-[#f0f2f5]" />
+          )}
         </button>
 
         {/* Name + status */}
         <button className="flex-1 text-left min-w-0" onClick={onContactInfoClick}>
-          <h3 className="font-semibold text-gray-900 text-sm leading-tight truncate flex items-center gap-1">
+          <h3 className="font-semibold text-gray-900 text-[15px] leading-tight truncate flex items-center gap-1">
             {chatName}
             <VerifiedBadgeInline user={contactUser} size={13} />
           </h3>
-          <p className="text-xs text-gray-500 leading-tight">
-            {isTyping ? <span className="text-[#25D366] font-medium">typing...</span>
-              : isOnline ? 'online'
-              : contactUser?.last_seen
-                ? `last seen ${format(new Date(contactUser.last_seen), 'HH:mm')}`
-                : 'offline'}
-          </p>
+          <div className="h-4 overflow-hidden">
+            <AnimatePresence mode="wait">
+              {isTyping ? (
+                <motion.span
+                  key="typing"
+                  initial={{ y: 10, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: -10, opacity: 0 }}
+                  className="text-[11px] text-[#25D366] font-medium block"
+                >
+                  typing...
+                </motion.span>
+              ) : (
+                <motion.span
+                  key="status"
+                  initial={{ y: 10, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: -10, opacity: 0 }}
+                  className="text-[11px] text-gray-500 block"
+                >
+                  {isOnline ? 'online'
+                    : contactUser?.last_seen
+                      ? `last seen ${format(new Date(contactUser.last_seen), 'HH:mm')}`
+                      : 'offline'}
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </div>
         </button>
 
         {/* Action buttons */}
         <div className="flex items-center gap-0.5">
-          <button onClick={() => onStartCall?.({ id: activeChat, full_name: chatName, avatar_url: chatAvatar }, 'video')}
-            className="p-2 hover:bg-gray-200 rounded-full transition" title="Video call">
-            <FiVideo size={20} className="text-gray-600" />
+          <button onClick={() => setShowSearch(v => !v)} className="p-2 hover:bg-gray-200 rounded-full transition text-gray-500">
+            <FiSearch size={20} />
           </button>
           <button onClick={() => onStartCall?.({ id: activeChat, full_name: chatName, avatar_url: chatAvatar }, 'audio')}
-            className="p-2 hover:bg-gray-200 rounded-full transition" title="Voice call">
-            <FiPhone size={20} className="text-gray-600" />
+            className="p-2 hover:bg-gray-200 rounded-full transition text-gray-500" title="Voice call">
+            <FiPhone size={19} />
           </button>
-          <button onClick={() => setShowSearch(v => !v)}
-            className="p-2 hover:bg-gray-200 rounded-full transition" title="Search">
-            <FiSearch size={20} className="text-gray-600" />
+          <button onClick={() => onStartCall?.({ id: activeChat, full_name: chatName, avatar_url: chatAvatar }, 'video')}
+            className="p-2 hover:bg-gray-200 rounded-full transition text-gray-500" title="Video call">
+            <FiVideo size={20} />
           </button>
-          <div className="relative">
-            <button onClick={() => setShowWallpaper(v => !v)}
-              className="p-2 hover:bg-gray-200 rounded-full transition" title="More options">
-              <FiMoreVertical size={20} className="text-gray-600" />
-            </button>
-            <AnimatePresence>
-              {showWallpaper && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9, y: -8 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  className="absolute top-10 right-0 bg-white rounded-xl shadow-2xl w-56 z-50 border border-gray-100 overflow-hidden"
-                >
-                  <div className="px-4 py-2 border-b text-xs font-semibold text-gray-500 uppercase tracking-wide">Chat Background</div>
-                  <div className="p-2 grid grid-cols-3 gap-2">
-                    {WALLPAPERS.map(w => (
-                      <button key={w.id} onClick={() => applyWallpaper(w)}
-                        className="flex flex-col items-center gap-1 p-1 rounded-lg hover:bg-gray-50">
-                        <div className="w-12 h-12 rounded-lg border border-gray-200" style={{ backgroundColor: w.preview }} />
-                        <span className="text-[10px] text-gray-600">{w.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <button onClick={onContactInfoClick}
-                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-sm text-gray-700 border-t">
-                    <FiInfo size={15} /> Contact info
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+          <button onClick={onContactInfoClick} className="p-2 hover:bg-gray-200 rounded-full transition text-gray-500">
+            <FiMoreVertical size={20} />
+          </button>
         </div>
       </div>
 
-      {/* ── Search bar ──────────────────────────────────────────────────── */}
+      {/* Search Bar Overlay */}
       <AnimatePresence>
         {showSearch && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="bg-white border-b px-4 py-2 overflow-hidden"
+            initial={{ y: -60, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -60, opacity: 0 }}
+            className="absolute top-0 inset-x-0 bg-[#f0f2f5] z-30 px-4 py-2 flex items-center gap-3 border-b border-gray-200 shadow-md"
           >
-            <div className="flex items-center gap-2 bg-gray-100 rounded-full px-3 py-1.5">
-              <FiSearch size={16} className="text-gray-400" />
-              <input
-                autoFocus
-                type="text"
-                value={searchQuery}
-                onChange={e => handleSearch(e.target.value)}
-                placeholder="Search in conversation..."
-                className="flex-1 bg-transparent text-sm outline-none"
-              />
-              {searchQuery && (
-                <button onClick={() => { setSearchQuery(''); setSearchResults([]); }}>
-                  <FiX size={16} className="text-gray-400" />
-                </button>
-              )}
-            </div>
-            {searchResults.length > 0 && (
-              <div className="mt-2 max-h-40 overflow-y-auto">
-                {searchResults.map(m => (
-                  <div key={m.id} className="px-2 py-1.5 hover:bg-gray-50 rounded-lg cursor-pointer text-sm text-gray-700 truncate">
-                    <span className="text-[10px] text-gray-400 block">{format(new Date(m.created_at), 'MMM d, HH:mm')}</span>
-                    {m.content}
-                  </div>
-                ))}
-              </div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Messages area ───────────────────────────────────────────────── */}
-      <div
-        ref={messagesContainerRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-2"
-        style={bgStyle}
-      >
-        {/* Whatsapp-style background pattern overlay */}
-        {!wallpaper && (
-          <div className="absolute inset-0 pointer-events-none opacity-5"
-            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath d='M30 5C16.2 5 5 16.2 5 30s11.2 25 25 25 25-11.2 25-25S43.8 5 30 5zm0 45C18.4 50 10 41.6 10 30S18.4 10 30 10s20 8.4 20 20-8.4 20-20 20zm0-36c-8.8 0-16 7.2-16 16s7.2 16 16 16 16-7.2 16-16-7.2-16-16-16z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` }}
-          />
-        )}
-
-        {loading && page === 1 && (
-          <div className="flex justify-center py-8">
-            <div className="w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
-          </div>
-        )}
-
-        {hasMore && !loading && (
-          <div className="flex justify-center py-2">
-            <button onClick={() => { const next = page + 1; setPage(next); loadChatHistory(next, false); }}
-              className="text-xs text-gray-500 bg-white/80 px-3 py-1 rounded-full shadow flex items-center gap-1">
-              <FiRefreshCw size={10} /> Load older messages
-            </button>
-          </div>
-        )}
-
-        {groupedMessages.length === 0 && !loading && (
-          <div className="flex flex-col items-center justify-center h-full">
-            <div className="bg-white/80 backdrop-blur px-6 py-4 rounded-2xl text-center shadow-sm">
-              <FiLock size={20} className="mx-auto mb-2 text-gray-400" style={{}} />
-              <p className="text-xs text-gray-500 max-w-[220px]">
-                Messages are end-to-end secured. Tap to start a conversation!
-              </p>
-            </div>
-          </div>
-        )}
-
-        {groupedMessages.map(item => {
-          if (item.type === 'date') return <DateSeparator key={item.id} date={item.date} />;
-          const msg = item.message;
-          const isOwn = msg.sender_id === user.id;
-          return (
-            <MessageBubble
-              key={item.id}
-              message={msg}
-              isOwn={isOwn}
-              contactName={!isOwn ? chatName : null}
-              onReply={setReplyTo}
-              onEdit={m => { setEditingMessage(m); setMessageText(m.content || ''); inputRef.current?.focus(); }}
-              onDelete={handleDelete}
-              onForward={setForwardMessage}
-              onStar={handleStar}
-              onReact={handleReact}
-              onImageClick={setImageViewer}
+            <FiSearch size={18} className="text-gray-400" />
+            <input
+              autoFocus
+              type="text"
+              placeholder="Search in chat..."
+              value={searchQuery}
+              onChange={(e) => handleSearch(e.target.value)}
+              className="flex-1 bg-white rounded-lg px-3 py-1.5 text-sm focus:outline-none"
             />
-          );
-        })}
-        <div ref={messagesEndRef} className="h-2" />
-      </div>
-
-      {/* ── Reply / Edit preview bar ─────────────────────────────────────── */}
-      <AnimatePresence>
-        {(replyTo || editingMessage) && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="bg-[#f0f2f5] border-t border-gray-200 px-4 py-2 flex items-center gap-3"
-          >
-            <div className={`flex-1 border-l-4 pl-3 py-1 rounded-r ${editingMessage ? 'border-orange-400' : 'border-[#25D366]'}`}>
-              <p className="text-xs font-semibold text-[#128C7E]">
-                {editingMessage ? 'Editing message' : `Reply to ${replyTo?.sender_id === user.id ? 'Yourself' : chatName}`}
-              </p>
-              <p className="text-xs text-gray-600 truncate">
-                {editingMessage ? editingMessage.content : (replyTo?.media_type ? `[${replyTo.media_type}]` : replyTo?.content)}
-              </p>
-            </div>
-            <button onClick={() => { setReplyTo(null); setEditingMessage(null); setMessageText(''); }}>
-              <FiX size={18} className="text-gray-500 hover:text-gray-700" />
+            <button onClick={() => { setShowSearch(false); setSearchQuery(''); }} className="text-gray-500 p-1 hover:bg-gray-200 rounded-full transition">
+              <FiX size={18} />
             </button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── Input bar ──────────────────────────────────────────────────────── */}
-      <div className="bg-[#f0f2f5] px-2 py-2 flex items-end gap-2 flex-shrink-0">
-        {/* Emoji */}
-        <div className="relative">
-          <button onClick={() => setShowEmoji(v => !v)}
-            className="p-2.5 text-gray-500 hover:bg-gray-200 rounded-full transition flex-shrink-0">
-            <FiSmile size={22} />
-          </button>
+      <div className="relative flex-1 flex flex-col min-h-0 overflow-hidden">
+        {/* Messages area */}
+        <div
+          ref={messagesContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto px-4 py-2"
+          style={bgStyle}
+        >
+          {/* Whatsapp-style background pattern overlay */}
+          {!wallpaper && (
+            <div className="absolute inset-0 pointer-events-none opacity-5"
+              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath d='M30 5C16.2 5 5 16.2 5 30s11.2 25 25 25 25-11.2 25-25S43.8 5 30 5zm0 45C18.4 50 10 41.6 10 30S18.4 10 30 10s20 8.4 20 20-8.4 20-20 20zm0-36c-8.8 0-16 7.2-16 16s7.2 16 16 16 16-7.2 16-16-7.2-16-16-16z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` }}
+            />
+          )}
+
+          {loading && page === 1 && (
+            <div className="flex justify-center py-8">
+              <div className="w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+
+          {hasMore && !loading && (
+            <div className="flex justify-center py-2">
+              <button onClick={() => { const next = page + 1; setPage(next); loadChatHistory(next, false); }}
+                className="text-xs text-gray-500 bg-white/80 px-3 py-1 rounded-full shadow flex items-center gap-1">
+                <FiRefreshCw size={10} /> Load older messages
+              </button>
+            </div>
+          )}
+
+          {groupedMessages.length === 0 && !loading && (
+            <div className="flex flex-col items-center justify-center h-full">
+              <div className="bg-white/80 backdrop-blur px-6 py-4 rounded-2xl text-center shadow-sm">
+                <FiLock size={20} className="mx-auto mb-2 text-gray-400" />
+                <p className="text-xs text-gray-500 max-w-[220px]">
+                  Messages are end-to-end secured. Tap to start a conversation!
+                </p>
+              </div>
+            </div>
+          )}
+
+          {groupedMessages.map(item => {
+            if (item.type === 'date') return <DateSeparator key={item.id} date={item.date} />;
+            const msg = item.message;
+            const isOwn = msg.sender_id === user.id;
+            return (
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                isOwn={isOwn}
+                contactName={!isOwn ? chatName : null}
+                onReply={setReplyTo}
+                onEdit={setEditingMessage}
+                onDelete={handleDelete}
+                onForward={setForwardMessage}
+                onStar={handleStar}
+                onReact={handleReact}
+                onImageClick={setImageViewer}
+              />
+            );
+          })}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input area */}
+        <div className="bg-[#f0f2f5] p-2 flex-shrink-0 relative z-10 border-t border-gray-200">
           <AnimatePresence>
-            {showEmoji && (
+            {replyTo && (
               <motion.div
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 16 }}
-                className="absolute bottom-14 left-0 z-30 shadow-2xl rounded-2xl overflow-hidden"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="bg-white/60 backdrop-blur-md rounded-t-xl mb-1 p-2 border-l-4 border-[#25D366] flex items-center justify-between"
               >
-                <EmojiPicker onEmojiSelect={emoji => { setMessageText(t => t + emoji); inputRef.current?.focus(); }} />
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold text-[#25D366]">Replying to</p>
+                  <p className="text-xs text-gray-500 truncate">{replyTo.content || '[Media]'}</p>
+                </div>
+                <button onClick={() => setReplyTo(null)} className="p-1 hover:bg-gray-200 rounded-full">
+                  <FiX size={14} />
+                </button>
+              </motion.div>
+            )}
+            {editingMessage && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="bg-white/60 backdrop-blur-md rounded-t-xl mb-1 p-2 border-l-4 border-orange-500 flex items-center justify-between"
+              >
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold text-orange-500">Editing message</p>
+                  <p className="text-xs text-gray-500 truncate">{editingMessage.content}</p>
+                </div>
+                <button onClick={() => { setEditingMessage(null); setMessageText(''); }} className="p-1 hover:bg-gray-200 rounded-full">
+                  <FiX size={14} />
+                </button>
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
 
-        {/* Attachment */}
-        <div className="relative flex-shrink-0">
-          <button onClick={() => setShowAttach(v => !v)}
-            className="p-2.5 text-gray-500 hover:bg-gray-200 rounded-full transition">
-            <FiPaperclip size={22} />
-          </button>
-          <AnimatePresence>
-            {showAttach && (
-              <AttachMenu
-                onAttach={handleAttach}
-                onLocation={() => setShowLocationShare(true)}
-                onContactSend={() => toast('Contact sharing coming soon')}
-                onClose={() => setShowAttach(false)}
+          <form onSubmit={sendMessage} className="flex items-center gap-1.5">
+            <div className="flex items-center">
+              <button type="button" onClick={() => setShowEmoji(v => !v)} className={`p-2 rounded-full transition ${showEmoji ? 'bg-gray-200 text-[#25D366]' : 'text-gray-500 hover:bg-gray-200'}`}>
+                <FiSmile size={24} />
+              </button>
+              <div className="relative">
+                <button type="button" onClick={() => setShowAttach(v => !v)} className={`p-2 rounded-full transition ${showAttach ? 'bg-gray-200 text-[#25D366] rotate-45' : 'text-gray-500 hover:bg-gray-200'}`}>
+                  <FiPaperclip size={24} />
+                </button>
+                <AnimatePresence>
+                  {showAttach && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowAttach(false)} />
+                      <AttachMenu
+                        onAttach={handleAttach}
+                        onLocation={() => setShowLocationShare(true)}
+                        onContactSend={() => toast('Select contact feature coming soon')}
+                        onClose={() => setShowAttach(false)}
+                      />
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+
+            <div className="flex-1 bg-white rounded-xl flex items-center px-3 min-h-[44px] shadow-sm border border-gray-100">
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder="Type a message"
+                className="w-full py-2 bg-transparent outline-none text-[15px]"
+                value={messageText}
+                onChange={(e) => {
+                  setMessageText(e.target.value);
+                  handleTyping();
+                }}
               />
+            </div>
+
+            {messageText.trim() || editingMessage ? (
+              <button type="submit" className="w-11 h-11 bg-[#25D366] text-white rounded-full flex items-center justify-center shadow-lg hover:bg-[#1fbd5a] transition active:scale-95">
+                <FiSend size={20} className="ml-0.5" />
+              </button>
+            ) : (
+              <VoiceRecorder onFinished={(blob) => handleAttach(blob, 'voice')} />
             )}
-          </AnimatePresence>
+          </form>
         </div>
-
-        {/* Text input */}
-        <div className="flex-1 bg-white rounded-3xl px-4 py-2.5 min-h-[44px] max-h-32 overflow-y-auto shadow-sm">
-          <textarea
-            ref={inputRef}
-            value={messageText}
-            onChange={e => { setMessageText(e.target.value); handleTyping(); }}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-            placeholder={editingMessage ? 'Edit message...' : 'Type a message'}
-            className="w-full bg-transparent text-sm text-gray-800 outline-none resize-none leading-5"
-            rows={1}
-            style={{ height: 'auto' }}
-            onInput={e => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
-          />
-        </div>
-
-        {/* Send / Voice */}
-        {messageText.trim() ? (
-          <button onClick={sendMessage}
-            className="w-11 h-11 bg-[#25D366] hover:bg-[#1fbd5a] text-white rounded-full flex items-center justify-center flex-shrink-0 shadow transition">
-            <FiSend size={18} />
-          </button>
-        ) : (
-          <VoiceRecorder
-            receiverId={activeChat}
-            onSent={msg => { addMessage(msg); scrollToBottom(); }}
-            socket={socket}
-          />
-        )}
       </div>
 
-      {/* ── Uploading indicator ──────────────────────────────────────────── */}
-      {uploadingFile && (
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-black/70 text-white text-sm px-4 py-2 rounded-full z-40 flex items-center gap-2">
-          <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          Uploading...
-        </div>
-      )}
+      {/* Overlays */}
+      <AnimatePresence>
+        {showEmoji && (
+          <motion.div
+            initial={{ y: 200, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 200, opacity: 0 }}
+            className="bg-white border-t z-20"
+          >
+            <EmojiPicker onEmojiSelect={(emoji) => {
+              setMessageText(prev => prev + emoji);
+              setShowEmoji(false);
+              inputRef.current?.focus();
+            }} />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* ── Location share overlay ──────────────────────────────────────── */}
-      {showLocationShare && (
-        <div className="absolute inset-0 z-50 bg-black/50 flex items-end">
-          <div className="w-full bg-white rounded-t-3xl p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold">Share Location</h3>
-              <button onClick={() => setShowLocationShare(false)}><FiX size={20} /></button>
-            </div>
-            <LocationShare
-              receiverId={activeChat}
-              onSent={msg => { addMessage(msg); setShowLocationShare(false); scrollToBottom(); }}
-              socket={socket}
-            />
+      <AnimatePresence>
+        {pendingAttachment && (
+          <AttachmentPreviewModal
+            attachment={pendingAttachment}
+            onClose={() => setPendingAttachment(null)}
+            onSend={handleSendAttachment}
+          />
+        )}
+      </AnimatePresence>
+
+      {imageViewer && (
+        <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+          <div className="p-4 flex justify-end">
+            <button onClick={() => setImageViewer(null)} className="p-2 bg-white/10 hover:bg-white/20 rounded-full text-white">
+              <FiX size={24} />
+            </button>
+          </div>
+          <div className="flex-1 flex items-center justify-center p-4">
+            <img src={imageViewer} alt="" className="max-w-full max-h-full object-contain shadow-2xl" />
           </div>
         </div>
       )}
 
-      {/* ── Forward modal ────────────────────────────────────────────────── */}
-      {forwardMessage && (
-        <ForwardModal
-          message={forwardMessage}
-          onClose={() => setForwardMessage(null)}
-          socket={socket}
+      {showLocationShare && (
+        <LocationShare
+          onClose={() => setShowLocationShare(false)}
+          onSend={(loc) => {
+            api.post(`/messages/${activeChat}`, {
+              media_type: 'location',
+              latitude: loc.lat,
+              longitude: loc.lng,
+              location_name: loc.name,
+            }).then(({ data }) => {
+              addMessage(data);
+              setShowLocationShare(false);
+              scrollToBottom();
+            });
+          }}
         />
       )}
-
-      {/* ── Attachment preview before send ──────────────────────────────── */}
-      {pendingAttachment && (
-        <AttachmentPreviewModal
-          file={pendingAttachment.file}
-          uploading={uploadingFile}
-          onSend={handleSendAttachment}
-          onCancel={() => setPendingAttachment(null)}
-        />
-      )}
-
-      {/* ── Image viewer ─────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {imageViewer && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/95 flex flex-col"
-            onClick={() => setImageViewer(null)}
-          >
-            <div className="flex items-center justify-between p-4">
-              <button onClick={() => setImageViewer(null)} className="text-white"><FiX size={24} /></button>
-              <a href={imageViewer} download target="_blank" rel="noopener noreferrer"
-                className="text-white" onClick={e => e.stopPropagation()}>
-                <FiDownload size={22} />
-              </a>
-            </div>
-            <div className="flex-1 flex items-center justify-center p-4" onClick={e => e.stopPropagation()}>
-              <img src={imageViewer} alt="" className="max-w-full max-h-full object-contain rounded-lg" />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

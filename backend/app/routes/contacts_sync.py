@@ -49,6 +49,7 @@ def sync_phone_contacts():
     registered_list = []
     
     for user in registered_users:
+        if user.id == user_id: continue # Don't add yourself
         norm_phone = normalize_phone(user.phone_number)
         registered_phones.add(norm_phone)
         
@@ -64,7 +65,7 @@ def sync_phone_contacts():
                 user_id=user_id,
                 phone_number=user.phone_number,
                 contact_user_id=user.id,
-                contact_name=user.full_name
+                contact_name=user.full_name or user.username
             )
             db.session.add(contact)
         
@@ -75,13 +76,15 @@ def sync_phone_contacts():
             'avatar_url': user.avatar_url,
             'bio': user.bio,
             'status': user.status,
-            'badge_verified': user.badge_verified
+            'badge_verified': user.badge_verified,
+            'is_new': not existing_contact
         })
     
     try:
         db.session.commit()
-    except Exception:
+    except Exception as e:
         db.session.rollback()
+        logger.error(f"Failed to auto-add contacts: {e}")
     
     # Unregistered numbers
     unregistered = [

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FiCheck, FiZap, FiShield, FiArrowLeft, FiX, FiRefreshCw,
-  FiGlobe, FiLock, FiAward, FiRepeat,
+  FiGlobe, FiLock, FiAward, FiRepeat, FiKey, FiCopy, FiAlertTriangle, FiTrash2,
 } from 'react-icons/fi';
 import api from '../services/api';
 import toast from 'react-hot-toast';
@@ -304,6 +304,147 @@ function PaymentModal({ plan, onClose, onSuccess }) {
   );
 }
 
+function ApiKeyManagement() {
+  const [keys, setKeys] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [newKey, setNewKey] = useState(null);
+
+  const loadKeys = async () => {
+    try {
+      const { data } = await api.get('/api/billing/keys');
+      setKeys(data.keys || []);
+    } catch (err) {
+      console.error('Failed to load API keys', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadKeys(); }, []);
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    try {
+      const { data } = await api.post('/api/billing/generate-key', { name: `Key ${keys.length + 1}` });
+      setNewKey(data.key);
+      loadKeys();
+      toast.success('API Key generated!');
+    } catch (err) {
+      toast.error('Failed to generate key');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleRevoke = async (id) => {
+    if (!window.confirm('Are you sure you want to revoke this key? This cannot be undone.')) return;
+    try {
+      await api.post(`/api/billing/revoke-key/${id}`);
+      toast.success('Key revoked');
+      loadKeys();
+    } catch (err) {
+      toast.error('Failed to revoke key');
+    }
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    toast.success('Copied to clipboard!');
+  };
+
+  return (
+    <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6 mb-10">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h3 className="text-lg font-bold text-gray-900">API Key Management</h3>
+          <p className="text-sm text-gray-500">Manage your keys for the VipChat API</p>
+        </div>
+        <button
+          onClick={handleGenerate}
+          disabled={generating}
+          className="flex items-center gap-2 px-4 py-2 bg-[#075E54] hover:bg-[#054d46] disabled:bg-gray-200 text-white rounded-xl text-sm font-bold transition shadow-md"
+        >
+          {generating ? <FiRefreshCw className="animate-spin" /> : <FiKey />}
+          Generate New Key
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {newKey && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="mb-6 overflow-hidden"
+          >
+            <div className="bg-amber-50 border-2 border-amber-100 rounded-2xl p-4">
+              <div className="flex items-center gap-2 text-amber-800 mb-2">
+                <FiAlertTriangle size={16} />
+                <p className="text-sm font-bold">Copy your new API key now</p>
+              </div>
+              <p className="text-xs text-amber-700 mb-4">For security reasons, we cannot show this key again. Save it somewhere safe!</p>
+              <div className="flex gap-2">
+                <code className="flex-1 bg-white border border-amber-200 rounded-xl px-4 py-3 font-mono text-sm break-all text-gray-800">
+                  {newKey}
+                </code>
+                <button
+                  onClick={() => copyToClipboard(newKey)}
+                  className="p-3 bg-amber-200 hover:bg-amber-300 text-amber-900 rounded-xl transition"
+                >
+                  <FiCopy size={20} />
+                </button>
+                <button
+                  onClick={() => setNewKey(null)}
+                  className="p-3 bg-white border border-amber-200 text-gray-400 hover:text-gray-600 rounded-xl transition"
+                >
+                  <FiX size={20} />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-50">
+              <th className="text-left text-gray-400 font-semibold pb-3 pr-4">Name</th>
+              <th className="text-left text-gray-400 font-semibold pb-3 px-4">Key</th>
+              <th className="text-left text-gray-400 font-semibold pb-3 px-4">Created</th>
+              <th className="text-left text-gray-400 font-semibold pb-3 px-4">Requests</th>
+              <th className="text-right text-gray-400 font-semibold pb-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {keys.map(k => (
+              <tr key={k.id}>
+                <td className="py-4 pr-4 font-bold text-gray-800">{k.name}</td>
+                <td className="py-4 px-4">
+                  <code className="bg-gray-50 text-gray-500 px-2 py-1 rounded text-xs font-mono">{k.masked_key}</code>
+                </td>
+                <td className="py-4 px-4 text-gray-500 text-xs">{new Date(k.created_at).toLocaleDateString()}</td>
+                <td className="py-4 px-4 text-gray-500 text-xs font-mono">{k.request_count}</td>
+                <td className="py-4 text-right">
+                  <button onClick={() => handleRevoke(k.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition">
+                    <FiTrash2 size={16} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {!loading && keys.length === 0 && (
+              <tr>
+                <td colSpan="5" className="py-10 text-center text-gray-400 italic">No API keys generated yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function SubscriptionPage({ onBack }) {
   const [current, setCurrent] = useState(null);
   const [loading] = useState(false);
@@ -439,6 +580,9 @@ export default function SubscriptionPage({ onBack }) {
             </tbody>
           </table>
         </div>
+
+        {/* API Key Management */}
+        <ApiKeyManagement />
 
         {/* API Plans */}
         <div className="mb-10">

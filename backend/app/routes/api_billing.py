@@ -9,11 +9,40 @@ from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, 
 from sqlalchemy.orm import relationship
 import uuid
 import logging
+import secrets
+import hashlib
 
 logger = logging.getLogger(__name__)
 api_billing_bp = Blueprint('api_billing', __name__, url_prefix='/api/billing')
 
 # ── Models ─────────────────────────────────────────────────────────────────────
+
+class ApiKey(db.Model):
+    __tablename__ = 'api_keys'
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey('users.id'), nullable=False)
+    key_hash = Column(String(255), nullable=False, unique=True)
+    key_prefix = Column(String(10), nullable=False) # e.g. sk_live_
+    name = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_used = Column(DateTime, nullable=True)
+    request_count = Column(Integer, default=0)
+    status = Column(String(20), default='active') # active | revoked
+
+    user = relationship('User', foreign_keys=[user_id])
+
+    def to_dict(self, show_key=False):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'key_prefix': self.key_prefix,
+            'masked_key': f"{self.key_prefix}***{self.key_hash[-4:]}",
+            'name': self.name,
+            'created_at': self.created_at.isoformat(),
+            'last_used': self.last_used.isoformat() if self.last_used else None,
+            'request_count': self.request_count,
+            'status': self.status,
+        }
 
 class ApiSubscription(db.Model):
     __tablename__ = 'api_subscriptions'
@@ -401,3 +430,51 @@ def stripe_billing_webhook():
         logger.exception(f'Billing webhook error: {e}')
 
     return jsonify({'received': True}), 200
+
+
+@api_billing_bp.route('/keys', methods=['GET'])
+@jwt_required()
+def get_api_keys():
+    user_id = get_jwt_identity()
+    keys = ApiKey.query.filter_by(user_id=user_id, status='active').all()
+    return jsonify({'keys': [k.to_dict() for k in keys]}), 200
+
+
+@api_billing_bp.route('/generate-key', methods=['POST'])
+@jwt_required()
+def generate_api_key():
+    user_id = get_jwt_identity()
+    data = request.get_json() or {}
+    name = data.get('name', 'Default Key')
+
+    # Generate secure key
+    key_raw = f"sk_live_{secrets.token_urlsafe(32)}"
+    key_hash = hashlib.sha256(key_raw.encode()).hexdigest()
+
+    new_key = ApiKey(
+        user_id=user_id,
+        key_hash=key_hash,
+        key_prefix="sk_live_",
+        name=name
+    )
+    db.session.add(new_key)
+    db.session.commit()
+
+    return jsonify({
+        'message': 'API key generated successfully. Save it now, it will not be shown again!',
+        'key': key_raw,
+        'key_info': new_key.to_dict()
+    }), 201
+
+
+@api_billing_bp.route('/revoke-key/<key_id>', methods=['POST'])
+@jwt_required()
+def revoke_api_key(key_id):
+    user_id = get_jwt_identity()
+    key = ApiKey.query.filter_by(id=key_id, user_id=user_id).first()
+    if not key:
+        return jsonify({'error': 'Key not found'}), 404
+
+    key.status = 'revoked'
+    db.session.commit()
+    return jsonify({'message': 'Key revoked successfully'}), 200

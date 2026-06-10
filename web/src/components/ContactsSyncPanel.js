@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   FiUsers, FiRefreshCw, FiPlus, FiSearch, FiPhone,
-  FiCheck, FiX, FiUpload, FiInfo, FiUserPlus,
+  FiCheck, FiX, FiUpload, FiInfo, FiUserPlus, FiFileText,
 } from 'react-icons/fi';
 import api from '../services/api';
 import toast from 'react-hot-toast';
@@ -38,14 +38,41 @@ function ContactsSyncPanel() {
   const handleAutoSync = async () => {
     setSyncing(true);
     try {
-      const { data } = await api.post('/api/contacts/auto-sync-on-register');
-      toast.success(data.message || `Sync complete — ${data.contacts_added || 0} contacts added`);
+      // Use the proper endpoint that auto-adds contacts
+      const { data } = await api.post('/api/contacts/sync-phone', { phone_numbers: [] }); 
+      toast.success(data.message || `Sync complete — ${data.registered_count || 0} contacts added`);
       await loadStats();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Sync failed');
     } finally {
       setSyncing(false);
     }
+  };
+
+  const handleCsvImport = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target.result;
+      const phones = text.split(/[\n,;]+/).map(p => p.trim()).filter(p => p.length > 5);
+      if (phones.length === 0) {
+        toast.error('No valid phone numbers found in CSV');
+        return;
+      }
+      setBulkLoading(true);
+      try {
+        const { data } = await api.post('/api/contacts/sync-phone', { phone_numbers: phones });
+        setBulkResult(data);
+        toast.success(`Imported ${data.registered_count} contacts!`);
+        await loadStats();
+      } catch (err) {
+        toast.error('Import failed');
+      } finally {
+        setBulkLoading(false);
+      }
+    };
+    reader.readAsText(file);
   };
 
   const handleBulkAdd = async () => {
@@ -231,10 +258,17 @@ function ContactsSyncPanel() {
 
       {/* Bulk import */}
       <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-        <h3 className="font-semibold text-gray-900 text-sm mb-2 flex items-center gap-2">
-          <FiUpload size={14} className="text-gray-400"/>
-          Bulk Import Phone Numbers
-        </h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
+            <FiUpload size={14} className="text-gray-400"/>
+            Bulk Import
+          </h3>
+          <label className="cursor-pointer text-xs font-bold text-[#075E54] hover:underline flex items-center gap-1">
+            <FiFileText size={12}/>
+            Import CSV
+            <input type="file" accept=".csv,.txt" className="hidden" onChange={handleCsvImport} />
+          </label>
+        </div>
         <p className="text-xs text-gray-500 mb-3">
           Paste a list of phone numbers (one per line, or comma-separated) to find and add VipChat users in bulk.
         </p>
