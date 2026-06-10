@@ -1,294 +1,305 @@
-version: '3.8'
-
-# VipChat - Production Infrastructure for 2 Billion+ Users
-# Multi-region deployment with automatic scaling
+version: '3.9'
 
 services:
-  # ══════════════════════════════════════════════════════════════════════════
-  # Load Balancers (HAProxy)
-  # ══════════════════════════════════════════════════════════════════════════
-  
-  load-balancer-primary:
-    image: haproxy:2.8-alpine
-    container_name: vipchat-lb-primary
+  # MySQL Primary Database
+  mysql-primary:
+    image: mysql:8.0
+    container_name: vipchat-mysql-primary
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-vipchat}
+      MYSQL_USER: ${MYSQL_USER:-vipchat}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_REPLICATION_MODE: master
+      MYSQL_REPLICATION_USER: repl_user
+      MYSQL_REPLICATION_PASSWORD: ${MYSQL_REPLICATION_PASSWORD}
+    volumes:
+      - mysql_primary_data:/var/lib/mysql
+      - ./mysql-primary.cnf:/etc/mysql/conf.d/custom.cnf:ro
+    ports:
+      - "3306:3306"
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --max-connections=1000 --innodb-buffer-pool-size=2G
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vipchat-production
+
+  # Redis Master
+  redis-master:
+    image: redis:7-alpine
+    container_name: vipchat-redis-master
+    restart: always
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 2gb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_master_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vipchat-production
+
+  # Redis Replica
+  redis-replica:
+    image: redis:7-alpine
+    container_name: vipchat-redis-replica
+    restart: always
+    command: >
+      redis-server
+      --replicaof redis-master 6379
+      --masterauth ${REDIS_PASSWORD}
+      --requirepass ${REDIS_PASSWORD}
+    depends_on:
+      - redis-master
+    networks:
+      - vipchat-production
+
+  # Backend - Multiple Instances
+  backend-1:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vipchat-backend-1
+    restart: always
+    environment:
+      INSTANCE_ID: backend-1
+      MYSQL_HOST: mysql-primary
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-vipchat}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-vipchat}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis-master:6379/0
+      SECRET_KEY: ${SECRET_KEY}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET}
+      FLUTTERWAVE_SECRET_KEY: ${FLUTTERWAVE_SECRET_KEY}
+      AFRICAN_TALKING_API_KEY: ${AFRICAN_TALKING_API_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      FLASK_ENV: production
+    volumes:
+      - uploads_shared:/app/uploads
+      - logs_backend_1:/app/logs
+    depends_on:
+      mysql-primary:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    networks:
+      - vipchat-production
+
+  backend-2:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vipchat-backend-2
+    restart: always
+    environment:
+      INSTANCE_ID: backend-2
+      MYSQL_HOST: mysql-primary
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-vipchat}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-vipchat}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis-master:6379/0
+      SECRET_KEY: ${SECRET_KEY}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET}
+      FLUTTERWAVE_SECRET_KEY: ${FLUTTERWAVE_SECRET_KEY}
+      AFRICAN_TALKING_API_KEY: ${AFRICAN_TALKING_API_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      FLASK_ENV: production
+    volumes:
+      - uploads_shared:/app/uploads
+      - logs_backend_2:/app/logs
+    depends_on:
+      mysql-primary:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    networks:
+      - vipchat-production
+
+  # Frontend
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: vipchat-frontend
+    restart: always
+    depends_on:
+      - backend-1
+      - backend-2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    networks:
+      - vipchat-production
+
+  # Nginx Load Balancer
+  nginx:
+    image: nginx:alpine
+    container_name: vipchat-nginx-lb
+    restart: always
     ports:
       - "80:80"
       - "443:443"
-      - "8404:8404"  # Stats
     volumes:
-      - ./infrastructure/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
-      - ./infrastructure/ssl:/etc/ssl/certs:ro
+      - ./nginx-production.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - nginx_cache:/var/cache/nginx
+    depends_on:
+      - frontend
+      - backend-1
+      - backend-2
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
-      - vipchat-net
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '4'
-          memory: 8G
-  
-  # ══════════════════════════════════════════════════════════════════════════
-  # Application Servers (Horizontal Scaling)
-  # ══════════════════════════════════════════════════════════════════════════
-  
-  app-server-1:
+      - vipchat-production
+
+  # Celery Worker for Background Tasks
+  celery-worker:
     build:
       context: ./backend
-      dockerfile: Dockerfile.production
-    container_name: vipchat-app-1
+      dockerfile: Dockerfile
+    container_name: vipchat-celery-worker
+    restart: always
+    command: celery -A app.celery worker --loglevel=info --concurrency=4
     environment:
-      - SERVER_ID=app-server-1
-      - AWS_REGION=us-east-1
-      - DATABASE_URL=postgresql://vipchat:${DB_PASSWORD}@postgres-master:5432/vipchat
-      - REDIS_URL=redis://redis-cluster:6379/0
-      - JANUS_URL=http://janus-gateway:8088/janus
-      - SHARD_COUNT=256
+      MYSQL_HOST: mysql-primary
+      MYSQL_USER: ${MYSQL_USER:-vipchat}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-vipchat}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis-master:6379/0
+      SECRET_KEY: ${SECRET_KEY}
+    volumes:
+      - uploads_shared:/app/uploads
+      - logs_celery:/app/logs
     depends_on:
-      - redis-cluster
-      - postgres-master
-      - janus-gateway
+      - redis-master
+      - mysql-primary
     networks:
-      - vipchat-net
-    restart: unless-stopped
-    deploy:
-      replicas: 10
-      resources:
-        limits:
-          cpus: '2'
-          memory: 4G
-  
-  # ══════════════════════════════════════════════════════════════════════════
-  # Janus Gateway - Production WebRTC SFU (C-based)
-  # ══════════════════════════════════════════════════════════════════════════
-  
-  janus-gateway-1:
-    image: canyan/janus-gateway:latest
-    container_name: vipchat-janus-1
-    environment:
-      - JANUS_NAT_1_1_MAPPING=${PUBLIC_IP}
-      - JANUS_ADMIN_SECRET=${JANUS_ADMIN_SECRET}
-      - JANUS_API_SECRET=${JANUS_API_SECRET}
-    ports:
-      - "8088:8088"    # HTTP
-      - "8089:8089"    # HTTPS
-      - "7088:7088"    # Admin HTTP
-      - "8188:8188"    # WebSocket
-      - "10000-10200:10000-10200/udp"  # RTP/RTCP ports
-    volumes:
-      - ./infrastructure/janus/janus.jcfg:/opt/janus/etc/janus/janus.jcfg:ro
-      - ./infrastructure/janus/janus.plugin.videoroom.jcfg:/opt/janus/etc/janus/janus.plugin.videoroom.jcfg:ro
-      - janus-recordings:/var/janus/recordings
-    networks:
-      - vipchat-net
-    restart: unless-stopped
-    deploy:
-      replicas: 5
-      resources:
-        limits:
-          cpus: '8'
-          memory: 16G
-  
-  # ══════════════════════════════════════════════════════════════════════════
-  # PostgreSQL Cluster (Master + Replicas)
-  # ══════════════════════════════════════════════════════════════════════════
-  
-  postgres-master:
-    image: postgres:16-alpine
-    container_name: vipchat-db-master
-    environment:
-      - POSTGRES_DB=vipchat
-      - POSTGRES_USER=vipchat
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_MAX_CONNECTIONS=500
-      - POSTGRES_SHARED_BUFFERS=4GB
-    volumes:
-      - postgres-master-data:/var/lib/postgresql/data
-      - ./infrastructure/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
-      - ./infrastructure/postgres/init-sharding.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports:
-      - "5432:5432"
-    networks:
-      - vipchat-net
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '8'
-          memory: 32G
-  
-  postgres-replica-1:
-    image: postgres:16-alpine
-    container_name: vipchat-db-replica-1
-    environment:
-      - POSTGRES_DB=vipchat
-      - POSTGRES_USER=vipchat
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_PRIMARY_HOST=postgres-master
-    volumes:
-      - postgres-replica-1-data:/var/lib/postgresql/data
-    networks:
-      - vipchat-net
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '4'
-          memory: 16G
-  
-  postgres-replica-2:
-    image: postgres:16-alpine
-    container_name: vipchat-db-replica-2
-    environment:
-      - POSTGRES_DB=vipchat
-      - POSTGRES_USER=vipchat
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_PRIMARY_HOST=postgres-master
-    volumes:
-      - postgres-replica-2-data:/var/lib/postgresql/data
-    networks:
-      - vipchat-net
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '4'
-          memory: 16G
-  
-  # ══════════════════════════════════════════════════════════════════════════
-  # Redis Cluster (6 nodes - 3 masters + 3 replicas)
-  # ══════════════════════════════════════════════════════════════════════════
-  
-  redis-node-1:
-    image: redis:7-alpine
-    container_name: vipchat-redis-1
-    command: redis-server --port 7000 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes --maxmemory 8gb --maxmemory-policy allkeys-lru
-    ports:
-      - "7000:7000"
-    volumes:
-      - redis-1-data:/data
-    networks:
-      - vipchat-net
-    restart: unless-stopped
-  
-  redis-node-2:
-    image: redis:7-alpine
-    container_name: vipchat-redis-2
-    command: redis-server --port 7001 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes --maxmemory 8gb --maxmemory-policy allkeys-lru
-    ports:
-      - "7001:7001"
-    volumes:
-      - redis-2-data:/data
-    networks:
-      - vipchat-net
-    restart: unless-stopped
-  
-  redis-node-3:
-    image: redis:7-alpine
-    container_name: vipchat-redis-3
-    command: redis-server --port 7002 --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes --maxmemory 8gb --maxmemory-policy allkeys-lru
-    ports:
-      - "7002:7002"
-    volumes:
-      - redis-3-data:/data
-    networks:
-      - vipchat-net
-    restart: unless-stopped
-  
-  # ══════════════════════════════════════════════════════════════════════════
-  # Monitoring & Observability
-  # ══════════════════════════════════════════════════════════════════════════
-  
+      - vipchat-production
+
+  # Prometheus Monitoring
   prometheus:
     image: prom/prometheus:latest
     container_name: vipchat-prometheus
+    restart: always
     volumes:
-      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus-data:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
     ports:
       - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
     networks:
-      - vipchat-net
-    restart: unless-stopped
-  
+      - vipchat-production
+
+  # Grafana Dashboard
   grafana:
     image: grafana/grafana:latest
     container_name: vipchat-grafana
+    restart: always
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
-      - GF_INSTALL_PLUGINS=redis-datasource
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: redis-datasource
     volumes:
-      - grafana-data:/var/lib/grafana
-      - ./infrastructure/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - grafana_data:/var/lib/grafana
     ports:
       - "3000:3000"
+    depends_on:
+      - prometheus
     networks:
-      - vipchat-net
-    restart: unless-stopped
-  
-  # ══════════════════════════════════════════════════════════════════════════
-  # Message Queue (RabbitMQ)
-  # ══════════════════════════════════════════════════════════════════════════
-  
-  rabbitmq:
-    image: rabbitmq:3-management-alpine
-    container_name: vipchat-rabbitmq
-    environment:
-      - RABBITMQ_DEFAULT_USER=vipchat
-      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD}
-    volumes:
-      - rabbitmq-data:/var/lib/rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"  # Management UI
-    networks:
-      - vipchat-net
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 4G
-  
-  # ══════════════════════════════════════════════════════════════════════════
-  # Elasticsearch (Logging & Search)
-  # ══════════════════════════════════════════════════════════════════════════
-  
-  elasticsearch:
-    image: elasticsearch:8.11.0
-    container_name: vipchat-elasticsearch
-    environment:
-      - discovery.type=single-node
-      - "ES_JAVA_OPTS=-Xms4g -Xmx4g"
-      - xpack.security.enabled=false
-    volumes:
-      - elasticsearch-data:/usr/share/elasticsearch/data
-    ports:
-      - "9200:9200"
-    networks:
-      - vipchat-net
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '4'
-          memory: 8G
+      - vipchat-production
+
+volumes:
+  mysql_primary_data:
+    driver: local
+  redis_master_data:
+    driver: local
+  uploads_shared:
+    driver: local
+  logs_backend_1:
+    driver: local
+  logs_backend_2:
+    driver: local
+  logs_celery:
+    driver: local
+  nginx_cache:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
 
 networks:
-  vipchat-net:
+  vipchat-production:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.28.0.0/16
-
-volumes:
-  postgres-master-data:
-  postgres-replica-1-data:
-  postgres-replica-2-data:
-  redis-1-data:
-  redis-2-data:
-  redis-3-data:
-  janus-recordings:
-  prometheus-data:
-  grafana-data:
-  rabbitmq-data:
-  elasticsearch-data:
+        - subnet: 172.20.0.0/16
