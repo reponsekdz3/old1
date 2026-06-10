@@ -8,9 +8,18 @@ from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_req
 from app.models.models import db, User
 from datetime import datetime, timedelta
 from sqlalchemy import func
-import uuid, secrets
+import uuid, secrets, base64
 
 trends_bp = Blueprint('trends', __name__, url_prefix='/api/trends')
+
+def _encode_cursor(offset: int) -> str:
+    return base64.urlsafe_b64encode(str(offset).encode()).decode()
+
+def _decode_cursor(cursor_str: str) -> int:
+    try:
+        return max(0, int(base64.urlsafe_b64decode(cursor_str.encode()).decode()))
+    except Exception:
+        return 0
 
 # ── Inline models ─────────────────────────────────────────────────────────────
 from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean, Integer
@@ -145,8 +154,10 @@ def get_feed():
         is_pro = _user_is_pro(user_id)
         category = request.args.get('category', '')
         sort = request.args.get('sort', 'trending')
-        page = request.args.get('page', 1, type=int)
         per_page = 20
+        cursor_str = request.args.get('cursor', '')
+        page = request.args.get('page', 1, type=int)
+        offset = _decode_cursor(cursor_str) if cursor_str else (page - 1) * per_page
 
         q = TrendVideo.query.filter_by(is_active=True, is_ad=False)
         if category and category != 'all':
@@ -157,11 +168,9 @@ def get_feed():
         elif sort == 'popular':
             q = q.order_by(TrendVideo.views.desc())
         else:
-            # Weighted trending score — bias toward last 48 hours
             cutoff = datetime.utcnow() - timedelta(hours=48)
             recent_q = q.filter(TrendVideo.created_at >= cutoff)
-            recent_count = recent_q.count()
-            if recent_count >= 5:
+            if recent_q.count() >= 5:
                 q = recent_q
             score_expr = (
                 TrendVideo.views * 0.4 +
@@ -172,10 +181,14 @@ def get_feed():
             q = q.order_by(score_expr.desc())
 
         total = q.count()
-        videos = q.offset((page - 1) * per_page).limit(per_page).all()
+        videos = q.offset(offset).limit(per_page).all()
         result = [v.to_dict() for v in videos]
 
-        if not is_pro and page == 1:
+        next_offset = offset + per_page
+        has_more = next_offset < total
+        next_cursor = _encode_cursor(next_offset) if has_more else None
+
+        if not is_pro and offset == 0:
             ads = TrendVideo.query.filter_by(is_active=True, is_ad=True).order_by(
                 TrendVideo.created_at.desc()
             ).limit(5).all()
@@ -186,9 +199,8 @@ def get_feed():
         return jsonify({
             'videos': result,
             'total': total,
-            'page': page,
-            'pages': (total + per_page - 1) // per_page,
-            'has_more': (page * per_page) < total,
+            'has_more': has_more,
+            'next_cursor': next_cursor,
             'is_pro': is_pro,
             'logged_in': user_id is not None,
         }), 200
@@ -284,9 +296,6 @@ def get_video(video_id):
         if not video:
             return jsonify({'error': 'Video not found'}), 404
 
-        video.views = (video.views or 0) + 1
-        db.session.commit()
-
         liked = False
         if user_id:
             liked = TrendLike.query.filter_by(video_id=video_id, user_id=user_id).first() is not None
@@ -313,20 +322,72 @@ def get_video(video_id):
 @trends_bp.route('/video/<video_id>/comments', methods=['GET'])
 def get_comments(video_id):
     try:
-        page = request.args.get('page', 1, type=int)
         per_page = 20
+        cursor_str = request.args.get('cursor', '')
+        page = request.args.get('page', 1, type=int)
+        offset = _decode_cursor(cursor_str) if cursor_str else (page - 1) * per_page
         q = TrendComment.query.filter_by(video_id=video_id, parent_id=None).order_by(
             TrendComment.likes.desc(), TrendComment.created_at.desc()
         )
         total = q.count()
-        comments = q.offset((page - 1) * per_page).limit(per_page).all()
+        comments = q.offset(offset).limit(per_page).all()
+        next_offset = offset + per_page
+        has_more = next_offset < total
         return jsonify({
             'comments': [c.to_dict(include_replies=True) for c in comments],
             'total': total,
-            'page': page,
-            'has_more': (page * per_page) < total,
+            'has_more': has_more,
+            'next_cursor': _encode_cursor(next_offset) if has_more else None,
         }), 200
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Edit comment (owner only) ─────────────────────────────────────────────────
+@trends_bp.route('/video/<video_id>/comment/<comment_id>', methods=['PUT'])
+@jwt_required()
+def edit_comment(video_id, comment_id):
+    try:
+        user_id = get_jwt_identity()
+        comment = TrendComment.query.filter_by(id=comment_id, video_id=video_id).first()
+        if not comment:
+            return jsonify({'error': 'Comment not found'}), 404
+        if comment.user_id != user_id:
+            return jsonify({'error': 'Not your comment'}), 403
+        data = request.json or {}
+        content = (data.get('content') or '').strip()
+        if not content or len(content) > 1000:
+            return jsonify({'error': 'Content must be 1–1000 characters'}), 400
+        comment.content = content
+        db.session.commit()
+        return jsonify({'comment': comment.to_dict()}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Delete comment (owner only) ───────────────────────────────────────────────
+@trends_bp.route('/video/<video_id>/comment/<comment_id>', methods=['DELETE'])
+@jwt_required()
+def delete_comment(video_id, comment_id):
+    try:
+        user_id = get_jwt_identity()
+        comment = TrendComment.query.filter_by(id=comment_id, video_id=video_id).first()
+        if not comment:
+            return jsonify({'error': 'Comment not found'}), 404
+        if comment.user_id != user_id:
+            return jsonify({'error': 'Not your comment'}), 403
+        is_top_level = comment.parent_id is None
+        TrendComment.query.filter_by(parent_id=comment_id).delete()
+        db.session.delete(comment)
+        if is_top_level:
+            video = TrendVideo.query.get(video_id)
+            if video:
+                video.comments_count = max(0, (video.comments_count or 0) - 1)
+        db.session.commit()
+        return jsonify({'ok': True}), 200
+    except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 
@@ -513,10 +574,12 @@ def upload_video():
 def search_videos():
     try:
         q_str = (request.args.get('q') or '').strip()
-        page = request.args.get('page', 1, type=int)
         per_page = 20
+        cursor_str = request.args.get('cursor', '')
+        page = request.args.get('page', 1, type=int)
+        offset = _decode_cursor(cursor_str) if cursor_str else (page - 1) * per_page
         if not q_str:
-            return jsonify({'videos': [], 'total': 0}), 200
+            return jsonify({'videos': [], 'total': 0, 'has_more': False, 'next_cursor': None}), 200
         q = TrendVideo.query.filter(
             TrendVideo.is_active == True,
             TrendVideo.is_ad == False,
@@ -525,12 +588,14 @@ def search_videos():
              TrendVideo.tags.ilike(f'%{q_str}%')),
         ).order_by(TrendVideo.views.desc())
         total = q.count()
-        videos = q.offset((page - 1) * per_page).limit(per_page).all()
+        videos = q.offset(offset).limit(per_page).all()
+        next_offset = offset + per_page
+        has_more = next_offset < total
         return jsonify({
             'videos': [v.to_dict() for v in videos],
             'total': total,
-            'page': page,
-            'has_more': (page * per_page) < total,
+            'has_more': has_more,
+            'next_cursor': _encode_cursor(next_offset) if has_more else None,
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500

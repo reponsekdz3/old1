@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   TextInput, ActivityIndicator, RefreshControl, Image,
@@ -7,6 +7,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import { Video, ResizeMode } from 'expo-av';
 import api from '../../services/api';
 import { useAuthStore } from '../../services/store';
 import { COLORS } from '../../config';
@@ -79,13 +80,13 @@ export default function TrendsScreen() {
   const [sort, setSort] = useState('trending');
   const [search, setSearch] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [stats, setStats] = useState(null);
   const [categories, setCategories] = useState([]);
   const [trendingHashtags, setTrendingHashtags] = useState([]);
   const [topCreators, setTopCreators] = useState([]);
+  const nextCursorRef = useRef(null);
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [uploadVisible, setUploadVisible] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -93,17 +94,22 @@ export default function TrendsScreen() {
   const [uploadTags, setUploadTags] = useState('');
   const [uploading, setUploading] = useState(false);
 
-  const fetchVideos = useCallback(async (cat = category, s = sort, p = 1, append = false) => {
-    if (p === 1) setLoading(true);
+  const fetchVideos = useCallback(async (cat = category, s = sort, cursor = null, append = false) => {
+    if (!append) { setLoading(true); nextCursorRef.current = null; }
     try {
-      const params = new URLSearchParams({ category: cat, sort: s, page: p, limit: 20 });
-      if (searchQuery) params.set('q', searchQuery);
-      const res = await api.get(`/trends/feed?${params}`);
-      const data = res.data;
+      let endpoint;
+      if (searchQuery) {
+        const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
+        endpoint = `/trends/search?q=${encodeURIComponent(searchQuery)}${cursorParam}`;
+      } else {
+        const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
+        endpoint = `/trends/feed?category=${cat}&sort=${s}${cursorParam}`;
+      }
+      const { data } = await api.get(endpoint);
       const newVideos = data.videos || [];
       setVideos(prev => append ? [...prev, ...newVideos] : newVideos);
       setHasMore(data.has_more || false);
-      setPage(p);
+      nextCursorRef.current = data.next_cursor || null;
     } catch (e) {
       console.error('Trends fetch error:', e);
     } finally {
@@ -114,7 +120,7 @@ export default function TrendsScreen() {
   }, [category, sort, searchQuery]);
 
   useFocusEffect(useCallback(() => {
-    fetchVideos(category, sort, 1);
+    fetchVideos(category, sort, null);
     api.get('/trends/stats').then(r => setStats(r.data)).catch(() => {});
     api.get('/trends/hashtags/trending?limit=8').then(r => setTrendingHashtags(r.data.hashtags || [])).catch(() => {});
     api.get('/trends/creators/top?limit=4').then(r => setTopCreators(r.data.creators || [])).catch(() => {});
@@ -162,7 +168,7 @@ export default function TrendsScreen() {
   const loadMore = () => {
     if (!hasMore || loadingMore) return;
     setLoadingMore(true);
-    fetchVideos(category, sort, page + 1, true);
+    fetchVideos(category, sort, nextCursorRef.current, true);
   };
 
   const renderItem = ({ item, index }) => {
@@ -329,19 +335,18 @@ export default function TrendsScreen() {
               </TouchableOpacity>
             </View>
             {selectedVideo?.video_url ? (
-              <View style={styles.playerBox}>
-                <Ionicons name="play-circle" size={64} color="rgba(255,255,255,0.7)" />
-                <Text style={styles.playerNote}>Tap to open in browser</Text>
-                <TouchableOpacity
-                  style={styles.uploadBtn}
-                  onPress={() => {
-                    const { Linking } = require('react-native');
-                    Linking.openURL(selectedVideo.video_url);
+              <View style={styles.playerVideoBox}>
+                <Video
+                  source={{ uri: selectedVideo.video_url }}
+                  style={styles.playerVideo}
+                  resizeMode={ResizeMode.CONTAIN}
+                  useNativeControls
+                  shouldPlay
+                  isLooping={false}
+                  onLoad={() => {
                     api.post(`/trends/video/${selectedVideo.id}/view`).catch(() => {});
-                  }}>
-                  <Ionicons name="open-outline" size={16} color="#fff" />
-                  <Text style={styles.uploadBtnText}>Watch Video</Text>
-                </TouchableOpacity>
+                  }}
+                />
               </View>
             ) : (
               <View style={styles.playerBox}>
@@ -497,6 +502,8 @@ const styles = StyleSheet.create({
   // Video player modal
   playerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   playerSheet: { backgroundColor: '#111', borderRadius: 20, padding: 20, width: '100%', maxHeight: '80%' },
+  playerVideoBox: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000', borderRadius: 12, overflow: 'hidden', marginVertical: 8 },
+  playerVideo: { width: '100%', height: '100%' },
   playerBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 32, gap: 12 },
   playerNote: { color: '#888', fontSize: 13, textAlign: 'center' },
   playerMeta: { flexDirection: 'row', gap: 20, marginTop: 16, justifyContent: 'center' },

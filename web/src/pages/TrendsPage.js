@@ -244,7 +244,7 @@ function AdOverlay({ ad, onSkip }) {
 }
 
 // ── Single Video Player ───────────────────────────────────────────────────────
-function VideoCard({ video, isActive, onLike, isLoggedIn }) {
+function VideoCard({ video, isActive, onLike, isLoggedIn, userId }) {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
   const [playing, setPlaying] = useState(false);
@@ -257,6 +257,10 @@ function VideoCard({ video, isActive, onLike, isLoggedIn }) {
   const [comments, setComments] = useState([]);
   const [replyTo, setReplyTo] = useState(null);
   const [loadingComment, setLoadingComment] = useState(false);
+  const [commentsHasMore, setCommentsHasMore] = useState(false);
+  const commentsNextCursorRef = useRef(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editingText, setEditingText] = useState('');
   const [likesCount, setLikesCount] = useState(video.likes || 0);
   const [commentsCount, setCommentsCount] = useState(video.comments_count || 0);
   const [progress, setProgress] = useState(0);
@@ -325,11 +329,31 @@ function VideoCard({ video, isActive, onLike, isLoggedIn }) {
     }
   };
 
-  const loadComments = async () => {
+  const loadComments = async (cursor = null, append = false) => {
     try {
-      const { data } = await api.get(`/trends/video/${video.id}/comments`);
-      setComments(data.comments || []);
+      const cursorParam = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+      const { data } = await api.get(`/trends/video/${video.id}/comments${cursorParam}`);
+      setComments(prev => append ? [...prev, ...(data.comments || [])] : (data.comments || []));
+      setCommentsHasMore(data.has_more || false);
+      commentsNextCursorRef.current = data.next_cursor || null;
     } catch {}
+  };
+
+  const deleteComment = async (commentId) => {
+    try {
+      await api.delete(`/trends/video/${video.id}/comment/${commentId}`);
+      setComments(prev => prev.filter(c => c.id !== commentId));
+      setCommentsCount(v => Math.max(0, v - 1));
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to delete'); }
+  };
+
+  const saveEdit = async (commentId) => {
+    if (!editingText.trim()) return;
+    try {
+      await api.put(`/trends/video/${video.id}/comment/${commentId}`, { content: editingText.trim() });
+      setComments(prev => prev.map(c => c.id === commentId ? { ...c, content: editingText.trim() } : c));
+      setEditingId(null);
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to edit'); }
   };
 
   const submitComment = async () => {
@@ -514,8 +538,25 @@ function VideoCard({ video, isActive, onLike, isLoggedIn }) {
                     </div>
                     <div className="flex-1">
                       <p className="text-white/70 text-[11px] font-semibold">{c.user_name}</p>
-                      <p className="text-white text-sm">{c.content}</p>
-                      <button onClick={() => setReplyTo(c)} className="text-[10px] text-[#25D366] font-bold mt-1 hover:underline">Reply</button>
+                      {editingId === c.id ? (
+                        <div className="flex gap-1 mt-1">
+                          <input value={editingText} onChange={e => setEditingText(e.target.value)} autoFocus
+                            className="flex-1 bg-white/10 text-white text-sm rounded px-2 py-1 outline-none focus:ring-1 focus:ring-white/30" />
+                          <button onClick={() => saveEdit(c.id)} className="text-[#25D366] text-xs font-bold px-2">Save</button>
+                          <button onClick={() => setEditingId(null)} className="text-white/40 text-xs px-1"><FiX size={12} /></button>
+                        </div>
+                      ) : (
+                        <p className="text-white text-sm">{c.content}</p>
+                      )}
+                      <div className="flex gap-3 mt-1">
+                        <button onClick={() => setReplyTo(c)} className="text-[10px] text-[#25D366] font-bold hover:underline">Reply</button>
+                        {userId && c.user_id === userId && editingId !== c.id && (
+                          <>
+                            <button onClick={() => { setEditingId(c.id); setEditingText(c.content); }} className="text-[10px] text-white/40 hover:text-white/70">Edit</button>
+                            <button onClick={() => deleteComment(c.id)} className="text-[10px] text-red-400/70 hover:text-red-400">Delete</button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                   {c.replies?.length > 0 && (
@@ -536,6 +577,12 @@ function VideoCard({ video, isActive, onLike, isLoggedIn }) {
                   )}
                 </div>
               ))}
+              {commentsHasMore && (
+                <button onClick={() => loadComments(commentsNextCursorRef.current, true)}
+                  className="w-full text-xs text-white/50 hover:text-white py-2 border border-white/10 rounded-lg transition">
+                  Load more comments
+                </button>
+              )}
             </div>
             <div className="flex flex-col gap-2 p-3 border-t border-white/10">
               {replyTo && (
@@ -572,8 +619,8 @@ export default function TrendsPage() {
   const [sort, setSort] = useState('trending');
   const [search, setSearch] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+  const nextCursorRef = useRef(null);
   const [activeIdx, setActiveIdx] = useState(0);
   const [stats, setStats] = useState(null);
   const [viewMode, setViewMode] = useState('scroll');
@@ -626,19 +673,20 @@ export default function TrendsPage() {
       .finally(() => setRightCommentsLoading(false));
   }, [activeIdx, viewMode, videos]);
 
-  const fetchVideos = useCallback(async (cat = category, s = sort, pg = 1, append = false) => {
+  const fetchVideos = useCallback(async (cat = category, s = sort, cursor = null, append = false) => {
     if (loadingMore.current && append) return;
     if (append) loadingMore.current = true;
-    else setLoading(true);
+    else { setLoading(true); nextCursorRef.current = null; }
     try {
+      const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
       const endpoint = searchQuery
-        ? `/trends/search?q=${encodeURIComponent(searchQuery)}&page=${pg}`
-        : `/trends/feed?category=${cat}&sort=${s}&page=${pg}&feed=${feedType}`;
+        ? `/trends/search?q=${encodeURIComponent(searchQuery)}${cursorParam}`
+        : `/trends/feed?category=${cat}&sort=${s}&feed=${feedType}${cursorParam}`;
       const { data } = await api.get(endpoint);
       const newVideos = data.videos || [];
       setVideos(prev => append ? [...prev, ...newVideos] : newVideos);
-      setHasMore(data.has_more || pg < (data.pages || 1));
-      setPage(pg);
+      setHasMore(data.has_more || false);
+      nextCursorRef.current = data.next_cursor || null;
     } catch {
       if (!append) toast.error('Failed to load videos');
     } finally {
@@ -653,8 +701,8 @@ export default function TrendsPage() {
 
   useEffect(() => {
     setActiveIdx(0);
-    fetchVideos(category, sort, 1, false);
-  }, [category, sort, searchQuery, feedType]);
+    fetchVideos(category, sort, null, false);
+  }, [category, sort, searchQuery, feedType]); // eslint-disable-line
 
   useEffect(() => {
     if (viewMode !== 'scroll') return;
@@ -667,14 +715,14 @@ export default function TrendsPage() {
           const idx = parseInt(entry.target.dataset.idx, 10);
           setActiveIdx(idx);
           if (idx >= videos.length - 3 && hasMore && !loadingMore.current) {
-            fetchVideos(category, sort, page + 1, true);
+            fetchVideos(category, sort, nextCursorRef.current, true);
           }
         }
       });
     }, { threshold: 0.6 });
     cards.forEach(card => observerRef.current.observe(card));
     return () => observerRef.current?.disconnect();
-  }, [videos, viewMode, hasMore, page, category, sort]);
+  }, [videos, viewMode, hasMore, category, sort]); // eslint-disable-line
 
   const submitRightComment = async () => {
     if (!rightCommentText.trim() || !user) return;
@@ -918,7 +966,7 @@ export default function TrendsPage() {
                 <div key={`${video.id}-${idx}`} data-video-card data-idx={idx}
                   className="h-full w-full snap-start relative flex items-center justify-center">
                   <div className="relative w-full h-full max-w-[500px] bg-black shadow-2xl overflow-hidden">
-                    <VideoCard video={video} isActive={activeIdx === idx} isLoggedIn={!!user} />
+                    <VideoCard video={video} isActive={activeIdx === idx} isLoggedIn={!!user} userId={user?.id} />
                   </div>
                   <div className="hidden xl:flex absolute left-full ml-8 flex-col gap-4">
                     <button onClick={() => containerRef.current.scrollBy({ top: -window.innerHeight, behavior: 'smooth' })}
