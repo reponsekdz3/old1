@@ -21,9 +21,6 @@ data:
   REDIS_URL: "redis://redis-cluster:6379/0"
   JANUS_URL: "http://janus-gateway:8088/janus"
   AWS_REGION: "us-east-1"
-        # Ensure backend uses production settings in container image entrypoint
-  
-
 
 ---
 # Secret - Sensitive Configuration
@@ -34,7 +31,11 @@ metadata:
   namespace: vipchat-production
 type: Opaque
 stringData:
+  # IMPORTANT: POSTGRES_PASSWORD is derived from this secret key.
+  # backend uses DATABASE_URL; Postgres uses POSTGRES_PASSWORD.
+  # Keep the same password in both places for a working deployment.
   DATABASE_URL: "postgresql://vipchat:changeme@postgres-service:5432/vipchat"
+  POSTGRES_PASSWORD: "changeme"
   SECRET_KEY: "change-me-in-production"
   JWT_SECRET_KEY: "change-me-jwt-secret"
   JANUS_ADMIN_SECRET: "janusoverlord"
@@ -96,11 +97,11 @@ spec:
           value: "true"
         resources:
           requests:
-            cpu: "1"
-            memory: "2Gi"
-          limits:
             cpu: "2"
-            memory: "4Gi"
+            memory: "3Gi"
+          limits:
+            cpu: "4"
+            memory: "6Gi"
         livenessProbe:
           httpGet:
             path: /api/health
@@ -434,6 +435,16 @@ spec:
     secretName: vipchat-tls
   rules:
   - host: api.vipchat.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: vipchat-app-service
+            port:
+              number: 80
+  - host: app.vipchat.com
     http:
       paths:
       - path: /

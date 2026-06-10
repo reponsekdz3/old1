@@ -8,7 +8,7 @@
 - [x] Correct DB secret wiring / missing env vars (see manifest edits)
 - [ ] Add Redis env/credentials support (if required by backend security init).
 - [ ] Add Ingress rules for WebSocket + API paths (multi-host routing) if missing.
-- [ ] Add resource tuning and production-safe readiness/liveness.
+- [x] Add resource tuning and production-safe readiness/liveness.
 
 
 ## Step 3: Migrations reliability on Kubernetes
