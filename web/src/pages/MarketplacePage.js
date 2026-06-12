@@ -339,7 +339,7 @@ function AdBanner({ ad }) {
 }
 
 // ── Product Card ───────────────────────────────────────────────────────────────
-function ProductCard({ product, onView, onWishlist, wishlisted, isPromoted }) {
+function ProductCard({ product, onView, onWishlist, wishlisted, isPromoted, onCompare, isCompared }) {
   const [wishLoading, setWishLoading] = useState(false);
   const toggleWish = async (e) => {
     e.stopPropagation();
@@ -413,15 +413,96 @@ function ProductCard({ product, onView, onWishlist, wishlisted, isPromoted }) {
               {product.is_free ? <span className="text-green-500">FREE</span> : fmtMoney(product.price)}
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
              <div className="flex flex-col items-end">
                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Sales</span>
                <div className="text-xs font-bold text-gray-700 flex items-center gap-1"><FiDownload size={10} />{fmt(product.download_count || 0)}</div>
              </div>
+             {onCompare && (
+               <button onClick={e => { e.stopPropagation(); onCompare(product); }}
+                 title={isCompared ? 'Remove from compare' : 'Add to compare'}
+                 className={`w-8 h-8 rounded-xl flex items-center justify-center border transition-all text-xs font-bold ${isCompared ? 'bg-[#075E54] border-[#075E54] text-white' : 'border-gray-200 text-gray-400 hover:border-[#075E54] hover:text-[#075E54]'}`}>
+                 {isCompared ? <FiCheck size={14} /> : <FiLayers size={14} />}
+               </button>
+             )}
           </div>
         </div>
       </div>
     </motion.div>
+  );
+}
+
+// ── Product Comparison Drawer ──────────────────────────────────────────────────
+function ProductComparisonDrawer({ products, onClose, onRemove, onView }) {
+  if (!products.length) return null;
+  const fields = [
+    { key: 'price', label: 'Price', render: p => p.is_free ? <span className="text-green-600 font-bold">FREE</span> : <span className="font-bold text-[#075E54]">{fmtMoney(p.price)}</span> },
+    { key: 'category', label: 'Category', render: p => <span className="text-gray-700 capitalize">{p.category || '—'}</span> },
+    { key: 'rating_avg', label: 'Rating', render: p => <div className="flex items-center gap-1"><StarRow rating={p.rating_avg || 0} size={11} /><span className="text-xs text-gray-500">({p.rating_count || 0})</span></div> },
+    { key: 'download_count', label: 'Sales', render: p => <span className="font-semibold text-gray-700">{fmt(p.download_count || 0)}</span> },
+    { key: 'seller_verified', label: 'Seller', render: p => p.seller_verified ? <span className="text-blue-600 font-semibold flex items-center gap-1"><FiCheck size={11}/> Verified</span> : <span className="text-gray-400">Unverified</span> },
+    { key: 'file_type', label: 'Type', render: p => <span className="text-gray-700 uppercase text-xs font-mono">{p.file_type || '—'}</span> },
+  ];
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 280, damping: 28 }}
+        className="fixed bottom-0 left-0 right-0 z-[200] bg-white rounded-t-[2.5rem] shadow-2xl border-t border-gray-100"
+        style={{ maxHeight: '75vh' }}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-[#075E54]/10 flex items-center justify-center">
+              <FiLayers size={18} className="text-[#075E54]" />
+            </div>
+            <div>
+              <p className="font-black text-gray-900 text-base">Compare Products</p>
+              <p className="text-xs text-gray-400">{products.length} items selected</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-9 h-9 rounded-2xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition">
+            <FiX size={18} className="text-gray-500" />
+          </button>
+        </div>
+        <div className="overflow-auto p-6" style={{ maxHeight: 'calc(75vh - 80px)' }}>
+          {/* Product headers */}
+          <div className="grid gap-4 mb-6" style={{ gridTemplateColumns: `180px repeat(${products.length}, 1fr)` }}>
+            <div />
+            {products.map(p => (
+              <div key={p.id} className="flex flex-col items-center gap-2">
+                <div className="relative">
+                  <div className="w-20 h-20 rounded-2xl overflow-hidden bg-gray-100 border border-gray-200">
+                    {p.preview_url || p.thumbnail_url
+                      ? <img src={p.preview_url || p.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                      : <div className="w-full h-full flex items-center justify-center"><FiShoppingBag size={24} className="text-gray-300" /></div>}
+                  </div>
+                  <button onClick={() => onRemove(p.id)} className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                    <FiX size={10} className="text-white" />
+                  </button>
+                </div>
+                <p className="text-xs font-bold text-gray-900 text-center line-clamp-2 leading-tight">{p.title}</p>
+                <button onClick={() => onView(p)} className="text-[10px] text-[#075E54] font-bold hover:underline">View Details</button>
+              </div>
+            ))}
+          </div>
+          {/* Comparison rows */}
+          <div className="space-y-0 border border-gray-100 rounded-2xl overflow-hidden">
+            {fields.map((f, fi) => (
+              <div key={f.key} className={`grid gap-4 px-4 py-3 ${fi % 2 === 0 ? 'bg-gray-50' : 'bg-white'}`}
+                style={{ gridTemplateColumns: `180px repeat(${products.length}, 1fr)` }}>
+                <div className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center">{f.label}</div>
+                {products.map(p => (
+                  <div key={p.id} className="flex items-center justify-center text-center text-sm">
+                    {f.render(p)}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
@@ -1601,6 +1682,27 @@ export default function MarketplacePage() {
   const [b2bSubTab, setB2bSubTab] = useState('browse'); // browse | my-listings | inquiries-received | inquiries-sent
   const [myB2bListings, setMyB2bListings] = useState([]);
 
+  // Comparison state
+  const [comparisonProducts, setComparisonProducts] = useState([]);
+  const [showComparison, setShowComparison] = useState(false);
+
+  const toggleComparison = (product) => {
+    setComparisonProducts(prev => {
+      const exists = prev.find(p => p.id === product.id);
+      if (exists) return prev.filter(p => p.id !== product.id);
+      if (prev.length >= 4) { toast.error('Max 4 products for comparison'); return prev; }
+      return [...prev, product];
+    });
+  };
+
+  const removeFromComparison = (id) => {
+    setComparisonProducts(prev => {
+      const next = prev.filter(p => p.id !== id);
+      if (next.length === 0) setShowComparison(false);
+      return next;
+    });
+  };
+
   // My Store state
   const [myProducts, setMyProducts] = useState([]);
 
@@ -2016,7 +2118,8 @@ export default function MarketplacePage() {
           <div className={viewMode === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8' : 'space-y-6'}>
             {products.map(p => (
               <ProductCard key={p.id} product={p}
-                onView={setSelectedProduct} onWishlist={toggleWishlist} wishlisted={wishlist.has(p.id)} />
+                onView={setSelectedProduct} onWishlist={toggleWishlist} wishlisted={wishlist.has(p.id)}
+                onCompare={toggleComparison} isCompared={comparisonProducts.some(c => c.id === p.id)} />
             ))}
           </div>
         )}
@@ -2650,6 +2753,55 @@ export default function MarketplacePage() {
           </motion.div>
         </AnimatePresence>
       </div>
+
+      {/* Floating Comparison Bar */}
+      <AnimatePresence>
+        {comparisonProducts.length > 0 && !showComparison && (
+          <motion.div
+            initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 100, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[150] bg-gray-900 rounded-[2rem] shadow-2xl px-5 py-3 flex items-center gap-4 border border-white/10"
+          >
+            <div className="flex items-center gap-2">
+              {comparisonProducts.map(p => (
+                <div key={p.id} className="relative group">
+                  <div className="w-10 h-10 rounded-xl overflow-hidden bg-gray-700 border-2 border-white/20">
+                    {p.preview_url || p.thumbnail_url
+                      ? <img src={p.preview_url || p.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                      : <div className="w-full h-full flex items-center justify-center"><FiShoppingBag size={14} className="text-gray-400" /></div>}
+                  </div>
+                  <button onClick={() => removeFromComparison(p.id)} className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                    <FiX size={8} className="text-white" />
+                  </button>
+                </div>
+              ))}
+              {comparisonProducts.length < 4 && (
+                <div className="w-10 h-10 rounded-xl border-2 border-dashed border-white/20 flex items-center justify-center">
+                  <FiPlus size={16} className="text-white/40" />
+                </div>
+              )}
+            </div>
+            <div className="w-px h-8 bg-white/10" />
+            <button onClick={() => setShowComparison(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-[#075E54] hover:bg-[#064e46] text-white rounded-2xl text-sm font-bold transition">
+              <FiLayers size={14} /> Compare {comparisonProducts.length}
+            </button>
+            <button onClick={() => setComparisonProducts([])} className="text-white/40 hover:text-white/70 text-xs transition">
+              Clear
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Comparison Drawer */}
+      {showComparison && (
+        <ProductComparisonDrawer
+          products={comparisonProducts}
+          onClose={() => setShowComparison(false)}
+          onRemove={removeFromComparison}
+          onView={(p) => { setSelectedProduct(p); setShowComparison(false); }}
+        />
+      )}
 
       {/* Modals */}
       <AnimatePresence>

@@ -8,9 +8,9 @@ import {
   FiSliders, FiBellOff, FiBell, FiChevronDown, FiCheck,
   FiAlignCenter, FiAlignLeft, FiAlignRight, FiUsers, FiLock,
   FiGlobe, FiRefreshCw, FiMusic, FiVolume2, FiVolumeX,
-  FiDownload, FiSearch, FiPlay, FiPause,
+  FiDownload, FiSearch, FiPlay, FiPause, FiLayers,
   FiMapPin, FiCalendar, FiAtSign, FiSun, FiDroplet, FiEyeOff,
-  FiCrop, FiFeather,
+  FiCrop, FiFeather, FiBarChart2,
 } from 'react-icons/fi';
 import { useAuthStore } from '../services/store';
 import api from '../services/api';
@@ -61,6 +61,21 @@ const DURATION_OPTIONS = [
   { label: '12 hours', hours: 12 },
   { label: '24 hours', hours: 24 },
   { label: '48 hours', hours: 48 },
+];
+
+const STORY_TEMPLATES = [
+  { id: 'tpl_gm',      label: '☀️ Good Morning', gradient: 'linear-gradient(135deg,#f093fb,#f5576c)',        text: '☀️ Good Morning!',      font: 'bold',    textColor: '#fff' },
+  { id: 'tpl_vibe',    label: '✨ Vibin\'',        gradient: 'linear-gradient(135deg,#4facfe,#00f2fe)',        text: '✨ Just Vibin\'',        font: 'sans',    textColor: '#fff' },
+  { id: 'tpl_quote',   label: '💬 Quote',          gradient: 'linear-gradient(135deg,#0f2027,#203a43,#2c5364)', text: '"Be yourself."',      font: 'serif',   textColor: '#fff' },
+  { id: 'tpl_mood',    label: '🔥 Mood',           gradient: 'linear-gradient(135deg,#f7971e,#ffd200)',        text: '🔥 Mood',               font: 'bold',    textColor: '#333' },
+  { id: 'tpl_love',    label: '❤️ Love',           gradient: 'linear-gradient(135deg,#f953c6,#b91d73)',        text: '❤️ Spreading Love',     font: 'cursive', textColor: '#fff' },
+  { id: 'tpl_night',   label: '🌙 Night',          gradient: 'linear-gradient(135deg,#0f0c29,#302b63,#24243e)', text: '🌙 Night Feels',      font: 'sans',    textColor: '#e0d0ff' },
+  { id: 'tpl_nature',  label: '🌿 Nature',         gradient: 'linear-gradient(135deg,#11998e,#38ef7d)',        text: '🌿 In Nature',          font: 'serif',   textColor: '#fff' },
+  { id: 'tpl_hype',    label: '🎉 Hype',           gradient: 'linear-gradient(135deg,#ff416c,#ff4b2b)',        text: '🎉 Let\'s Go!',         font: 'bold',    textColor: '#fff' },
+  { id: 'tpl_chill',   label: '💙 Chill',          gradient: 'linear-gradient(135deg,#e0c3fc,#8ec5fc)',        text: '💙 Chillin\'',          font: 'cursive', textColor: '#444' },
+  { id: 'tpl_hustle',  label: '💼 Hustle',         gradient: 'linear-gradient(135deg,#1e1e1e,#2d2d2d)',        text: '💼 Hustle Mode On',     font: 'mono',    textColor: '#25D366' },
+  { id: 'tpl_bday',    label: '🎂 Birthday',       gradient: 'linear-gradient(135deg,#fc5c7d,#6a82fb)',        text: '🎂 Happy Birthday!',    font: 'cursive', textColor: '#fff' },
+  { id: 'tpl_workout', label: '💪 Workout',        gradient: 'linear-gradient(135deg,#11998e,#38ef7d)',        text: '💪 Beast Mode',         font: 'bold',    textColor: '#fff' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1024,6 +1039,128 @@ const PRESET_TRACKS = [
   { title: 'Electric Pop',   url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3' },
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TemplatePickerModal — story templates
+// ─────────────────────────────────────────────────────────────────────────────
+function TemplatePickerModal({ onSelect, onClose }) {
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 backdrop-blur-sm"
+      onClick={onClose}>
+      <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 30, stiffness: 280 }}
+        className="w-full max-w-lg bg-[#1a1a1a] rounded-t-3xl border-t border-white/10 pb-8"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 pt-5 pb-4">
+          <p className="font-bold text-white text-base">Story Templates</p>
+          <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center">
+            <FiX size={14} className="text-white/60" />
+          </button>
+        </div>
+        <div className="grid grid-cols-3 gap-3 px-5 max-h-80 overflow-y-auto">
+          {STORY_TEMPLATES.map(tpl => (
+            <button key={tpl.id} onClick={() => onSelect(tpl)}
+              className="aspect-[9/16] rounded-2xl flex items-center justify-center text-center p-2 relative overflow-hidden border-2 border-white/10 hover:border-[#25D366] hover:scale-105 transition-all"
+              style={{ background: tpl.gradient }}>
+              <span className="text-xs font-black leading-tight relative z-10 drop-shadow-md"
+                style={{ color: tpl.textColor, fontFamily: tpl.font === 'serif' ? 'Georgia,serif' : tpl.font === 'mono' ? 'monospace' : tpl.font === 'cursive' ? '"Dancing Script",cursive' : 'inherit' }}>
+                {tpl.text}
+              </span>
+            </button>
+          ))}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PollCreatorModal — interactive poll sticker for status
+// ─────────────────────────────────────────────────────────────────────────────
+function PollCreatorModal({ onAttach, onClose }) {
+  const [question, setQuestion] = useState('');
+  const [options, setOptions] = useState(['', '']);
+  const [pollType, setPollType] = useState('poll'); // poll | qa
+
+  const addOption = () => { if (options.length < 4) setOptions(o => [...o, '']); };
+  const removeOption = (i) => { if (options.length > 2) setOptions(o => o.filter((_, idx) => idx !== i)); };
+  const setOption = (i, v) => setOptions(o => o.map((x, idx) => idx === i ? v : x));
+
+  const submit = () => {
+    if (!question.trim()) { toast.error('Enter a question'); return; }
+    if (pollType === 'poll' && options.filter(o => o.trim()).length < 2) {
+      toast.error('Add at least 2 options'); return;
+    }
+    onAttach({ question: question.trim(), options: options.filter(o => o.trim()), type: pollType });
+    onClose();
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 backdrop-blur-sm"
+      onClick={onClose}>
+      <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 30, stiffness: 280 }}
+        className="w-full max-w-lg bg-[#1a1a1a] rounded-t-3xl border-t border-white/10 pb-8"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 pt-5 pb-4">
+          <p className="font-bold text-white text-base">Interactive Sticker</p>
+          <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center">
+            <FiX size={14} className="text-white/60" />
+          </button>
+        </div>
+        <div className="px-5 space-y-4">
+          <div className="flex gap-2">
+            {[{id:'poll',label:'📊 Poll'},{id:'qa',label:'❓ Q&A'}].map(t => (
+              <button key={t.id} onClick={() => setPollType(t.id)}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition border ${pollType === t.id ? 'bg-[#25D366] text-white border-[#25D366]' : 'border-white/15 text-white/60 hover:text-white'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div>
+            <input value={question} onChange={e => setQuestion(e.target.value)}
+              placeholder={pollType === 'poll' ? 'Ask a question…' : 'What do you want to know?'}
+              className="w-full bg-white/8 border border-white/10 focus:border-[#25D366]/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition placeholder-white/30" />
+          </div>
+          {pollType === 'poll' && (
+            <div className="space-y-2">
+              {options.map((opt, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-xs font-bold flex-shrink-0">{i + 1}</div>
+                  <input value={opt} onChange={e => setOption(i, e.target.value)}
+                    placeholder={`Option ${i + 1}`}
+                    className="flex-1 bg-white/8 border border-white/10 focus:border-[#25D366]/50 rounded-xl px-3 py-2.5 text-sm text-white outline-none transition placeholder-white/30" />
+                  {options.length > 2 && (
+                    <button onClick={() => removeOption(i)} className="w-7 h-7 rounded-full bg-white/8 hover:bg-red-500/20 flex items-center justify-center text-white/40 hover:text-red-400 transition">
+                      <FiX size={12} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              {options.length < 4 && (
+                <button onClick={addOption}
+                  className="w-full py-2.5 border border-dashed border-white/20 hover:border-[#25D366]/50 rounded-xl text-white/40 hover:text-[#25D366] text-sm transition flex items-center justify-center gap-2">
+                  <FiPlus size={14} /> Add option
+                </button>
+              )}
+            </div>
+          )}
+          {pollType === 'qa' && (
+            <div className="bg-white/5 rounded-xl p-3 text-white/40 text-sm text-center">
+              Viewers can reply directly to your status
+            </div>
+          )}
+          <button onClick={submit}
+            className="w-full py-3 bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold rounded-xl transition text-sm">
+            Attach {pollType === 'poll' ? 'Poll' : 'Q&A'} Sticker
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 function MusicPickerModal({ onAttach, onClose }) {
   const [tab, setTab]               = useState('presets'); // presets | url
   const [customUrl, setCustomUrl]   = useState('');
@@ -1191,6 +1328,17 @@ function StatusComposer({ onClose, onPosted }) {
   const [showOverlayInput, setShowOverlayInput] = useState(false);
   const [mentionText, setMentionText] = useState('');
 
+  // ── Batch multi-photo ───────────────────────────────────────────────────────
+  const [batchFiles, setBatchFiles] = useState([]);
+  const [batchPosting, setBatchPosting] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
+  const batchInputRef = useRef(null);
+
+  // ── Template / Poll ─────────────────────────────────────────────────────────
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [showPollCreator, setShowPollCreator] = useState(false);
+  const [pollData, setPollData] = useState(null);
+
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
   const videoInputRef = useRef(null);
@@ -1213,6 +1361,60 @@ function StatusComposer({ onClose, onPosted }) {
     setMediaPreviewUrl(null);
     setDrawingOverlay(null);
     setStickers([]);
+  };
+
+  const handleBatchSelect = (e) => {
+    const files = Array.from(e.target.files || []).slice(0, 10);
+    if (!files.length) return;
+    setBatchFiles(files.map(f => ({ file: f, url: URL.createObjectURL(f), caption: '' })));
+  };
+
+  const removeBatchFile = (i) => setBatchFiles(prev => prev.filter((_, idx) => idx !== i));
+  const setBatchCaption = (i, v) => setBatchFiles(prev => prev.map((f, idx) => idx === i ? { ...f, caption: v } : f));
+
+  const handleBatchShare = async () => {
+    if (!batchFiles.length) return;
+    setBatchPosting(true);
+    setBatchProgress({ current: 0, total: batchFiles.length });
+    let posted = 0;
+    for (const { file, caption: cap } of batchFiles) {
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        const { data: upData } = await api.post('/upload/image', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        await api.post('/status', {
+          content: cap.trim(),
+          background_color: '#000000',
+          media_url: upData.url,
+          media_type: 'image',
+          privacy,
+          duration_hours: duration,
+          music_url: musicAttached ? musicUrl : undefined,
+          music_name: musicAttached ? musicTitle : undefined,
+        });
+        posted++;
+        setBatchProgress({ current: posted, total: batchFiles.length });
+      } catch { /* continue */ }
+    }
+    toast.success(`${posted}/${batchFiles.length} stories posted!`);
+    setBatchPosting(false);
+    onPosted();
+    onClose();
+  };
+
+  const applyTemplate = (tpl) => {
+    setMode('text');
+    setStatusText(tpl.text);
+    const g = GRADIENTS.find(g => g.value === tpl.gradient);
+    if (!g) {
+      const custom = GRADIENTS[0];
+      setSelectedGradient(custom.id);
+    }
+    setSelectedFont(tpl.font);
+    setTextColor(tpl.textColor);
+    setShowTemplatePicker(false);
+    const matchedG = GRADIENTS.find(gx => gx.value.replace(/\s/g,'') === tpl.gradient.replace(/\s/g,''));
+    if (matchedG) setSelectedGradient(matchedG.id);
   };
 
   const fetchLinkPreview = async (url) => {
@@ -1304,13 +1506,16 @@ function StatusComposer({ onClose, onPosted }) {
     ? statusText.trim().length > 0
     : mode === 'link'
       ? linkUrl.trim().length > 0
-      : !!mediaFile;
+      : mode === 'batch'
+        ? batchFiles.length > 0
+        : !!mediaFile;
 
   const MODES = [
     { id: 'text',  icon: FiType,  label: 'Text' },
     { id: 'image', icon: FiImage, label: 'Photo' },
     { id: 'video', icon: FiVideo, label: 'Video' },
     { id: 'link',  icon: FiLink,  label: 'Link' },
+    { id: 'batch', icon: FiLayers, label: 'Multi' },
   ];
 
   const PRIVACY_OPTIONS = [
@@ -1628,6 +1833,62 @@ function StatusComposer({ onClose, onPosted }) {
             <button onClick={clearMedia} className="absolute top-4 left-4 p-2 bg-black/60 rounded-full"><FiX size={16} className="text-white" /></button>
           </div>
         )}
+
+        {/* BATCH / MULTI mode */}
+        {mode === 'batch' && (
+          <div className="w-full flex-1 flex flex-col px-4 py-2 overflow-y-auto">
+            {batchFiles.length === 0 ? (
+              <div className="flex flex-col items-center justify-center flex-1 gap-5 text-center">
+                <div className="w-24 h-24 rounded-3xl bg-white/10 flex items-center justify-center">
+                  <FiLayers size={40} className="text-white/50" />
+                </div>
+                <div>
+                  <p className="text-white font-bold text-lg">Batch Story Upload</p>
+                  <p className="text-white/50 text-sm mt-1">Select up to 10 photos — each becomes its own story slide</p>
+                </div>
+                <button onClick={() => batchInputRef.current?.click()}
+                  className="flex items-center gap-2 px-6 py-3.5 bg-white/20 hover:bg-white/30 text-white rounded-2xl font-bold text-sm transition">
+                  <FiImage size={18} /> Choose Photos (up to 10)
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-white font-bold text-sm">{batchFiles.length} photo{batchFiles.length > 1 ? 's' : ''} selected</p>
+                  <button onClick={() => batchInputRef.current?.click()} className="text-[#25D366] text-xs font-semibold">+ Add more</button>
+                </div>
+                {batchFiles.map((bf, i) => (
+                  <div key={i} className="flex gap-3 items-start bg-white/8 rounded-2xl p-3 border border-white/10">
+                    <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-black">
+                      <img src={bf.url} alt="" className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white/50 text-[10px] mb-1">Slide {i + 1}</p>
+                      <input value={bf.caption} onChange={e => setBatchCaption(i, e.target.value)}
+                        placeholder="Caption (optional)…"
+                        className="w-full bg-transparent text-white placeholder-white/30 text-sm outline-none border-b border-white/15 focus:border-[#25D366]/50 pb-1 transition" />
+                    </div>
+                    <button onClick={() => removeBatchFile(i)} className="p-1.5 bg-white/10 hover:bg-red-500/20 rounded-full transition">
+                      <FiX size={12} className="text-white/60 hover:text-red-400" />
+                    </button>
+                  </div>
+                ))}
+                {batchPosting && (
+                  <div className="bg-white/10 rounded-2xl p-4">
+                    <div className="flex justify-between mb-2">
+                      <span className="text-white/70 text-xs">Posting stories…</span>
+                      <span className="text-white text-xs font-bold">{batchProgress.current}/{batchProgress.total}</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden">
+                      <motion.div className="h-full bg-[#25D366] rounded-full"
+                        animate={{ width: `${batchProgress.total ? (batchProgress.current / batchProgress.total) * 100 : 0}%` }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Bottom controls */}
@@ -1669,12 +1930,25 @@ function StatusComposer({ onClose, onPosted }) {
                   style={{ background: g.value }} title={g.label} />
               ))}
             </div>
-            {/* Sticker button */}
-            <div className="flex items-center justify-between mb-3">
+            {/* Sticker / Template / Poll row */}
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
               <button onClick={() => setShowStickers(v => !v)}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-full text-white text-xs font-semibold transition">
                 <FiSmile size={13} /> Stickers
               </button>
+              <button onClick={() => setShowTemplatePicker(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-full text-white text-xs font-semibold transition">
+                <FiZap size={13} /> Templates
+              </button>
+              <button onClick={() => setShowPollCreator(true)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-white text-xs font-semibold transition border ${pollData ? 'bg-[#25D366] border-[#25D366]' : 'bg-white/15 hover:bg-white/25 border-transparent'}`}>
+                <FiBarChart2 size={13} /> {pollData ? '✓ Poll Added' : 'Add Poll/Q&A'}
+              </button>
+              {pollData && (
+                <button onClick={() => setPollData(null)} className="p-1.5 bg-white/10 hover:bg-red-500/20 rounded-full transition">
+                  <FiX size={10} className="text-white/60" />
+                </button>
+              )}
               {showStickers && (
                 <div className="absolute bottom-52 right-4 bg-black/80 rounded-2xl p-3 grid grid-cols-5 gap-2 z-20 backdrop-blur-sm">
                   {STICKERS.map(e => (
@@ -1683,6 +1957,21 @@ function StatusComposer({ onClose, onPosted }) {
                 </div>
               )}
             </div>
+            {pollData && (
+              <div className="mb-3 bg-white/10 border border-white/15 rounded-2xl p-3">
+                <p className="text-[#25D366] text-xs font-bold mb-1 flex items-center gap-1">
+                  <FiBarChart2 size={11} /> {pollData.type === 'qa' ? 'Q&A' : 'Poll'} Attached
+                </p>
+                <p className="text-white text-sm font-semibold truncate">{pollData.question}</p>
+                {pollData.type === 'poll' && (
+                  <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                    {pollData.options.map((o, i) => (
+                      <span key={i} className="text-[10px] bg-white/15 text-white px-2 py-0.5 rounded-full">{o}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
 
@@ -1812,12 +2101,21 @@ function StatusComposer({ onClose, onPosted }) {
         )}
 
         {/* Share button */}
-        <button onClick={handleShare} disabled={!canShare || posting || uploading}
-          className="w-full py-4 bg-[#25D366] hover:bg-[#1fbd5a] disabled:opacity-40 text-white font-bold rounded-2xl transition-all flex items-center justify-center gap-2 text-base shadow-lg">
-          {posting && !uploading
-            ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Posting…</>
-            : <><FiSend size={18} /> Share Status</>}
-        </button>
+        {mode === 'batch' ? (
+          <button onClick={handleBatchShare} disabled={!canShare || batchPosting}
+            className="w-full py-4 bg-[#25D366] hover:bg-[#1fbd5a] disabled:opacity-40 text-white font-bold rounded-2xl transition-all flex items-center justify-center gap-2 text-base shadow-lg">
+            {batchPosting
+              ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Posting {batchProgress.current}/{batchProgress.total}…</>
+              : <><FiLayers size={18} /> Post {batchFiles.length} Stories</>}
+          </button>
+        ) : (
+          <button onClick={handleShare} disabled={!canShare || posting || uploading}
+            className="w-full py-4 bg-[#25D366] hover:bg-[#1fbd5a] disabled:opacity-40 text-white font-bold rounded-2xl transition-all flex items-center justify-center gap-2 text-base shadow-lg">
+            {posting && !uploading
+              ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Posting…</>
+              : <><FiSend size={18} /> Share Status</>}
+          </button>
+        )}
 
         <div className="flex items-center justify-center gap-1 mt-2 text-white/40 text-xs">
           {privacy === 'everyone' && <><FiGlobe size={11} /> Everyone</>}
@@ -1843,9 +2141,30 @@ function StatusComposer({ onClose, onPosted }) {
         )}
       </AnimatePresence>
 
+      {/* Template Picker Modal */}
+      <AnimatePresence>
+        {showTemplatePicker && (
+          <TemplatePickerModal
+            onSelect={applyTemplate}
+            onClose={() => setShowTemplatePicker(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Poll Creator Modal */}
+      <AnimatePresence>
+        {showPollCreator && (
+          <PollCreatorModal
+            onAttach={(data) => { setPollData(data); setShowPollCreator(false); }}
+            onClose={() => setShowPollCreator(false)}
+          />
+        )}
+      </AnimatePresence>
+
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={e => handleFileSelect(e.target.files?.[0])} />
       <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={e => handleFileSelect(e.target.files?.[0])} />
       <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={e => handleFileSelect(e.target.files?.[0])} />
+      <input ref={batchInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleBatchSelect} />
     </motion.div>
   );
 }

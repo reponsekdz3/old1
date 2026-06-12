@@ -11,7 +11,7 @@ import {
   FiFilter, FiGlobe, FiHome, FiPause,
   FiChevronRight, FiRadio,
   FiGift, FiDownload, FiSettings, FiBell, FiSliders,
-  FiClock, FiTrendingUp,
+  FiClock, FiTrendingUp, FiMaximize,
   FiPhone, FiUserCheck, FiShield,
 } from 'react-icons/fi';
 import { MdOutlineLocalFireDepartment, MdOutlineExplore } from 'react-icons/md';
@@ -833,6 +833,31 @@ function VideoCard({ video, isActive, isLoggedIn, userId, onCreatorClick }) {
     } catch { toast.error('Download failed'); }
   };
 
+  const handlePiP = async () => {
+    if (!videoRef.current) return;
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else if (videoRef.current.requestPictureInPicture) {
+        await videoRef.current.requestPictureInPicture();
+        toast.success('Playing in Picture-in-Picture');
+      } else {
+        toast.error('PiP not supported in this browser');
+      }
+    } catch (e) { toast.error('PiP failed'); }
+  };
+
+  const [isPiP, setIsPiP] = useState(false);
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    const onEnter = () => setIsPiP(true);
+    const onLeave = () => setIsPiP(false);
+    el.addEventListener('enterpictureinpicture', onEnter);
+    el.addEventListener('leavepictureinpicture', onLeave);
+    return () => { el.removeEventListener('enterpictureinpicture', onEnter); el.removeEventListener('leavepictureinpicture', onLeave); };
+  }, []);
+
   useEffect(() => {
     if (isActive && videoRef.current) {
       api.post(`/trends/video/${video.id}/view`).catch(() => {});
@@ -1029,6 +1054,7 @@ function VideoCard({ video, isActive, isLoggedIn, userId, onCreatorClick }) {
           { onClick: handleShare, icon: <FiShare2 size={22} className="text-white" />, count: fmtNum(video.shares || 0), color: 'bg-black/50' },
           { onClick: () => { if (!isLoggedIn) { toast.error('Log in to send gifts'); return; } setShowGift(true); }, icon: <FiGift size={22} className="text-yellow-400" />, count: 'Gift', color: 'bg-yellow-500/20' },
           { onClick: handleDownload, icon: <FiDownload size={22} className="text-white/70" />, count: '', color: 'bg-black/50' },
+          { onClick: handlePiP, icon: <FiMaximize size={22} className={isPiP ? 'text-[#25D366]' : 'text-white/70'} />, count: 'PiP', color: isPiP ? 'bg-[#25D366]/20' : 'bg-black/50' },
         ].map(({ onClick, icon, count, color }, i) => (
           <button key={i} onClick={onClick} className="flex flex-col items-center gap-1">
             <motion.div whileTap={{ scale: 0.8 }} className={`w-12 h-12 rounded-full ${color} hover:brightness-125 flex items-center justify-center backdrop-blur-sm border border-white/10 transition-all`}>
