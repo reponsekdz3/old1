@@ -12,12 +12,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { formatDistanceToNow, isToday, isYesterday, parseISO } from 'date-fns';
-import { useFocusEffect } from '@react-navigation/native';
-import api from '../services/api';
-import { useAuthStore } from '../services/store';
-import callHistoryManager from '../services/callHistory';
+import { useFocusEffect, useRouter } from 'expo-router';
+import api from '../../services/api';
+import { useAuthStore } from '../../services/store';
 
-export default function CallsScreen({ navigation, route }) {
+export default function CallsScreen() {
+  const router = useRouter();
   const { user } = useAuthStore();
   const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -127,11 +127,7 @@ export default function CallsScreen({ navigation, route }) {
 
   // Handle call action
   const handleCall = (contact, callType) => {
-    navigation.navigate('CallScreen', {
-      contact,
-      callType,
-      isInitiator: true,
-    });
+    router.push({ pathname: '/call', params: { contactId: contact.id, contactName: contact.full_name, callType, isInitiator: 'true' } });
   };
 
   // Render call item
@@ -163,10 +159,7 @@ export default function CallsScreen({ navigation, route }) {
     return (
       <TouchableOpacity
         style={styles.callItem}
-        onPress={() => navigation.navigate('Chat', { 
-          userId: targetUserId,
-          userName: name,
-        })}
+        onPress={() => router.push({ pathname: '/chat', params: { userId: targetUserId, userName: name } })}
         onLongPress={() => {
           Alert.alert(
             'Call Options',
@@ -272,7 +265,7 @@ export default function CallsScreen({ navigation, route }) {
         <Text style={styles.headerTitle}>Calls</Text>
         <TouchableOpacity
           style={styles.newCallBtn}
-          onPress={() => navigation.navigate('NewCall')}
+          onPress={() => router.push('/new-call')}
         >
           <Ionicons name="call" size={22} color="#25D366" />
         </TouchableOpacity>

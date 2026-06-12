@@ -248,6 +248,9 @@ def create_app(config_name='development'):
     app.register_blueprint(api_platform_bp)
     app.register_blueprint(v1_bp)
 
+    from app.routes.app_distribution import app_dist_bp
+    app.register_blueprint(app_dist_bp)
+
     from app.routes.e2ee import e2ee_bp
     from app.routes.security_audit import security_audit_bp
     from app.routes.contacts_sync import contacts_sync_bp

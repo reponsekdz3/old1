@@ -29,6 +29,8 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (!url.protocol.startsWith('http')) return;
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io/')) return;
+  // Never cache APK downloads or large binary files
+  if (url.pathname.includes('/app/download') || url.pathname.endsWith('.apk') || url.pathname.endsWith('.ipa')) return;
 
   if (url.pathname.startsWith('/uploads/')) {
     event.respondWith(

@@ -79,6 +79,7 @@ services:
     volumes:
       - ./backend/uploads:/app/uploads
       - ./backend/logs:/app/logs
+      - ./releases:/app/uploads/releases
     ports:
       - "8000:8000"
     depends_on:
