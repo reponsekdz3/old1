@@ -9,7 +9,7 @@ import {
   FiBarChart2, FiZap, FiBriefcase, FiLayers, FiRefreshCw,
   FiAward, FiAlertCircle, FiRadio, FiTarget, FiClock,
   FiGlobe, FiBox, FiActivity, FiUsers, FiPercent, FiChevronDown,
-  FiShield, FiLink,
+  FiShield, FiLink, FiEyeOff, FiEdit2, FiTrendingDown,
 } from 'react-icons/fi';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
 import api from '../services/api';
@@ -1266,11 +1266,20 @@ export default function MarketplacePage() {
   const [loadingPurchases, setLoadingPurchases] = useState(false);
   const [myDisputes, setMyDisputes] = useState([]);
   const [sellerDisputes, setSellerDisputes] = useState([]);
-  const [showDisputeModal, setShowDisputeModal] = useState(null); // purchase object
+  const [showDisputeModal, setShowDisputeModal] = useState(null);
   const [disputeReason, setDisputeReason] = useState('');
   const [disputeStatement, setDisputeStatement] = useState('');
   const [submittingDispute, setSubmittingDispute] = useState(false);
   const [downloadingId, setDownloadingId] = useState(null);
+
+  // My Store management state
+  const [togglingProductId, setTogglingProductId] = useState(null);
+
+  // B2B quoting state
+  const [quotingInquiryId, setQuotingInquiryId] = useState(null);
+  const [quotePrice, setQuotePrice] = useState('');
+  const [quoteMessage, setQuoteMessage] = useState('');
+  const [sendingQuote, setSendingQuote] = useState(false);
 
   // ── Data fetchers ─────────────────────────────────────────────────────────
   const fetchProducts = useCallback(async (p = 1, cat = category, s = search, so = sort) => {
@@ -1432,6 +1441,39 @@ export default function MarketplacePage() {
     } catch {}
   };
 
+  const toggleProductActive = async (product) => {
+    setTogglingProductId(product.id);
+    try {
+      await api.put(`/marketplace/products/${product.id}`, { is_active: !product.is_active });
+      toast.success(product.is_active ? 'Product hidden from marketplace' : 'Product is now live!');
+      fetchMyProducts();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to update product');
+    } finally {
+      setTogglingProductId(null);
+    }
+  };
+
+  const sendB2BQuote = async (inquiryId) => {
+    if (!quotePrice || parseFloat(quotePrice) <= 0) return toast.error('Enter a valid quote price');
+    setSendingQuote(true);
+    try {
+      await api.post(`/marketplace/b2b/inquiries/${inquiryId}/quote`, {
+        quoted_price: parseFloat(quotePrice),
+        quote_message: quoteMessage.trim(),
+      });
+      toast.success('Quote sent to buyer!');
+      setQuotingInquiryId(null);
+      setQuotePrice('');
+      setQuoteMessage('');
+      fetchInquiries();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to send quote');
+    } finally {
+      setSendingQuote(false);
+    }
+  };
+
   // ── Effects ───────────────────────────────────────────────────────────────
   useEffect(() => {
     fetchProducts(1, category, search, sort);
@@ -1442,7 +1484,7 @@ export default function MarketplacePage() {
   }, []);
 
   useEffect(() => { if (tab === 'b2b') { fetchB2bListings(1); fetchMyB2bListings(); fetchInquiries(); } }, [tab]);
-  useEffect(() => { if (tab === 'mystore') { fetchMyProducts(); fetchMyDisputes(); } }, [tab]);
+  useEffect(() => { if (tab === 'mystore') { fetchMyProducts(); fetchMyDisputes(); fetchAnalytics(); } }, [tab]);
   useEffect(() => { if (tab === 'analytics') fetchAnalytics(); }, [tab]);
   useEffect(() => { if (tab === 'ads') fetchMyAds(); }, [tab]);
   useEffect(() => { if (tab === 'purchases') { fetchMyPurchases(); fetchMyDisputes(); } }, [tab]);
@@ -1707,25 +1749,101 @@ export default function MarketplacePage() {
       {b2bSubTab === 'inquiries-received' && (
         <div className="space-y-3">
           {receivedInquiries.length === 0 ? (
-            <div className="text-center py-12 text-gray-400"><FiMessageCircle size={36} className="mx-auto mb-3 opacity-30" /><div>No inquiries received yet</div></div>
-          ) : receivedInquiries.map(inq => (
-            <div key={inq.id} className="bg-white rounded-xl border border-gray-100 p-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="font-medium text-sm text-gray-900">{inq.buyer_name}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">Qty: {inq.quantity}</div>
-                  <div className="text-sm text-gray-700 mt-1">{inq.message}</div>
-                  {inq.budget_range && <div className="text-xs text-gray-500 mt-1">Budget: {inq.budget_range}</div>}
-                </div>
-                <Badge color={inq.status === 'quoted' ? 'green' : inq.status === 'accepted' ? 'blue' : 'gray'}>{inq.status}</Badge>
-              </div>
-              {inq.quoted_price && (
-                <div className="mt-2 bg-green-50 rounded-xl p-2 text-xs text-green-700">
-                  Quote sent: ${inq.quoted_price} — {inq.quote_message}
-                </div>
-              )}
+            <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-gray-200">
+              <FiMessageCircle size={40} className="mx-auto mb-3 text-gray-200" />
+              <p className="font-bold text-gray-500">No inquiries received yet</p>
+              <p className="text-xs text-gray-400 mt-1">When buyers send RFQs on your B2B listings, they'll appear here</p>
             </div>
-          ))}
+          ) : receivedInquiries.map(inq => {
+            const isQuoting = quotingInquiryId === inq.id;
+            return (
+              <div key={inq.id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 font-black flex items-center justify-center text-sm flex-shrink-0">
+                        {inq.buyer_name?.[0]?.toUpperCase() || '?'}
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm text-gray-900">{inq.buyer_name}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          Qty: <span className="font-semibold text-gray-700">{inq.quantity}</span>
+                          {inq.budget_range && <> · Budget: <span className="font-semibold text-gray-700">{inq.budget_range}</span></>}
+                        </div>
+                      </div>
+                    </div>
+                    <Badge color={inq.status === 'quoted' ? 'green' : inq.status === 'accepted' ? 'blue' : inq.status === 'rejected' ? 'red' : 'amber'}>
+                      {inq.status}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-3 leading-relaxed bg-gray-50 rounded-xl px-3 py-2.5">{inq.message}</p>
+                  {inq.quoted_price && (
+                    <div className="mt-3 bg-green-50 border border-green-100 rounded-xl px-3 py-2.5 flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-bold text-green-800">Quote Sent: ${inq.quoted_price}</p>
+                        {inq.quote_message && <p className="text-xs text-green-700 mt-0.5">{inq.quote_message}</p>}
+                      </div>
+                      <FiCheck size={16} className="text-green-500 flex-shrink-0" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Inline Quote Form */}
+                {inq.status === 'pending' && !inq.quoted_price && (
+                  <div className="border-t border-gray-50 px-4 pb-4 pt-3">
+                    {!isQuoting ? (
+                      <button
+                        onClick={() => { setQuotingInquiryId(inq.id); setQuotePrice(''); setQuoteMessage(''); }}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 transition"
+                      >
+                        <FiEdit2 size={12} />Send Quote to Buyer
+                      </button>
+                    ) : (
+                      <div className="space-y-2.5">
+                        <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Compose Quote</p>
+                        <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2.5 bg-gray-50 focus-within:border-indigo-400 transition">
+                          <span className="text-gray-400 font-bold text-sm">$</span>
+                          <input
+                            type="number"
+                            value={quotePrice}
+                            onChange={e => setQuotePrice(e.target.value)}
+                            placeholder="Unit price"
+                            min="0.01" step="0.01"
+                            className="flex-1 text-sm font-semibold focus:outline-none bg-transparent"
+                            autoFocus
+                          />
+                          <span className="text-xs text-gray-400">per unit</span>
+                        </div>
+                        <textarea
+                          value={quoteMessage}
+                          onChange={e => setQuoteMessage(e.target.value)}
+                          rows={2}
+                          placeholder="Add terms, delivery time, or notes…"
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none bg-gray-50"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setQuotingInquiryId(null)}
+                            className="flex-1 py-2 text-xs font-bold text-gray-500 border border-gray-200 rounded-xl hover:bg-gray-50 transition"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => sendB2BQuote(inq.id)}
+                            disabled={sendingQuote || !quotePrice}
+                            className="flex-1 py-2 text-xs font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition flex items-center justify-center gap-1.5"
+                          >
+                            {sendingQuote ? <span className="w-3.5 h-3.5 border border-white border-t-transparent rounded-full animate-spin" /> : <FiSend size={11} />}
+                            Send Quote
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -1754,48 +1872,144 @@ export default function MarketplacePage() {
     </div>
   );
 
-  const renderMyStore = () => (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-bold text-gray-900">My Products ({myProducts.length})</h3>
-        <button onClick={() => setShowUpload(true)} className="flex items-center gap-1.5 bg-[#075E54] text-white px-3 py-2 rounded-xl text-sm font-semibold hover:bg-[#128C7E] transition">
-          <FiPlus size={14} />New Product
-        </button>
-      </div>
-      {myProducts.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <FiPackage size={40} className="mx-auto mb-3 opacity-30" />
-          <div>No products listed yet</div>
-          <button onClick={() => setShowUpload(true)} className="mt-3 bg-[#075E54] text-white text-sm font-medium px-4 py-2 rounded-xl hover:bg-[#128C7E] transition">List your first product</button>
+  const renderMyStore = () => {
+    const s = analytics?.summary;
+    return (
+      <div className="space-y-4">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-black text-gray-900 text-lg">My Store</h3>
+            <p className="text-xs text-gray-400 mt-0.5">{myProducts.length} product{myProducts.length !== 1 ? 's' : ''} listed</p>
+          </div>
+          <button onClick={() => setShowUpload(true)}
+            className="flex items-center gap-1.5 bg-[#075E54] text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-[#128C7E] transition shadow-lg shadow-[#075E54]/20">
+            <FiPlus size={14} />New Product
+          </button>
         </div>
-      ) : (
-        <div className="space-y-3">
-          {myProducts.map(p => (
-            <div key={p.id} className="bg-white rounded-2xl border border-gray-100 p-4 flex gap-3">
-              <div className="w-14 h-14 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                {p.thumbnail_url ? <img src={p.thumbnail_url} alt="" className="w-full h-full object-cover rounded-xl" /> : <FileIcon type={p.file_type} />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-sm text-gray-900 truncate">{p.title}</div>
-                <div className="text-xs text-gray-400 mt-0.5">{p.category} · {p.is_free ? 'Free' : fmtMoney(p.price)}</div>
-                <div className="flex items-center gap-3 mt-1.5">
-                  <span className="text-xs text-gray-500 flex items-center gap-1"><FiDownload size={11} />{p.download_count}</span>
-                  <span className="text-xs text-gray-500 flex items-center gap-1"><FiEye size={11} />{p.view_count}</span>
-                  {p.rating_count > 0 && <span className="text-xs text-gray-500 flex items-center gap-1"><FiStar size={11} />{p.rating_avg?.toFixed(1)}</span>}
-                </div>
-              </div>
-              <div className="flex flex-col gap-1.5 flex-shrink-0">
-                <button onClick={() => promoteProduct(p.id)} className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-lg font-medium hover:bg-amber-200 transition flex items-center gap-1">
-                  <FiZap size={11} />Promote
-                </button>
-                <Badge color={p.is_active ? 'green' : 'gray'}>{p.is_active ? 'Active' : 'Hidden'}</Badge>
-              </div>
+
+        {/* Earnings Summary */}
+        {loadingAnalytics ? (
+          <div className="bg-white rounded-2xl border border-gray-100 p-6 flex items-center justify-center">
+            <div className="w-6 h-6 border-2 border-[#25D366] border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : s ? (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-gradient-to-br from-[#075E54] to-[#25D366] rounded-2xl p-5 text-white col-span-1">
+              <FiDollarSign size={20} className="mb-2 text-white/70" />
+              <p className="text-3xl font-black">${(s.total_revenue || 0).toFixed(2)}</p>
+              <p className="text-xs text-white/70 mt-1 font-medium">Total Earnings</p>
             </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+            <div className="grid grid-rows-3 gap-2">
+              {[
+                { icon: FiDownload, label: 'Sales', value: (s.total_sales || 0), color: 'text-blue-500', bg: 'bg-blue-50' },
+                { icon: FiEye, label: 'Views', value: fmt(s.total_views || 0), color: 'text-purple-500', bg: 'bg-purple-50' },
+                { icon: FiStar, label: 'Rating', value: s.avg_rating ? Number(s.avg_rating).toFixed(1) : '—', color: 'text-amber-500', bg: 'bg-amber-50' },
+              ].map(stat => (
+                <div key={stat.label} className="bg-white rounded-xl border border-gray-100 px-3 py-2 flex items-center gap-2.5">
+                  <div className={`w-7 h-7 ${stat.bg} ${stat.color} rounded-lg flex items-center justify-center flex-shrink-0`}>
+                    <stat.icon size={13} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-gray-900 leading-tight">{stat.value}</p>
+                    <p className="text-[9px] text-gray-400 font-semibold uppercase tracking-wide">{stat.label}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <button onClick={fetchAnalytics}
+            className="w-full border-2 border-dashed border-gray-200 rounded-2xl py-4 text-xs text-gray-400 hover:bg-gray-50 transition flex items-center justify-center gap-2 font-medium">
+            <FiBarChart2 size={14} />Load store earnings summary
+          </button>
+        )}
+
+        {/* Products List */}
+        {myProducts.length === 0 ? (
+          <div className="text-center py-16 bg-white rounded-2xl border-2 border-dashed border-gray-200">
+            <FiPackage size={52} className="mx-auto mb-4 text-gray-200" />
+            <p className="font-black text-gray-600 text-base">No products yet</p>
+            <p className="text-sm text-gray-400 mt-1 mb-5">Start selling digital goods to your audience</p>
+            <button onClick={() => setShowUpload(true)}
+              className="bg-[#075E54] text-white text-sm font-bold px-6 py-3 rounded-xl hover:bg-[#128C7E] transition">
+              List Your First Product
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {myProducts.map(p => {
+              const isToggling = togglingProductId === p.id;
+              const estimatedRevenue = !p.is_free ? (p.price || 0) * (p.download_count || 0) : 0;
+              return (
+                <motion.div key={p.id} layout
+                  className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-md transition group">
+                  <div className="flex gap-3 p-4">
+                    <div className="w-16 h-16 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0 overflow-hidden border border-gray-100 relative">
+                      {p.thumbnail_url
+                        ? <img src={p.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                        : <FileIcon type={p.file_type} />
+                      }
+                      {!p.is_active && (
+                        <div className="absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center">
+                          <FiEyeOff size={14} className="text-white" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <p className="font-bold text-sm text-gray-900 truncate flex-1">{p.title}</p>
+                        <button
+                          onClick={() => toggleProductActive(p)}
+                          disabled={isToggling}
+                          className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition border ${
+                            p.is_active
+                              ? 'bg-green-50 text-green-700 border-green-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200'
+                              : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-green-50 hover:text-green-600 hover:border-green-200'
+                          }`}
+                          title={p.is_active ? 'Click to hide' : 'Click to publish'}
+                        >
+                          {isToggling
+                            ? <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
+                            : p.is_active ? <><FiEye size={10} />Live</> : <><FiEyeOff size={10} />Hidden</>
+                          }
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-400">
+                        {p.category} · <span className="font-semibold text-gray-600">{p.is_free ? 'Free' : fmtMoney(p.price)}</span>
+                        {!p.is_approved && <span className="ml-1.5 text-amber-600 font-semibold">(Pending review)</span>}
+                      </p>
+                      <div className="flex items-center gap-3 mt-2 flex-wrap">
+                        <span className="text-xs text-gray-400 flex items-center gap-1"><FiDownload size={10} />{p.download_count || 0} sales</span>
+                        <span className="text-xs text-gray-400 flex items-center gap-1"><FiEye size={10} />{p.view_count || 0} views</span>
+                        {p.rating_count > 0 && <span className="text-xs text-amber-500 flex items-center gap-1"><FiStar size={10} fill={STAR_COLOR} stroke={STAR_COLOR} />{p.rating_avg?.toFixed(1)} ({p.rating_count})</span>}
+                        {estimatedRevenue > 0 && (
+                          <span className="text-xs font-bold text-green-600">~{fmtMoney(estimatedRevenue)}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="px-4 pb-4 flex gap-2 border-t border-gray-50 pt-3">
+                    <button onClick={() => promoteProduct(p.id)}
+                      className="flex items-center gap-1.5 text-xs bg-amber-50 text-amber-700 border border-amber-100 px-3 py-1.5 rounded-xl font-bold hover:bg-amber-100 transition">
+                      <FiZap size={11} />Boost
+                    </button>
+                    <button onClick={() => setSelectedProduct(p)}
+                      className="flex items-center gap-1.5 text-xs bg-gray-50 text-gray-600 border border-gray-100 px-3 py-1.5 rounded-xl font-bold hover:bg-gray-100 transition">
+                      <FiEye size={11} />Preview
+                    </button>
+                    <div className="ml-auto text-[10px] text-gray-300 self-center">
+                      {new Date(p.created_at || Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderAnalytics = () => {
     if (loadingAnalytics) return <div className="flex items-center justify-center py-16"><div className="w-7 h-7 border-2 border-[#25D366] border-t-transparent rounded-full animate-spin" /></div>;
