@@ -9,6 +9,8 @@ import {
   FiAlignCenter, FiAlignLeft, FiAlignRight, FiUsers, FiLock,
   FiGlobe, FiRefreshCw, FiMusic, FiVolume2, FiVolumeX,
   FiDownload, FiSearch, FiPlay, FiPause,
+  FiMapPin, FiCalendar, FiAtSign, FiSun, FiDroplet, FiEyeOff,
+  FiCrop, FiFeather,
 } from 'react-icons/fi';
 import { useAuthStore } from '../services/store';
 import api from '../services/api';
@@ -1178,6 +1180,16 @@ function StatusComposer({ onClose, onPosted }) {
   const [musicTitle, setMusicTitle] = useState('');
   const [musicAttached, setMusicAttached] = useState(false);
   const [showMusicPicker, setShowMusicPicker] = useState(false);
+  const [location, setLocation] = useState('');
+  const [showLocationInput, setShowLocationInput] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState('');
+  const [imgBrightness, setImgBrightness] = useState(100);
+  const [imgContrast, setImgContrast] = useState(100);
+  const [imgSaturation, setImgSaturation] = useState(100);
+  const [showImgAdj, setShowImgAdj] = useState(false);
+  const [overlayText, setOverlayText] = useState('');
+  const [showOverlayInput, setShowOverlayInput] = useState(false);
+  const [mentionText, setMentionText] = useState('');
 
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -1257,6 +1269,13 @@ function StatusComposer({ onClose, onPosted }) {
         duration_hours: duration,
         music_url: musicAttached ? musicUrl : undefined,
         music_name: musicAttached ? musicTitle : undefined,
+        location: location.trim() || undefined,
+        scheduled_at: scheduledAt || undefined,
+        overlay_text: overlayText.trim() || undefined,
+        mentions: mentionText.trim() ? mentionText.split(/[\s,]+/).filter(Boolean) : undefined,
+        image_adjustments: (imgBrightness !== 100 || imgContrast !== 100 || imgSaturation !== 100)
+          ? { brightness: imgBrightness, contrast: imgContrast, saturation: imgSaturation }
+          : undefined,
       };
 
       if (mode === 'link') {
@@ -1347,6 +1366,68 @@ function StatusComposer({ onClose, onPosted }) {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Location */}
+          <div>
+            <p className="font-bold text-gray-700 text-sm mb-3 uppercase tracking-widest text-xs">Location Tag</p>
+            <div className="flex items-center gap-2 p-3.5 rounded-2xl border-2 border-gray-100 focus-within:border-[#25D366] transition">
+              <FiMapPin size={17} className={location ? 'text-[#25D366]' : 'text-gray-400'} />
+              <input
+                type="text"
+                value={location}
+                onChange={e => setLocation(e.target.value)}
+                placeholder="Add a location (city, place…)"
+                className="flex-1 outline-none text-sm text-gray-800 placeholder-gray-400 bg-transparent"
+              />
+              {location && (
+                <button onClick={() => setLocation('')} className="text-gray-300 hover:text-gray-500">
+                  <FiX size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Mention / Tag */}
+          <div>
+            <p className="font-bold text-gray-700 text-sm mb-3 uppercase tracking-widest text-xs">Mention People</p>
+            <div className="flex items-center gap-2 p-3.5 rounded-2xl border-2 border-gray-100 focus-within:border-[#25D366] transition">
+              <FiAtSign size={17} className={mentionText ? 'text-[#25D366]' : 'text-gray-400'} />
+              <input
+                type="text"
+                value={mentionText}
+                onChange={e => setMentionText(e.target.value)}
+                placeholder="@username1 @username2…"
+                className="flex-1 outline-none text-sm text-gray-800 placeholder-gray-400 bg-transparent"
+              />
+            </div>
+            <p className="text-xs text-gray-400 mt-1.5 ml-1">Separate multiple mentions with spaces</p>
+          </div>
+
+          {/* Schedule */}
+          <div>
+            <p className="font-bold text-gray-700 text-sm mb-3 uppercase tracking-widest text-xs">Schedule Post</p>
+            <div className="flex items-center gap-2 p-3.5 rounded-2xl border-2 border-gray-100 focus-within:border-[#25D366] transition">
+              <FiCalendar size={17} className={scheduledAt ? 'text-[#25D366]' : 'text-gray-400'} />
+              <input
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={e => setScheduledAt(e.target.value)}
+                min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
+                className="flex-1 outline-none text-sm text-gray-800 bg-transparent"
+              />
+              {scheduledAt && (
+                <button onClick={() => setScheduledAt('')} className="text-gray-300 hover:text-gray-500">
+                  <FiX size={14} />
+                </button>
+              )}
+            </div>
+            {scheduledAt && (
+              <div className="flex items-center gap-1.5 mt-2 text-xs text-[#25D366] font-semibold ml-1">
+                <FiCalendar size={11} />
+                Will post at {new Date(scheduledAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1500,7 +1581,14 @@ function StatusComposer({ onClose, onPosted }) {
           <div className="relative w-full h-full flex items-center justify-center bg-black">
             <img src={mediaPreviewUrl} alt="Preview"
               className="max-w-full max-h-full object-contain select-none"
-              style={{ filter: currentFilter }} />
+              style={{ filter: `${currentFilter} brightness(${imgBrightness}%) contrast(${imgContrast}%) saturate(${imgSaturation}%)` }} />
+            {overlayText && (
+              <div className="absolute inset-x-0 bottom-20 flex items-center justify-center pointer-events-none">
+                <span className="bg-black/55 text-white font-bold text-lg px-4 py-2 rounded-xl max-w-[80%] text-center break-words backdrop-blur-sm">
+                  {overlayText}
+                </span>
+              </div>
+            )}
             {drawingOverlay && (
               <img src={drawingOverlay} alt="" className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
             )}
@@ -1598,7 +1686,7 @@ function StatusComposer({ onClose, onPosted }) {
           </>
         )}
 
-        {/* Image filters */}
+        {/* Image filters + adjustments */}
         {(mode === 'image' || mode === 'video') && mediaPreviewUrl && (
           <div className="mb-3">
             <div className="flex gap-2 overflow-x-auto pb-1">
@@ -1615,7 +1703,71 @@ function StatusComposer({ onClose, onPosted }) {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-3 mt-3">
+
+            {/* Adjust / Overlay toggle bar */}
+            <div className="flex items-center gap-2 mt-2 mb-2">
+              <button onClick={() => { setShowImgAdj(v => !v); setShowOverlayInput(false); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition ${showImgAdj ? 'bg-white text-gray-900 border-white' : 'border-white/25 text-white/70 hover:text-white'}`}>
+                <FiSun size={12} />Adjust
+              </button>
+              <button onClick={() => { setShowOverlayInput(v => !v); setShowImgAdj(false); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition ${showOverlayInput ? 'bg-white text-gray-900 border-white' : 'border-white/25 text-white/70 hover:text-white'}`}>
+                <FiFeather size={12} />Text Overlay
+              </button>
+              {location && (
+                <span className="flex items-center gap-1 text-[10px] text-white/60 bg-white/10 rounded-full px-2 py-1">
+                  <FiMapPin size={9} />{location}
+                </span>
+              )}
+            </div>
+
+            {/* Image adjustment sliders */}
+            <AnimatePresence>
+              {showImgAdj && (
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden mb-2">
+                  <div className="bg-black/40 backdrop-blur-sm rounded-2xl p-3 space-y-2.5">
+                    {[
+                      { label: 'Brightness', icon: FiSun, value: imgBrightness, set: setImgBrightness, min: 50, max: 150 },
+                      { label: 'Contrast', icon: FiDroplet, value: imgContrast, set: setImgContrast, min: 50, max: 200 },
+                      { label: 'Saturation', icon: FiEyeOff, value: imgSaturation, set: setImgSaturation, min: 0, max: 200 },
+                    ].map(({ label, icon: Icon, value, set, min, max }) => (
+                      <div key={label} className="flex items-center gap-3">
+                        <Icon size={13} className="text-white/60 flex-shrink-0 w-4" />
+                        <span className="text-[10px] text-white/50 w-16 flex-shrink-0">{label}</span>
+                        <input type="range" min={min} max={max} value={value}
+                          onChange={e => set(Number(e.target.value))}
+                          className="flex-1 h-1 accent-[#25D366] cursor-pointer" />
+                        <button onClick={() => set(100)} className="text-[10px] text-white/30 hover:text-[#25D366] transition w-6 text-right"
+                          title="Reset">↺</button>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Text overlay input */}
+            <AnimatePresence>
+              {showOverlayInput && (
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden mb-2">
+                  <div className="bg-black/40 backdrop-blur-sm rounded-2xl p-3">
+                    <input
+                      autoFocus
+                      type="text"
+                      value={overlayText}
+                      onChange={e => setOverlayText(e.target.value)}
+                      placeholder="Add text on your photo…"
+                      maxLength={60}
+                      className="w-full bg-transparent text-white placeholder-white/40 outline-none text-sm font-bold"
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="flex items-center gap-3 mt-1">
               <input type="text" placeholder="Add a caption..." value={caption} onChange={e => setCaption(e.target.value)}
                 className="flex-1 bg-white/10 text-white placeholder-white/40 rounded-2xl px-4 py-2.5 outline-none text-sm border border-white/10 focus:border-white/30 transition" />
             </div>

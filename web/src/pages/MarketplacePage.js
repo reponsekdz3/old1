@@ -9,7 +9,7 @@ import {
   FiBarChart2, FiZap, FiBriefcase, FiLayers, FiRefreshCw,
   FiAward, FiAlertCircle, FiRadio, FiTarget, FiClock,
   FiGlobe, FiBox, FiActivity, FiUsers, FiPercent, FiChevronDown,
-  FiShield, FiLink, FiEyeOff, FiEdit2, FiTrendingDown,
+  FiShield, FiLink, FiEyeOff, FiEdit2, FiTrendingDown, FiCopy,
 } from 'react-icons/fi';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
 import api from '../services/api';
@@ -1004,33 +1004,291 @@ function B2BModal({ listing, onClose, user }) {
   );
 }
 
+// ── Coupon Creator ─────────────────────────────────────────────────────────────
+function CouponCreator({ myProducts }) {
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState('');
+  const [discount, setDiscount] = useState('10');
+  const [discountType, setDiscountType] = useState('percent');
+  const [maxUses, setMaxUses] = useState('');
+  const [expiresAt, setExpiresAt] = useState('');
+  const [productId, setProductId] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [coupons, setCoupons] = useState([]);
+  const [loadingCoupons, setLoadingCoupons] = useState(false);
+
+  const generateCode = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    setCode(Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join(''));
+  };
+
+  const loadCoupons = async () => {
+    setLoadingCoupons(true);
+    try {
+      const { data } = await api.get('/marketplace/coupons/my');
+      setCoupons(data.coupons || []);
+    } catch {}
+    finally { setLoadingCoupons(false); }
+  };
+
+  const createCoupon = async () => {
+    if (!code.trim()) { toast.error('Enter a coupon code'); return; }
+    if (!discount || isNaN(Number(discount))) { toast.error('Enter a valid discount'); return; }
+    setCreating(true);
+    try {
+      await api.post('/marketplace/coupons', {
+        code: code.trim().toUpperCase(),
+        discount_type: discountType,
+        discount_value: parseFloat(discount),
+        max_uses: maxUses ? parseInt(maxUses) : null,
+        expires_at: expiresAt || null,
+        product_id: productId || null,
+      });
+      toast.success(`Coupon ${code.toUpperCase()} created!`);
+      setCode(''); setDiscount('10'); setMaxUses(''); setExpiresAt(''); setProductId('');
+      loadCoupons();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to create coupon');
+    } finally { setCreating(false); }
+  };
+
+  useEffect(() => { if (open) loadCoupons(); }, [open]);
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <button onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-gray-50 transition">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center">
+            <FiPercent size={14} className="text-purple-600" />
+          </div>
+          <div className="text-left">
+            <p className="font-bold text-gray-900 text-sm">Coupon Codes</p>
+            <p className="text-xs text-gray-400">Create discount codes for buyers</p>
+          </div>
+        </div>
+        <FiChevronDown size={15} className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
+            className="overflow-hidden border-t border-gray-50">
+            <div className="p-4 space-y-4">
+              {/* Create form */}
+              <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Create New Coupon</p>
+                <div className="flex gap-2">
+                  <input value={code} onChange={e => setCode(e.target.value.toUpperCase())}
+                    placeholder="CODE" maxLength={12}
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-[#25D366] bg-white placeholder-gray-300" />
+                  <button onClick={generateCode}
+                    className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-500 hover:bg-gray-100 transition font-semibold whitespace-nowrap">
+                    Generate
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex items-center gap-1 border border-gray-200 rounded-xl overflow-hidden bg-white">
+                    <input type="number" min="1" max={discountType === 'percent' ? 100 : undefined}
+                      value={discount} onChange={e => setDiscount(e.target.value)}
+                      className="flex-1 px-3 py-2 text-sm focus:outline-none min-w-0" />
+                    <select value={discountType} onChange={e => setDiscountType(e.target.value)}
+                      className="text-xs font-semibold text-gray-600 border-l border-gray-200 bg-gray-50 px-2 py-2 focus:outline-none">
+                      <option value="percent">%</option>
+                      <option value="fixed">$</option>
+                    </select>
+                  </div>
+                  <input type="number" min="1" value={maxUses} onChange={e => setMaxUses(e.target.value)}
+                    placeholder="Max uses (∞)"
+                    className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#25D366] bg-white" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="date" value={expiresAt} onChange={e => setExpiresAt(e.target.value)}
+                    min={new Date().toISOString().slice(0, 10)}
+                    className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#25D366] bg-white text-gray-500" />
+                  <select value={productId} onChange={e => setProductId(e.target.value)}
+                    className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#25D366] bg-white text-gray-600">
+                    <option value="">All products</option>
+                    {myProducts.map(p => <option key={p.id} value={p.id}>{p.title.slice(0, 28)}</option>)}
+                  </select>
+                </div>
+                <button onClick={createCoupon} disabled={creating || !code.trim()}
+                  className="w-full bg-purple-600 text-white font-semibold py-2.5 rounded-xl hover:bg-purple-700 transition flex items-center justify-center gap-2 disabled:opacity-50 text-sm">
+                  {creating ? <Spinner /> : <><FiPlus size={14} />Create Coupon</>}
+                </button>
+              </div>
+
+              {/* Existing coupons */}
+              {loadingCoupons ? (
+                <div className="text-center py-4"><div className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin mx-auto" /></div>
+              ) : coupons.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Active Coupons</p>
+                  {coupons.map(c => (
+                    <div key={c.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
+                      <code className="font-mono font-bold text-sm text-purple-700 bg-purple-50 px-2 py-0.5 rounded-lg flex-shrink-0">{c.code}</code>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-gray-600 font-semibold">
+                          {c.discount_type === 'percent' ? `${c.discount_value}% off` : `$${c.discount_value} off`}
+                          {c.product_title && <span className="text-gray-400 font-normal"> · {c.product_title.slice(0, 20)}</span>}
+                        </p>
+                        <p className="text-[10px] text-gray-400">
+                          {c.use_count || 0}/{c.max_uses || '∞'} uses
+                          {c.expires_at && ` · expires ${new Date(c.expires_at).toLocaleDateString()}`}
+                        </p>
+                      </div>
+                      <button onClick={() => { navigator.clipboard.writeText(c.code); toast.success('Copied!'); }}
+                        className="text-gray-300 hover:text-purple-500 transition">
+                        <FiCopy size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-xs text-gray-400 py-2">No coupons yet — create one above</p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Affiliate Row ──────────────────────────────────────────────────────────────
+function AffiliateRow({ product }) {
+  const [copied, setCopied] = useState(false);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const affLink = `${window.location.origin}/marketplace?ref=${btoa(product.id).replace(/=/g, '')}&pid=${product.id}`;
+
+  const copy = () => {
+    navigator.clipboard.writeText(affLink).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const loadStats = async () => {
+    if (stats || loading) return;
+    setLoading(true);
+    try {
+      const { data } = await api.get(`/marketplace/affiliate/stats?product_id=${product.id}`);
+      setStats(data);
+    } catch { setStats({ clicks: 0, conversions: 0, earnings: 0 }); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="flex items-center gap-3 py-2.5 border-b border-gray-50 last:border-0">
+      <div className="w-8 h-8 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0 overflow-hidden border border-gray-100">
+        {product.thumbnail_url
+          ? <img src={product.thumbnail_url} alt="" className="w-full h-full object-cover" />
+          : <FileIcon type={product.file_type} />
+        }
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-bold text-gray-800 truncate">{product.title}</p>
+        {stats ? (
+          <p className="text-[10px] text-gray-400">{stats.clicks} clicks · {stats.conversions} sales · {fmtMoney(stats.earnings)} earned</p>
+        ) : (
+          <button onClick={loadStats} className="text-[10px] text-indigo-500 hover:underline">
+            {loading ? 'Loading…' : 'Load stats'}
+          </button>
+        )}
+      </div>
+      <button onClick={copy}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex-shrink-0 ${copied ? 'bg-green-100 text-green-700' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}>
+        {copied ? <><FiCheck size={11} />Copied!</> : <><FiLink size={11} />Copy Link</>}
+      </button>
+    </div>
+  );
+}
+
 // ── Upload Product Modal ───────────────────────────────────────────────────────
 function UploadModal({ onClose, onSuccess }) {
-  const [form, setForm] = useState({ title: '', description: '', category: 'Other', price: '', tags: '', license_type: 'standard', currency: 'USD' });
+  const [form, setForm] = useState({ title: '', description: '', category: 'Other', price: '', tags: '', license_type: 'standard', currency: 'USD', demo_url: '' });
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [galleryFiles, setGalleryFiles] = useState([]);
+  const [galleryPreviews, setGalleryPreviews] = useState([]);
+  const [variants, setVariants] = useState([{ name: 'Standard', price: '' }]);
   const [uploading, setUploading] = useState(false);
+  const [uploadStep, setUploadStep] = useState('');
+  const [uploadPct, setUploadPct] = useState(0);
   const fileRef = useRef();
   const previewRef = useRef();
+  const galleryRef = useRef();
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  const addGalleryFiles = (files) => {
+    const all = [...galleryFiles, ...Array.from(files)].slice(0, 5);
+    setGalleryFiles(all);
+    setGalleryPreviews(all.map(f => URL.createObjectURL(f)));
+  };
+
+  const removeGallery = (i) => {
+    const gf = galleryFiles.filter((_, idx) => idx !== i);
+    const gp = galleryPreviews.filter((_, idx) => idx !== i);
+    setGalleryFiles(gf);
+    setGalleryPreviews(gp);
+  };
+
+  const addVariant = () => setVariants(v => [...v, { name: '', price: '' }]);
+  const removeVariant = (i) => setVariants(v => v.filter((_, idx) => idx !== i));
+  const setVariantField = (i, k, val) => setVariants(v => v.map((vr, idx) => idx === i ? { ...vr, [k]: val } : vr));
 
   const submit = async () => {
     if (!form.title.trim()) { toast.error('Title is required'); return; }
     if (!file) { toast.error('Product file is required'); return; }
     setUploading(true);
+    setUploadPct(0);
     try {
+      setUploadStep('Uploading product file…');
       const fd = new FormData();
       Object.entries(form).forEach(([k, v]) => fd.append(k, v));
       fd.append('file', file);
       if (preview) fd.append('preview', preview);
-      await api.post('/marketplace/products', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+
+      if (variants.filter(v => v.name.trim()).length > 1) {
+        fd.append('variants', JSON.stringify(variants.filter(v => v.name.trim())));
+      }
+
+      const resp = await api.post('/marketplace/products', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: e => setUploadPct(Math.round((e.loaded * 60) / (e.total || 1))),
+      });
+      const productId = resp.data?.product?.id || resp.data?.id;
+
+      if (galleryFiles.length > 0 && productId) {
+        setUploadStep('Uploading gallery images…');
+        const galleryUrls = [];
+        for (let i = 0; i < galleryFiles.length; i++) {
+          const gfd = new FormData();
+          gfd.append('file', galleryFiles[i]);
+          try {
+            const { data: gd } = await api.post('/upload/image', gfd, {
+              headers: { 'Content-Type': 'multipart/form-data' },
+              onUploadProgress: e => setUploadPct(60 + Math.round(((i + e.loaded / (e.total || 1)) / galleryFiles.length) * 35)),
+            });
+            galleryUrls.push(gd.url);
+          } catch {}
+        }
+        if (galleryUrls.length > 0) {
+          await api.patch(`/marketplace/products/${productId}`, { gallery_urls: galleryUrls }).catch(() => {});
+        }
+      }
+
+      setUploadPct(100);
+      setUploadStep('Done!');
       toast.success('Product listed!');
       onSuccess();
       onClose();
     } catch (e) {
       toast.error(e.response?.data?.error || 'Upload failed');
-    } finally { setUploading(false); }
+    } finally { setUploading(false); setUploadStep(''); }
   };
 
   return (
@@ -1048,7 +1306,7 @@ function UploadModal({ onClose, onSuccess }) {
           </div>
           <div>
             <label className="text-xs text-gray-500 mb-1 block">Description</label>
-            <textarea value={form.description} onChange={set('description')} placeholder="Describe your product..."
+            <textarea value={form.description} onChange={set('description')} placeholder="Describe your product, what's included, requirements..."
               className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#25D366]" rows={3} />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -1059,41 +1317,135 @@ function UploadModal({ onClose, onSuccess }) {
               </select>
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Price (USD)</label>
+              <label className="text-xs text-gray-500 mb-1 block">Base Price (USD)</label>
               <input type="number" min="0" step="0.01" value={form.price} onChange={set('price')} placeholder="0 = Free"
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#25D366]" />
             </div>
           </div>
+
+          {/* Pricing Variants */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs text-gray-500 font-semibold">Pricing Tiers</label>
+              {variants.length < 4 && (
+                <button onClick={addVariant} className="text-xs text-[#075E54] font-semibold hover:underline flex items-center gap-1">
+                  <FiPlus size={11} />Add tier
+                </button>
+              )}
+            </div>
+            <div className="space-y-2 bg-gray-50 rounded-xl p-3">
+              {variants.map((v, i) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <input value={v.name} onChange={e => setVariantField(i, 'name', e.target.value)}
+                    placeholder={i === 0 ? 'Standard' : i === 1 ? 'Pro' : 'Enterprise'}
+                    className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#25D366] bg-white" />
+                  <div className="relative flex items-center">
+                    <span className="absolute left-2.5 text-gray-400 text-xs">$</span>
+                    <input type="number" min="0" step="0.01" value={v.price} onChange={e => setVariantField(i, 'price', e.target.value)}
+                      placeholder={i === 0 ? (form.price || '9.99') : i === 1 ? '29.99' : '99.99'}
+                      className="w-20 border border-gray-200 rounded-lg pl-5 pr-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#25D366] bg-white" />
+                  </div>
+                  {variants.length > 1 && (
+                    <button onClick={() => removeVariant(i)} className="text-gray-300 hover:text-red-400 transition">
+                      <FiX size={13} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div>
             <label className="text-xs text-gray-500 mb-1 block">Tags (comma-separated)</label>
             <input value={form.tags} onChange={set('tags')} placeholder="design, template, ui-kit"
               className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#25D366]" />
           </div>
-          <div>
-            <label className="text-xs text-gray-500 mb-1 block">License</label>
-            <select value={form.license_type} onChange={set('license_type')} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#25D366]">
-              {['standard', 'extended', 'commercial', 'personal'].map(l => <option key={l}>{l}</option>)}
-            </select>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">License</label>
+              <select value={form.license_type} onChange={set('license_type')} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#25D366]">
+                {['standard', 'extended', 'commercial', 'personal'].map(l => <option key={l}>{l}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Demo / Preview URL</label>
+              <input value={form.demo_url} onChange={set('demo_url')} placeholder="https://..."
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#25D366]" />
+            </div>
           </div>
           <div>
             <label className="text-xs text-gray-500 mb-1 block">Product File *</label>
             <input type="file" ref={fileRef} onChange={e => setFile(e.target.files[0])} className="hidden" />
             <button onClick={() => fileRef.current?.click()} className="w-full border-2 border-dashed border-gray-200 rounded-xl py-4 flex flex-col items-center gap-2 hover:border-[#25D366] transition text-sm text-gray-400">
               <FiUpload size={22} />
-              {file ? <span className="text-[#075E54] font-medium">{file.name}</span> : 'Click to upload file'}
+              {file ? <span className="text-[#075E54] font-medium">{file.name}</span> : 'Click to upload file (ZIP, PDF, MP4, etc.)'}
             </button>
           </div>
+
+          {/* Gallery images */}
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Preview Image (optional)</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs text-gray-500 font-semibold">Gallery / Screenshot Images <span className="text-gray-300 font-normal">(up to 5)</span></label>
+              {galleryFiles.length < 5 && (
+                <button onClick={() => galleryRef.current?.click()} className="text-xs text-[#075E54] font-semibold hover:underline flex items-center gap-1">
+                  <FiPlus size={11} />Add images
+                </button>
+              )}
+            </div>
+            <input ref={galleryRef} type="file" accept="image/*" multiple className="hidden"
+              onChange={e => addGalleryFiles(e.target.files)} />
+            {galleryPreviews.length > 0 ? (
+              <div className="grid grid-cols-5 gap-2">
+                {galleryPreviews.map((src, i) => (
+                  <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 group">
+                    <img src={src} alt="" className="w-full h-full object-cover" />
+                    <button onClick={() => removeGallery(i)}
+                      className="absolute top-1 right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                      <FiX size={10} className="text-white" />
+                    </button>
+                    {i === 0 && <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] text-center py-0.5">Cover</span>}
+                  </div>
+                ))}
+                {galleryFiles.length < 5 && (
+                  <button onClick={() => galleryRef.current?.click()}
+                    className="aspect-square rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center text-gray-300 hover:border-[#25D366] hover:text-[#25D366] transition">
+                    <FiPlus size={20} />
+                  </button>
+                )}
+              </div>
+            ) : (
+              <button onClick={() => galleryRef.current?.click()}
+                className="w-full border-2 border-dashed border-gray-200 rounded-xl py-4 flex flex-col items-center gap-2 hover:border-[#25D366] transition text-sm text-gray-400">
+                <FiGrid size={20} />Add product screenshots or previews
+              </button>
+            )}
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Cover / Thumbnail Image <span className="text-gray-300">(optional, uses gallery if not set)</span></label>
             <input type="file" ref={previewRef} accept="image/*" onChange={e => setPreview(e.target.files[0])} className="hidden" />
-            <button onClick={() => previewRef.current?.click()} className="w-full border-2 border-dashed border-gray-200 rounded-xl py-3 flex items-center justify-center gap-2 hover:border-[#25D366] transition text-sm text-gray-400">
+            <button onClick={() => previewRef.current?.click()} className="w-full border-2 border-dashed border-gray-200 rounded-xl py-2.5 flex items-center justify-center gap-2 hover:border-[#25D366] transition text-sm text-gray-400">
               <FiGrid size={16} />
-              {preview ? preview.name : 'Add preview image'}
+              {preview ? <span className="text-[#075E54] font-medium">{preview.name}</span> : 'Upload thumbnail'}
             </button>
           </div>
+
+          {uploading && (
+            <div className="bg-gray-50 rounded-xl p-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs text-gray-500 font-medium">{uploadStep}</span>
+                <span className="text-xs font-bold text-[#075E54]">{uploadPct}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                <motion.div className="h-full bg-gradient-to-r from-[#075E54] to-[#25D366] rounded-full"
+                  animate={{ width: `${uploadPct}%` }} transition={{ ease: 'easeOut' }} />
+              </div>
+            </div>
+          )}
+
           <button onClick={submit} disabled={uploading}
-            className="w-full bg-[#075E54] text-white font-semibold py-3 rounded-xl hover:bg-[#128C7E] transition flex items-center justify-center gap-2">
-            {uploading ? <Spinner /> : <><FiUpload size={16} />List Product</>}
+            className="w-full bg-[#075E54] text-white font-semibold py-3 rounded-xl hover:bg-[#128C7E] transition flex items-center justify-center gap-2 disabled:opacity-60">
+            {uploading ? <><Spinner />{uploadStep || 'Uploading…'}</> : <><FiUpload size={16} />List Product</>}
           </button>
         </div>
       </motion.div>
@@ -2005,6 +2357,25 @@ export default function MarketplacePage() {
                 </motion.div>
               );
             })}
+          </div>
+        )}
+
+        {/* Coupon Code Creator */}
+        <CouponCreator myProducts={myProducts} />
+
+        {/* Affiliate Links */}
+        {myProducts.length > 0 && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-2">
+              <FiLink size={15} className="text-indigo-500" />
+              <h4 className="font-bold text-gray-900 text-sm">Affiliate Links</h4>
+              <span className="text-xs text-gray-400 ml-auto">Earn 15% on referrals</span>
+            </div>
+            <div className="p-4 space-y-2">
+              {myProducts.slice(0, 5).map(p => (
+                <AffiliateRow key={p.id} product={p} />
+              ))}
+            </div>
           </div>
         )}
       </div>

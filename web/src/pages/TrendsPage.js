@@ -117,10 +117,20 @@ function UploadModal({ onClose, categories = [] }) {
   const [progressLabel, setProgressLabel] = useState('');
   const [dragOver, setDragOver]   = useState(false);
   const [videoDuration, setVideoDuration] = useState(0);
-  const [thumbnailFrames, setThumbnailFrames] = useState([]);   // [{dataUrl, time}]
-  const [selectedThumb, setSelectedThumb] = useState(null);    // index or null
+  const [thumbnailFrames, setThumbnailFrames] = useState([]);
+  const [selectedThumb, setSelectedThumb] = useState(null);
   const [extractingFrames, setExtractingFrames] = useState(false);
-  const [visibility, setVisibility] = useState('public');      // public | followers
+  const [visibility, setVisibility] = useState('public');
+  const [customThumbFile, setCustomThumbFile] = useState(null);
+  const [customThumbPreview, setCustomThumbPreview] = useState(null);
+  const [enableTips, setEnableTips] = useState(true);
+  const [allowDownloads, setAllowDownloads] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState('');
+  const [collabTag, setCollabTag] = useState('');
+  const [contentWarning, setContentWarning] = useState(false);
+  const [ageRestricted, setAgeRestricted] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const customThumbRef  = useRef(null);
   const previewVideoRef = useRef(null);
   const fileInputRef    = useRef(null);
 
@@ -212,6 +222,20 @@ function UploadModal({ onClose, categories = [] }) {
       }
       setProgress(90);
 
+      // Step 2b — upload custom thumbnail if provided
+      if (!thumbnailUrl && customThumbFile) {
+        setProgressLabel('Uploading custom thumbnail…');
+        try {
+          const ctfd = new FormData();
+          ctfd.append('file', customThumbFile);
+          const { data: ctd } = await api.post('/upload/image', ctfd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+          thumbnailUrl = ctd.url;
+        } catch {}
+      }
+      setProgress(90);
+
       // Step 3 — register metadata
       setProgressLabel('Finalizing…');
       await api.post('/trends/upload', {
@@ -223,6 +247,12 @@ function UploadModal({ onClose, categories = [] }) {
         tags: tagList,
         duration_sec: Math.round(videoDuration) || 30,
         visibility,
+        enable_tips: enableTips,
+        allow_downloads: allowDownloads,
+        scheduled_at: scheduledAt || undefined,
+        collab_tag: collabTag.trim() || undefined,
+        content_warning: contentWarning,
+        age_restricted: ageRestricted,
       });
       setProgress(100);
       setStep('done');
@@ -409,13 +439,127 @@ function UploadModal({ onClose, categories = [] }) {
               )}
             </div>
 
+            {/* Custom thumbnail upload */}
+            <div>
+              <label className="text-xs font-bold text-white/40 mb-1.5 block uppercase tracking-wider">Custom Thumbnail <span className="text-white/20 font-normal">(optional — overrides auto-frame)</span></label>
+              <input ref={customThumbRef} type="file" accept="image/*" className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) { setCustomThumbFile(f); setCustomThumbPreview(URL.createObjectURL(f)); }
+                }} />
+              {customThumbPreview ? (
+                <div className="relative rounded-xl overflow-hidden aspect-video bg-black">
+                  <img src={customThumbPreview} alt="Custom thumbnail" className="w-full h-full object-cover" />
+                  <button onClick={() => { setCustomThumbFile(null); setCustomThumbPreview(null); }}
+                    className="absolute top-2 right-2 w-7 h-7 bg-black/70 rounded-full flex items-center justify-center text-white hover:bg-red-500/80 transition">
+                    <FiX size={14} />
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => customThumbRef.current?.click()}
+                  className="w-full border border-dashed border-white/15 hover:border-white/30 rounded-xl py-3 flex items-center justify-center gap-2 transition text-white/35 hover:text-white/60 text-sm">
+                  <FiUpload size={14} /> Upload custom thumbnail
+                </button>
+              )}
+            </div>
+
+            {/* Advanced Settings accordion */}
+            <div className="rounded-xl border border-white/10 overflow-hidden">
+              <button onClick={() => setShowAdvanced(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/4 transition text-sm text-white/60 hover:text-white/90">
+                <span className="font-semibold flex items-center gap-2">
+                  <FiSliders size={14} /> Advanced Settings
+                </span>
+                <FiChevronDown size={14} className={`transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+              </button>
+              <AnimatePresence>
+                {showAdvanced && (
+                  <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
+                    className="overflow-hidden">
+                    <div className="px-4 pb-4 space-y-4 border-t border-white/8 pt-3">
+
+                      {/* Monetization toggles */}
+                      <div>
+                        <p className="text-[11px] font-bold text-white/35 uppercase tracking-widest mb-2">Monetization</p>
+                        <div className="space-y-2">
+                          {[
+                            { label: 'Enable Tips & Gifts', sub: 'Let viewers send you gifts on this video', value: enableTips, set: setEnableTips },
+                            { label: 'Allow Downloads', sub: 'Viewers can download this video', value: allowDownloads, set: setAllowDownloads },
+                          ].map(({ label, sub, value, set }) => (
+                            <div key={label} className="flex items-center gap-3">
+                              <div className="flex-1">
+                                <p className="text-sm text-white/80 font-medium">{label}</p>
+                                <p className="text-[11px] text-white/35">{sub}</p>
+                              </div>
+                              <button onClick={() => set(v => !v)}
+                                className={`flex-shrink-0 w-10 h-5.5 rounded-full border transition-all ${value ? 'bg-[#25D366] border-[#25D366]' : 'bg-white/10 border-white/15'}`}
+                                style={{ width: 40, height: 22 }}>
+                                <motion.div animate={{ x: value ? 20 : 2 }} transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                  className="w-4 h-4 bg-white rounded-full shadow mt-[3px]" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Collab tag */}
+                      <div>
+                        <label className="text-[11px] font-bold text-white/35 uppercase tracking-widest mb-1.5 block">Collab Tag</label>
+                        <div className="flex items-center gap-2 bg-white/5 border border-white/10 focus-within:border-[#25D366]/50 rounded-xl px-3 py-2.5">
+                          <FiUsers size={13} className="text-white/30 flex-shrink-0" />
+                          <input value={collabTag} onChange={e => setCollabTag(e.target.value)}
+                            placeholder="@co-creator username"
+                            className="flex-1 bg-transparent text-white text-sm outline-none placeholder-white/25" />
+                        </div>
+                      </div>
+
+                      {/* Scheduled publish */}
+                      <div>
+                        <label className="text-[11px] font-bold text-white/35 uppercase tracking-widest mb-1.5 block">Schedule Publish</label>
+                        <div className="flex items-center gap-2 bg-white/5 border border-white/10 focus-within:border-[#25D366]/50 rounded-xl px-3 py-2.5">
+                          <FiClock size={13} className="text-white/30 flex-shrink-0" />
+                          <input type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)}
+                            min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
+                            className="flex-1 bg-transparent text-white text-sm outline-none" />
+                          {scheduledAt && <button onClick={() => setScheduledAt('')} className="text-white/30 hover:text-white/60"><FiX size={12} /></button>}
+                        </div>
+                        {scheduledAt && <p className="text-[11px] text-[#25D366] mt-1 ml-1">Will go live {new Date(scheduledAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>}
+                      </div>
+
+                      {/* Content warnings */}
+                      <div>
+                        <p className="text-[11px] font-bold text-white/35 uppercase tracking-widest mb-2">Content Flags</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { label: 'Content Warning', sub: 'Sensitive content', value: contentWarning, set: setContentWarning },
+                            { label: '18+ Only', sub: 'Age restricted', value: ageRestricted, set: setAgeRestricted },
+                          ].map(({ label, sub, value, set }) => (
+                            <button key={label} onClick={() => set(v => !v)}
+                              className={`flex items-start gap-2 p-3 rounded-xl border-2 text-left transition ${value ? 'border-amber-500/50 bg-amber-500/8' : 'border-white/8 hover:border-white/20'}`}>
+                              <div className={`w-4 h-4 rounded border-2 flex-shrink-0 mt-0.5 flex items-center justify-center transition ${value ? 'bg-amber-500 border-amber-500' : 'border-white/25'}`}>
+                                {value && <FiCheck size={9} className="text-white" />}
+                              </div>
+                              <div>
+                                <p className="text-xs font-semibold text-white/80">{label}</p>
+                                <p className="text-[10px] text-white/35">{sub}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
             <div className="flex gap-3 pt-1">
               <button onClick={() => setStep('select')} className="flex-1 py-3 bg-white/5 hover:bg-white/10 font-bold rounded-xl transition text-sm text-white">
                 ← Back
               </button>
               <button onClick={handleSubmit} disabled={!title.trim()}
                 className="flex-2 flex-1 py-3 bg-[#25D366] hover:bg-[#1fbd5a] text-white font-bold rounded-xl transition disabled:opacity-40 text-sm flex items-center justify-center gap-2">
-                <FiUpload size={15} /> Upload Video
+                <FiUpload size={15} /> {scheduledAt ? 'Schedule Video' : 'Upload Video'}
               </button>
             </div>
           </div>

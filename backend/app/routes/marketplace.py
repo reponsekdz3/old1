@@ -1379,3 +1379,169 @@ def ask_seller_digital(product_id):
         db.session.rollback()
         logger.exception('ask_seller_digital error')
         return jsonify({'error': str(e)}), 500
+
+
+# ── Gallery URL update (PATCH) ─────────────────────────────────────────────────
+@marketplace_bp.route('/products/<product_id>', methods=['PATCH'])
+@jwt_required()
+def patch_product(product_id):
+    try:
+        user_id = get_jwt_identity()
+        product = MarketplaceProduct.query.get(product_id)
+        if not product:
+            return jsonify({'error': 'Not found'}), 404
+        if product.seller_id != user_id:
+            return jsonify({'error': 'Forbidden'}), 403
+        data = request.get_json() or {}
+        if 'gallery_urls' in data:
+            import json
+            product.gallery_urls = json.dumps(data['gallery_urls'])
+        if 'demo_url' in data:
+            product.demo_url = data['demo_url']
+        if 'variants' in data:
+            import json
+            product.variants_json = json.dumps(data['variants'])
+        db.session.commit()
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Coupon routes ──────────────────────────────────────────────────────────────
+import json as _json
+from sqlalchemy import Column, String, Text, Float, Integer, Boolean, DateTime, ForeignKey
+
+class MarketplaceCoupon(db.Model):
+    __tablename__ = 'marketplace_coupons'
+    __table_args__ = {'extend_existing': True}
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    seller_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
+    code = db.Column(db.String(32), nullable=False, unique=True)
+    discount_type = db.Column(db.String(16), default='percent')  # percent | fixed
+    discount_value = db.Column(db.Float, default=10.0)
+    product_id = db.Column(db.String(36), nullable=True)
+    max_uses = db.Column(db.Integer, nullable=True)
+    use_count = db.Column(db.Integer, default=0)
+    expires_at = db.Column(db.DateTime, nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        product_title = None
+        if self.product_id:
+            p = MarketplaceProduct.query.get(self.product_id)
+            product_title = p.title if p else None
+        return {
+            'id': self.id,
+            'code': self.code,
+            'discount_type': self.discount_type,
+            'discount_value': self.discount_value,
+            'product_id': self.product_id,
+            'product_title': product_title,
+            'max_uses': self.max_uses,
+            'use_count': self.use_count,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'is_active': self.is_active,
+        }
+
+
+@marketplace_bp.route('/coupons', methods=['POST'])
+@jwt_required()
+def create_coupon():
+    try:
+        user_id = get_jwt_identity()
+        data = request.get_json() or {}
+        code = (data.get('code') or '').strip().upper()
+        if not code:
+            return jsonify({'error': 'Code required'}), 400
+        if MarketplaceCoupon.query.filter_by(code=code).first():
+            return jsonify({'error': 'Code already in use'}), 409
+        expires = None
+        if data.get('expires_at'):
+            try:
+                expires = datetime.fromisoformat(data['expires_at'])
+            except Exception:
+                pass
+        coupon = MarketplaceCoupon(
+            seller_id=user_id,
+            code=code,
+            discount_type=data.get('discount_type', 'percent'),
+            discount_value=float(data.get('discount_value', 10)),
+            product_id=data.get('product_id') or None,
+            max_uses=int(data['max_uses']) if data.get('max_uses') else None,
+            expires_at=expires,
+        )
+        db.session.add(coupon)
+        db.session.commit()
+        return jsonify({'coupon': coupon.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@marketplace_bp.route('/coupons/my', methods=['GET'])
+@jwt_required()
+def my_coupons():
+    try:
+        user_id = get_jwt_identity()
+        coupons = MarketplaceCoupon.query.filter_by(seller_id=user_id, is_active=True)\
+            .order_by(MarketplaceCoupon.created_at.desc()).all()
+        return jsonify({'coupons': [c.to_dict() for c in coupons]}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@marketplace_bp.route('/coupons/validate', methods=['POST'])
+def validate_coupon():
+    """Public: validate a coupon code before checkout."""
+    try:
+        data = request.get_json() or {}
+        code = (data.get('code') or '').strip().upper()
+        product_id = data.get('product_id')
+        coupon = MarketplaceCoupon.query.filter_by(code=code, is_active=True).first()
+        if not coupon:
+            return jsonify({'error': 'Invalid coupon code'}), 404
+        if coupon.max_uses and coupon.use_count >= coupon.max_uses:
+            return jsonify({'error': 'Coupon has reached its usage limit'}), 410
+        if coupon.expires_at and coupon.expires_at < datetime.utcnow():
+            return jsonify({'error': 'Coupon has expired'}), 410
+        if coupon.product_id and product_id and coupon.product_id != product_id:
+            return jsonify({'error': 'Coupon not valid for this product'}), 400
+        return jsonify({
+            'valid': True,
+            'discount_type': coupon.discount_type,
+            'discount_value': coupon.discount_value,
+            'code': coupon.code,
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Affiliate stats ────────────────────────────────────────────────────────────
+@marketplace_bp.route('/affiliate/stats', methods=['GET'])
+@jwt_required()
+def affiliate_stats():
+    """Return affiliate click/conversion/earnings stats per product."""
+    try:
+        user_id = get_jwt_identity()
+        product_id = request.args.get('product_id')
+        # Simple stub returning view_count/download_count as proxy
+        if product_id:
+            p = MarketplaceProduct.query.get(product_id)
+            if not p or p.seller_id != user_id:
+                return jsonify({'clicks': 0, 'conversions': 0, 'earnings': 0.0}), 200
+            return jsonify({
+                'clicks': p.view_count or 0,
+                'conversions': p.download_count or 0,
+                'earnings': round((p.download_count or 0) * float(p.price or 0) * 0.15, 2),
+            }), 200
+        # All products aggregate
+        products = MarketplaceProduct.query.filter_by(seller_id=user_id, is_active=True).all()
+        return jsonify({
+            'clicks': sum(p.view_count or 0 for p in products),
+            'conversions': sum(p.download_count or 0 for p in products),
+            'earnings': round(sum((p.download_count or 0) * float(p.price or 0) * 0.15 for p in products), 2),
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
