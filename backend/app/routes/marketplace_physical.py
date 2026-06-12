@@ -1994,3 +1994,143 @@ def escrow_security_report():
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ── Ask Seller ─────────────────────────────────────────────────────────────────
+
+@physical_bp.route('/products/<product_id>/ask-seller', methods=['POST'])
+@jwt_required()
+def ask_seller(product_id):
+    """Buyer sends a message to the seller about this product.
+    Creates a real chat message with product thumbnail. Returns seller_id for navigation."""
+    try:
+        from app.models.models import Message, MessageStatus
+        user_id = get_jwt_identity()
+        product = PhysicalProduct.query.get(product_id)
+        if not product or not product.is_active:
+            return jsonify({'error': 'Product not found'}), 404
+        if product.seller_id == user_id:
+            return jsonify({'error': 'This is your own product'}), 400
+
+        data = request.get_json() or {}
+        custom_msg = (data.get('message') or '').strip()
+
+        images = json.loads(product.images_json) if product.images_json else []
+        thumb = product.thumbnail_url or (images[0] if images else None)
+
+        price_str = f"${product.price:.2f}" if product.price else 'N/A'
+        msg_text = custom_msg if custom_msg else (
+            f"Hi! I saw your listing \"{product.title}\" for {price_str}. Is it still available?"
+        )
+
+        msg = Message(
+            sender_id=user_id,
+            receiver_id=product.seller_id,
+            content=msg_text,
+            status=MessageStatus.SENT,
+        )
+        db.session.add(msg)
+
+        if thumb:
+            img_msg = Message(
+                sender_id=user_id,
+                receiver_id=product.seller_id,
+                content=f'[Product enquiry: {product.title}]',
+                media_url=thumb,
+                media_type='image',
+                status=MessageStatus.SENT,
+            )
+            db.session.add(img_msg)
+
+        db.session.commit()
+
+        seller = User.query.get(product.seller_id)
+        return jsonify({
+            'success': True,
+            'seller_id': product.seller_id,
+            'seller_name': seller.full_name if seller else 'Seller',
+            'message_sent': msg_text,
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.exception('ask_seller error')
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Multi-image upload for existing product ────────────────────────────────────
+
+@physical_bp.route('/products/<product_id>/upload-images', methods=['POST'])
+@jwt_required()
+def upload_product_images(product_id):
+    """Upload multiple images for an existing product listing.
+    Accepts multipart/form-data with field 'images' (can be repeated)."""
+    try:
+        user_id = get_jwt_identity()
+        product = PhysicalProduct.query.get(product_id)
+        if not product:
+            return jsonify({'error': 'Product not found'}), 404
+        if product.seller_id != user_id:
+            return jsonify({'error': 'Forbidden'}), 403
+
+        files = request.files.getlist('images') or request.files.getlist('image')
+        if not files or not any(f.filename for f in files):
+            return jsonify({'error': 'No images provided'}), 400
+
+        ALLOWED_EXT = {'jpg', 'jpeg', 'png', 'webp', 'gif'}
+        MAX_SIZE = 10 * 1024 * 1024  # 10 MB
+        img_dir = os.path.join(UPLOAD_DIR, 'images')
+        os.makedirs(img_dir, exist_ok=True)
+
+        uploaded_urls = []
+        for f in files:
+            if not f or not f.filename:
+                continue
+            ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else ''
+            if ext not in ALLOWED_EXT:
+                return jsonify({'error': f'Invalid file type: {ext}'}), 400
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(0)
+            if size > MAX_SIZE:
+                return jsonify({'error': 'Image exceeds 10 MB limit'}), 400
+
+            fname = f'{uuid.uuid4().hex}.jpg'
+            save_path = os.path.join(img_dir, fname)
+            f.save(save_path)
+
+            try:
+                from PIL import Image as PILImage
+                with PILImage.open(save_path) as img:
+                    if img.mode in ('RGBA', 'LA', 'P'):
+                        bg = PILImage.new('RGB', img.size, (255, 255, 255))
+                        bg.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                        img = bg
+                    elif img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    img.thumbnail((1920, 1920), PILImage.Resampling.LANCZOS)
+                    img.save(save_path, 'JPEG', quality=87, optimize=True)
+            except Exception as compress_err:
+                logger.warning(f'Image compression failed: {compress_err}')
+
+            uploaded_urls.append(f'/uploads/physical/images/{fname}')
+
+        if not uploaded_urls:
+            return jsonify({'error': 'No valid images were uploaded'}), 400
+
+        existing = json.loads(product.images_json) if product.images_json else []
+        existing.extend(uploaded_urls)
+        product.images_json = json.dumps(existing)
+        if not product.thumbnail_url and existing:
+            product.thumbnail_url = existing[0]
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'uploaded': uploaded_urls,
+            'all_images': existing,
+            'thumbnail_url': product.thumbnail_url,
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.exception('upload_product_images error')
+        return jsonify({'error': str(e)}), 500

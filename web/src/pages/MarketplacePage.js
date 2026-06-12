@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import {
   FiShoppingBag, FiPlus, FiSearch, FiUpload, FiDownload, FiStar,
   FiX, FiMessageCircle, FiPackage, FiFilter, FiGrid, FiList,
@@ -587,6 +588,7 @@ function PayPalCheckout({ product, user, onSuccess }) {
 
 // ── Product Detail Modal ───────────────────────────────────────────────────────
 function ProductModal({ product, onClose, user }) {
+  const navigate = useNavigate();
   const [buying, setBuying] = useState(false);
   const [showPayPal, setShowPayPal] = useState(false);
   const [rating, setRating] = useState(5);
@@ -594,7 +596,28 @@ function ProductModal({ product, onClose, user }) {
   const [submittingReview, setSubmittingReview] = useState(false);
   const [reviews, setReviews] = useState(product?.reviews || []);
   const [activeImg, setActiveImg] = useState(0);
+  const [askingShowing, setAskingShowing] = useState(false);
+  const [askMsg, setAskMsg] = useState('');
+  const [askingSending, setAskingSending] = useState(false);
   const images = [product.preview_url || product.thumbnail_url, product.preview_url, product.thumbnail_url].filter(Boolean);
+
+  const sendAskSeller = async () => {
+    if (!user) { toast.error('Please log in first'); return; }
+    setAskingSending(true);
+    try {
+      const res = await api.post(`/marketplace/products/${product.id}/ask-seller`, {
+        message: askMsg.trim() || undefined,
+      });
+      toast.success(`Message sent to ${res.data.seller_name || 'seller'}! Opening chat…`);
+      setAskingShowing(false);
+      setAskMsg('');
+      setTimeout(() => navigate('/'), 700);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to send message');
+    } finally {
+      setAskingSending(false);
+    }
+  };
 
   const handleBuy = async () => {
     if (!user) { toast.error('Please login'); return; }
@@ -744,6 +767,38 @@ function ProductModal({ product, onClose, user }) {
                       <PayPalCheckout product={product} user={user} onSuccess={onClose} />
                       <button onClick={() => setShowPayPal(false)} className="w-full text-[10px] font-black text-gray-400 uppercase tracking-widest mt-2 hover:text-gray-900">Cancel PayPal</button>
                    </div>
+                )}
+
+                {/* Ask Seller */}
+                {!askingShowing ? (
+                  <button
+                    onClick={() => setAskingShowing(true)}
+                    className="mt-3 w-full py-3 border-2 border-white/30 text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-white/10 transition active:scale-95 text-sm"
+                  >
+                    <FiMessageCircle size={16} /> Ask Seller a Question
+                  </button>
+                ) : (
+                  <div className="mt-3 bg-white/10 rounded-2xl p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-white/80 text-xs font-black uppercase tracking-widest">Message Seller</span>
+                      <button onClick={() => setAskingShowing(false)} className="text-white/50 hover:text-white"><FiX size={14} /></button>
+                    </div>
+                    <textarea
+                      value={askMsg}
+                      onChange={e => setAskMsg(e.target.value)}
+                      rows={2}
+                      placeholder={`Hi! I have a question about "${product.title}"…`}
+                      className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder:text-white/40 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-white/50"
+                    />
+                    <button
+                      onClick={sendAskSeller}
+                      disabled={askingSending}
+                      className="w-full py-2 bg-[#25D366] text-black rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-1.5 disabled:opacity-50 hover:bg-[#1fb355] transition"
+                    >
+                      {askingSending ? <Spinner size={12} /> : <FiSend size={12} />}
+                      {askingSending ? 'Sending…' : 'Send & Go to Chat'}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -1159,6 +1214,7 @@ function CreateB2BModal({ onClose, onSuccess }) {
 // ══════════════════════════════════════════════════════════════════════════════
 export default function MarketplacePage() {
   const { user } = useAuthStore();
+  const navigate = useNavigate();
   const [tab, setTab] = useState('discover');
 
   // Discover state
@@ -1969,7 +2025,14 @@ export default function MarketplacePage() {
       <div className="bg-[#075E54] px-4 pt-safe pb-3">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <FiShoppingBag size={22} className="text-white" />
+            <button
+              onClick={() => navigate('/')}
+              className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/15 hover:bg-white/25 transition flex-shrink-0 mr-1"
+              title="Back to Messages"
+            >
+              <FiArrowLeft size={16} className="text-white" />
+            </button>
+            <FiShoppingBag size={20} className="text-white" />
             <h1 className="text-white font-bold text-lg">Marketplace</h1>
           </div>
           <button onClick={() => setShowUpload(true)}

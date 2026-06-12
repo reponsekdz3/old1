@@ -1319,3 +1319,63 @@ def stripe_webhook():
         return jsonify({'received': True}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+
+# ── Ask Seller (digital marketplace) ──────────────────────────────────────────
+
+@marketplace_bp.route('/products/<product_id>/ask-seller', methods=['POST'])
+@jwt_required()
+def ask_seller_digital(product_id):
+    """Buyer sends a message to the seller of a digital product.
+    Creates a real chat message and returns seller info for navigation."""
+    try:
+        from app.models.models import Message, MessageStatus
+        user_id = get_jwt_identity()
+
+        product = MarketplaceProduct.query.get(product_id)
+        if not product or not product.is_active:
+            return jsonify({'error': 'Product not found'}), 404
+        if product.seller_id == user_id:
+            return jsonify({'error': 'This is your own product'}), 400
+
+        data = request.get_json() or {}
+        custom_msg = (data.get('message') or '').strip()
+
+        price_str = 'FREE' if product.is_free else f"${product.price:.2f}"
+        msg_text = custom_msg if custom_msg else (
+            f"Hi! I found your \"{product.title}\" ({price_str}) — do you have more details about it?"
+        )
+
+        msg = Message(
+            sender_id=user_id,
+            receiver_id=product.seller_id,
+            content=msg_text,
+            status=MessageStatus.SENT,
+        )
+        db.session.add(msg)
+
+        thumb = product.thumbnail_url or product.preview_url
+        if thumb:
+            img_msg = Message(
+                sender_id=user_id,
+                receiver_id=product.seller_id,
+                content=f'[Digital product enquiry: {product.title}]',
+                media_url=thumb,
+                media_type='image',
+                status=MessageStatus.SENT,
+            )
+            db.session.add(img_msg)
+
+        db.session.commit()
+
+        seller = User.query.get(product.seller_id)
+        return jsonify({
+            'success': True,
+            'seller_id': product.seller_id,
+            'seller_name': seller.full_name if seller else 'Seller',
+            'message_sent': msg_text,
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.exception('ask_seller_digital error')
+        return jsonify({'error': str(e)}), 500

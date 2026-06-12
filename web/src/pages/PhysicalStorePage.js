@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import {
   FiShoppingBag, FiPackage, FiSearch, FiFilter, FiStar,
   FiHeart, FiTruck, FiShield, FiChevronLeft, FiChevronRight,
   FiX, FiCheck, FiBarChart2, FiDollarSign, FiTag, FiGlobe, FiAward,
+  FiArrowLeft, FiUpload, FiMessageCircle, FiPlus, FiSend,
 } from 'react-icons/fi';
 import api from '../services/api';
 import { useAuthStore } from '../services/store';
@@ -142,6 +144,74 @@ function ProductCard({ product, onView, onWishlist, wishlisted }) {
         )}
       </div>
     </motion.div>
+  );
+}
+
+// ── Ask Seller Button ──────────────────────────────────────────────────────────
+function AskSellerButton({ product }) {
+  const navigate = useNavigate();
+  const [asking, setAsking] = useState(false);
+  const [showInput, setShowInput] = useState(false);
+  const [msg, setMsg] = useState('');
+  const { user } = useAuthStore();
+
+  async function send() {
+    if (!user) { toast.error('Please log in to contact the seller'); return; }
+    setAsking(true);
+    try {
+      const res = await api.post(`/physical/products/${product.id}/ask-seller`, {
+        message: msg.trim() || undefined,
+      });
+      toast.success(`Message sent to ${res.data.seller_name || 'seller'}! Check your chats.`);
+      setShowInput(false);
+      setMsg('');
+      setTimeout(() => navigate('/'), 800);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to send message');
+    } finally {
+      setAsking(false);
+    }
+  }
+
+  return (
+    <div className="mt-3">
+      {!showInput ? (
+        <button
+          onClick={() => setShowInput(true)}
+          className="w-full py-3 rounded-2xl border-2 border-[#075E54] text-[#075E54] font-bold flex items-center justify-center gap-2 hover:bg-green-50 transition active:scale-95"
+        >
+          <FiMessageCircle size={18} /> Ask if Still Available
+        </button>
+      ) : (
+        <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-gray-700">Message Seller</span>
+            <button onClick={() => setShowInput(false)} className="text-gray-400 hover:text-gray-700"><FiX size={16} /></button>
+          </div>
+          {product.thumbnail_url && (
+            <div className="flex items-center gap-3 bg-white p-2 rounded-xl border border-gray-100">
+              <img src={product.thumbnail_url} alt="" className="w-10 h-10 object-cover rounded-lg flex-shrink-0" />
+              <div className="text-xs text-gray-600 truncate"><span className="font-semibold">{product.title}</span> — ${product.price?.toFixed(2)}</div>
+            </div>
+          )}
+          <textarea
+            value={msg}
+            onChange={e => setMsg(e.target.value)}
+            rows={3}
+            placeholder={`Hi! Is "${product.title}" still available?`}
+            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm resize-none focus:outline-none focus:border-[#25D366]"
+          />
+          <button
+            onClick={send}
+            disabled={asking}
+            className="w-full py-2.5 bg-[#075E54] text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {asking ? <Spinner size={14} /> : <FiSend size={14} />}
+            {asking ? 'Sending…' : 'Send & Open Chat'}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -324,6 +394,9 @@ function ProductDetail({ product, onClose, onOrder }) {
               : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
             {inStock ? `Buy Now · ${money(price * qty, product.currency)}` : 'Out of Stock'}
           </button>
+
+          {/* Ask seller */}
+          <AskSellerButton product={product} />
         </div>
       </motion.div>
     </div>
@@ -564,17 +637,54 @@ function SellForm({ onSuccess }) {
     condition: 'new', shipping_cost: '0', ships_from_country: '',
     estimated_delivery_days: '7', ships_internationally: false,
     returns_accepted: true, return_days: '14',
-    tags: '', images: [],
+    tags: '',
   });
   const [variants, setVariants] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [imageFiles, setImageFiles] = useState([]);
+  const [imagePreviews, setImagePreviews] = useState([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const imageInputRef = useRef(null);
 
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
+  function addImageFiles(files) {
+    const imgs = Array.from(files).filter(file => file.type.startsWith('image/')).slice(0, 8);
+    const available = 8 - imageFiles.length;
+    const toAdd = imgs.slice(0, available);
+    if (!toAdd.length) return;
+    setImageFiles(prev => [...prev, ...toAdd]);
+    setImagePreviews(prev => [...prev, ...toAdd.map(file => URL.createObjectURL(file))]);
+  }
+
+  function removeImage(idx) {
+    URL.revokeObjectURL(imagePreviews[idx]);
+    setImageFiles(prev => prev.filter((_, i) => i !== idx));
+    setImagePreviews(prev => prev.filter((_, i) => i !== idx));
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
+    if (!form.title.trim()) { toast.error('Title is required'); return; }
+    if (!form.price) { toast.error('Price is required'); return; }
     setLoading(true);
+    let imageUrls = [];
     try {
+      if (imageFiles.length > 0) {
+        setUploadingImages(true);
+        for (const file of imageFiles) {
+          const fd = new FormData();
+          fd.append('file', file);
+          try {
+            const res = await api.post('/upload/image', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+            if (res.data.url) imageUrls.push(res.data.url);
+          } catch {
+            toast.error(`Failed to upload ${file.name}`);
+          }
+        }
+        setUploadingImages(false);
+      }
       const payload = {
         ...form,
         price: parseFloat(form.price),
@@ -584,6 +694,8 @@ function SellForm({ onSuccess }) {
         estimated_delivery_days: parseInt(form.estimated_delivery_days),
         return_days: parseInt(form.return_days),
         tags: form.tags.split(',').map(t => t.trim()).filter(Boolean),
+        images: imageUrls,
+        thumbnail_url: imageUrls[0] || null,
         variants: variants.filter(v => v.size || v.color),
         has_variants: variants.length > 0,
       };
@@ -594,6 +706,7 @@ function SellForm({ onSuccess }) {
       toast.error(err.response?.data?.error || 'Failed to create listing');
     } finally {
       setLoading(false);
+      setUploadingImages(false);
     }
   }
 
@@ -700,11 +813,78 @@ function SellForm({ onSuccess }) {
           placeholder="e.g. shirt, linen, summer, fashion" className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-[#25D366]" />
       </div>
 
+      {/* Real multi-image upload */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-1">Product Image URLs</label>
-        <input value={(form.images || []).join(',')} onChange={e => f('images', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
-          placeholder="https://... , https://... (comma-separated)" className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-[#25D366]" />
-        <p className="text-xs text-gray-400 mt-1">Add image URLs, or upload images after creating the listing.</p>
+        <label className="block text-sm font-semibold text-gray-700 mb-2">
+          Product Photos
+          <span className="text-xs font-normal text-gray-400 ml-2">({imageFiles.length}/8)</span>
+        </label>
+        <input
+          type="file"
+          ref={imageInputRef}
+          multiple
+          accept="image/*"
+          className="hidden"
+          onChange={e => { addImageFiles(e.target.files); e.target.value = ''; }}
+        />
+
+        {imagePreviews.length === 0 ? (
+          <div
+            onClick={() => imageInputRef.current?.click()}
+            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={e => { e.preventDefault(); setDragOver(false); addImageFiles(e.dataTransfer.files); }}
+            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${dragOver ? 'border-[#25D366] bg-green-50' : 'border-gray-200 hover:border-[#25D366] hover:bg-gray-50'}`}
+          >
+            <FiUpload size={28} className="mx-auto text-gray-300 mb-2" />
+            <p className="text-sm font-semibold text-gray-500">Drag &amp; drop photos here, or click to browse</p>
+            <p className="text-xs text-gray-400 mt-1">Up to 8 images · JPG, PNG, WebP · Max 10 MB each</p>
+          </div>
+        ) : (
+          <div>
+            <div className="flex flex-wrap gap-2">
+              {imagePreviews.map((url, i) => (
+                <div key={i} className="relative group">
+                  <img src={url} alt="" className="w-20 h-20 object-cover rounded-xl border-2 border-gray-100 group-hover:border-[#25D366] transition" />
+                  {i === 0 && (
+                    <span className="absolute bottom-0 left-0 right-0 text-center text-[9px] bg-black/60 text-white rounded-b-xl py-0.5 font-semibold">
+                      MAIN
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeImage(i)}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600 opacity-0 group-hover:opacity-100 transition"
+                  >
+                    <FiX size={10} />
+                  </button>
+                </div>
+              ))}
+              {imageFiles.length < 8 && (
+                <button
+                  type="button"
+                  onClick={() => imageInputRef.current?.click()}
+                  className="w-20 h-20 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center gap-1 text-gray-300 hover:border-[#25D366] hover:text-[#075E54] transition"
+                >
+                  <FiPlus size={20} />
+                  <span className="text-[9px] font-semibold">ADD</span>
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => imageInputRef.current?.click()}
+              className="mt-2 text-xs text-[#075E54] font-semibold hover:underline"
+            >
+              + Add more photos
+            </button>
+          </div>
+        )}
+        {uploadingImages && (
+          <div className="mt-2 flex items-center gap-2 text-xs text-blue-600">
+            <Spinner size={12} />Uploading images…
+          </div>
+        )}
       </div>
 
       {/* Variants */}
@@ -916,6 +1096,7 @@ function WalletPanel({ role = 'seller' }) {
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function PhysicalStorePage() {
   useAuthStore();
+  const navigate = useNavigate();
   const [tab, setTab] = useState('discover');
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -955,13 +1136,16 @@ export default function PhysicalStorePage() {
     <div className="flex flex-col h-full bg-[#f0f2f5]">
       {/* Header */}
       <div className="bg-[#075E54] text-white px-4 py-3 flex items-center gap-3 flex-shrink-0">
+        <button onClick={() => navigate('/')} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/15 hover:bg-white/25 transition flex-shrink-0" title="Back to Messages">
+          <FiArrowLeft size={18} />
+        </button>
         <FiShoppingBag size={22} />
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <div className="font-bold text-lg leading-tight">VipChat Store</div>
           <div className="text-xs opacity-75">Physical Goods · Secure Escrow · 3% Cashback</div>
         </div>
         {total > 0 && tab === 'discover' && (
-          <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">{total.toLocaleString()} items</span>
+          <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full flex-shrink-0">{total.toLocaleString()} items</span>
         )}
       </div>
 
